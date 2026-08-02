@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "arkanoid",
+  "project_id": "b765c9d5-a81e-4f5a-946e-f4c2223fbfec"
+}
