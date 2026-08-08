@@ -37,11 +37,3 @@ interpolate positions between them — this keeps motion smooth at any monitor
 Hz without ever changing gameplay physics, which only ever see fixed
 120 Hz steps.
 
-## Screenshot
-
-_Placeholder — a screenshot of gameplay should be added here once available
-(e.g. `docs/screenshot.png` linked below)._
-
-```markdown
-![gameplay screenshot](docs/screenshot.png)
-```
