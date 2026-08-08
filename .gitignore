@@ -4,4 +4,7 @@
 *.db
 .beads-credential-key
 .beads/proxieddb/
-.pact/
+# Everything pact or an agent writes under .pact/ is local runtime state,
+# EXCEPT the append-only event log, which is history and belongs in git.
+.pact/*
+!.pact/events.jsonl

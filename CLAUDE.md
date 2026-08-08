@@ -1,6 +1,6 @@
-# Project Instructions for AI Agents
+# CLAUDE.md
 
-This file provides instructions and context for AI coding agents working on this project.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
 ## Beads Issue Tracker
@@ -58,23 +58,51 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 <!-- END BEADS INTEGRATION -->
 
 
+## Project status
+
+Pre-implementation. **`docs/spec.md` is the full contract for this project — read it before writing any code.** There is no `Cargo.toml`/`src/` yet; the next work is Milestone 1 (window + wgpu clear color + fixed-timestep loop skeleton — see spec's Milestones section).
+
 ## Build & Test
 
-_Add your build and test commands here_
+Rust 2021, stable toolchain (managed by `mise.toml`). Once the crate exists:
 
 ```bash
-# Example:
-# npm install
-# npm test
+cargo run --release                          # launch the game
+cargo test                                   # headless unit tests (src/game.rs) — no GPU needed
+cargo clippy --all-targets -- -D warnings    # must be clean, no exceptions
+cargo fmt                                    # must be clean
 ```
 
-## Architecture Overview
+`prek` (config in `.pre-commit-config.yaml`) runs trailing-whitespace/EOF/YAML/large-file checks; `prek install` to activate the git hook. CI is fmt + clippy + test on ubuntu-latest only — no windowed/GPU run is needed or expected.
 
-_Add a brief overview of your project architecture_
+## Architecture (per docs/spec.md — technology choices are decided, not up for relitigation)
 
-## Conventions & Patterns
+- **Rendering**: `wgpu`, one instanced-quad pipeline, every entity (paddle, ball, bricks, walls, HUD) is a quad instance, target one-or-two draw calls per frame. No engine (no bevy/ggez/macroquad) — the point is a small, legible codebase.
+- **Windowing/input**: `winit`. **Timing**: fixed-timestep simulation at 120 Hz, decoupled from vsync, with render-side interpolation between ticks.
+- **Text**: `glyphon` for the score/lives/level HUD.
+- **Audio**: none in v1 — `events.rs` exists specifically so a future audio layer can subscribe to `GameEvent`s without touching simulation code.
+- Dependency budget is fixed: wgpu, winit, glyphon, bytemuck, rand. Anything beyond that needs a code comment justifying it.
 
-_Add your project-specific conventions here_
+Module boundaries (the strict separation is the architectural point — don't blur it):
+- `src/main.rs` — window/event loop wiring only.
+- `src/game.rs` — pure simulation (`struct Game`, `fn tick(&mut self, input: &Input, dt_fixed)`). No wgpu/winit/I/O types here; this is what keeps gameplay logic unit-testable headless.
+- `src/render.rs` — wgpu setup + the instanced-quad pipeline.
+- `src/levels.rs` — level grids as const `&[&str]` data (`.` empty, `1` normal, `2` armored, `X` indestructible). Adding a level must require touching only this file.
+- `src/events.rs` — `enum GameEvent { BrickDestroyed, BallLost, ... }` emitted by the simulation each tick; render (and later audio) consume it.
+- Game states are an explicit enum-driven machine: `Menu → Playing ⇄ Paused → GameOver/Victory`. No ad-hoc booleans for state.
+
+## Gameplay contract highlights (full detail in docs/spec.md)
+
+- Fixed logical playfield 800×600; window resize scales/letterboxes, never changes physics.
+- Ball exit angle is a linear map from paddle-hit-offset to 30°–150°, clamped away from 90°±5° (no perfectly vertical trajectories); speed +4% per paddle hit, capped at 700 px/s.
+- Collision is AABB-vs-circle resolved against the nearest face; tunneling at max ball speed is prevented by substepping the tick — this needs a property-style test (random angles at 700 px/s never cross a 22 px brick uncaught), not just an implementation.
+- Exactly three power-ups: Widen (paddle ×1.5, 15s, timers refresh not stack-add), Slow (ball ×0.7 once, floored at launch speed), Multiball (2 extra balls; life lost only when the *last* ball drops). Do not add a fourth without updating the spec first.
+
+## Conventions
+
+- Conventional Commits (`cog.toml` / Cocogitto tracks these for changelog generation).
+- Commit after each milestone in docs/spec.md, in order — don't jump ahead or batch milestones into one commit.
+- The spec explicitly says: ask before deviating from it.
 
 <!-- pact:begin -->
 ## pact coordination protocol
