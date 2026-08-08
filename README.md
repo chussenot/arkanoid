@@ -3,6 +3,8 @@
 A single-player Arkanoid/Breakout clone in Rust, rendered natively with
 `wgpu`. See [`docs/spec.md`](docs/spec.md) for the full design contract.
 
+![alt text](image.png)
+
 ## Running
 
 ```bash
