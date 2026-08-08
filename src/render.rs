@@ -19,6 +19,7 @@ use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
+use crate::events::PowerUpKind;
 use crate::game::{Ball, Brick, Game, GameState, Paddle, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH};
 use crate::levels::BrickKind;
 
@@ -85,6 +86,18 @@ const MAX_BRICKS: usize = 14 * 8;
 /// just bounds the instance buffer.
 const MAX_LIFE_ICONS: usize = 10;
 
+/// Defensive caps on `Game::extra_balls`/`Game::powerups` for sizing the
+/// instance buffer -- `game.rs` doesn't hard-cap either (Multiball can be
+/// caught repeatedly, several bricks can drop a powerup in the same tick),
+/// so these just bound a pathological frame rather than reflect a real
+/// gameplay limit; `.take(N)` at the draw site is the enforcement.
+const MAX_EXTRA_BALLS: usize = 16;
+const MAX_POWERUPS: usize = 16;
+
+/// Falling power-up capsules are square, smaller than a brick but bigger
+/// than the ball -- big enough to read as "catch me" at a glance.
+const POWERUP_HALF_SIZE: f32 = 9.0;
+
 /// Quads in the ball's fading trail (spec: "a 4-quad fading trail").
 const TRAIL_LEN: usize = 4;
 
@@ -100,10 +113,31 @@ const MAX_DESTROY_GHOSTS: usize = 8;
 /// its worst-case destroy-ghosts), the dark scrim quad drawn behind
 /// Menu/Paused/GameOver/Victory overlays, and the lives-icon row. Sized
 /// once at the ceiling rather than resized per frame.
-const MAX_QUADS: usize = 2 + TRAIL_LEN + MAX_BRICKS + MAX_DESTROY_GHOSTS + 1 + MAX_LIFE_ICONS;
+const MAX_QUADS: usize = 2
+    + TRAIL_LEN
+    + MAX_BRICKS
+    + MAX_DESTROY_GHOSTS
+    + 1
+    + MAX_LIFE_ICONS
+    + MAX_EXTRA_BALLS
+    + MAX_POWERUPS;
 
 const PADDLE_COLOR: [f32; 4] = [0.80, 0.85, 0.95, 1.0];
 const BALL_COLOR: [f32; 4] = [1.0, 0.78, 0.2, 1.0];
+
+const POWERUP_WIDEN_COLOR: [f32; 4] = [0.35, 0.85, 0.40, 1.0];
+const POWERUP_SLOW_COLOR: [f32; 4] = [0.35, 0.55, 0.95, 1.0];
+const POWERUP_MULTIBALL_COLOR: [f32; 4] = [0.80, 0.35, 0.90, 1.0];
+
+/// One distinct color per `PowerUpKind` so a falling capsule reads as
+/// "which power-up" at a glance, no icon/text needed.
+fn powerup_color(kind: PowerUpKind) -> [f32; 4] {
+    match kind {
+        PowerUpKind::Widen => POWERUP_WIDEN_COLOR,
+        PowerUpKind::Slow => POWERUP_SLOW_COLOR,
+        PowerUpKind::Multiball => POWERUP_MULTIBALL_COLOR,
+    }
+}
 
 const NORMAL_BRICK_COLOR: [f32; 4] = [0.85, 0.25, 0.25, 1.0];
 /// Armored, undamaged (2 hits left).
@@ -685,7 +719,13 @@ impl Renderer {
         self.prev_bricks.extend_from_slice(&curr.bricks);
 
         let mut instances = Vec::with_capacity(
-            2 + TRAIL_LEN + curr.bricks.len() + destroyed_ghosts.len() + 1 + MAX_LIFE_ICONS,
+            2 + TRAIL_LEN
+                + curr.bricks.len()
+                + destroyed_ghosts.len()
+                + 1
+                + MAX_LIFE_ICONS
+                + curr.extra_balls.len().min(MAX_EXTRA_BALLS)
+                + curr.powerups.len().min(MAX_POWERUPS),
         );
         instances.push(QuadInstance::new(
             shaken(drawn.paddle.x, drawn.paddle.y),
@@ -744,6 +784,28 @@ impl Renderer {
                 shaken(ghost.x, ghost.y),
                 [ghost.width / 2.0, ghost.height / 2.0],
                 HIT_FLASH_COLOR,
+            )
+        }));
+
+        // Multiball's additional balls: same look as the main ball, no
+        // trail/interpolation (they're read straight off `curr`, same
+        // simplification as bricks -- the main ball already carries the
+        // interpolation/trail juice, and these are secondary balls that
+        // only exist for a fraction of a run).
+        instances.extend(curr.extra_balls.iter().take(MAX_EXTRA_BALLS).map(|ball| {
+            QuadInstance::new(
+                shaken(ball.x, ball.y),
+                [ball.radius, ball.radius],
+                BALL_COLOR,
+            )
+        }));
+
+        // Falling power-up capsules, colored by kind (see `powerup_color`).
+        instances.extend(curr.powerups.iter().take(MAX_POWERUPS).map(|powerup| {
+            QuadInstance::new(
+                shaken(powerup.x, powerup.y),
+                [POWERUP_HALF_SIZE, POWERUP_HALF_SIZE],
+                powerup_color(powerup.kind),
             )
         }));
 
@@ -1076,6 +1138,16 @@ mod tests {
         assert_ne!(normal, armored);
         assert_ne!(normal, indestructible);
         assert_ne!(armored, indestructible);
+    }
+
+    #[test]
+    fn each_powerup_kind_gets_its_own_distinct_color() {
+        let widen = powerup_color(PowerUpKind::Widen);
+        let slow = powerup_color(PowerUpKind::Slow);
+        let multiball = powerup_color(PowerUpKind::Multiball);
+        assert_ne!(widen, slow);
+        assert_ne!(widen, multiball);
+        assert_ne!(slow, multiball);
     }
 
     #[test]
