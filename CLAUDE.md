@@ -64,13 +64,16 @@ Pre-implementation. **`docs/spec.md` is the full contract for this project — r
 
 ## Build & Test
 
-Rust 2021, stable toolchain (managed by `mise.toml`). Once the crate exists:
+Rust 2021, stable toolchain (managed by `mise.toml`). `mise.toml` also defines tasks wrapping these:
 
 ```bash
-cargo run --release                          # launch the game
-cargo test                                   # headless unit tests (src/game.rs) — no GPU needed
-cargo clippy --all-targets -- -D warnings    # must be clean, no exceptions
-cargo fmt                                    # must be clean
+mise run run                                 # == cargo run --release (launch the game)
+mise run build                               # == cargo build
+mise run test                                # == cargo test (headless, src/game.rs — no GPU needed)
+mise run clippy                              # == cargo clippy --all-targets -- -D warnings — must be clean
+mise run fmt                                 # == cargo fmt
+mise run fmt-check                           # == cargo fmt --check
+mise run ci                                  # fmt-check + clippy + test — the full pre-commit/CI gate
 ```
 
 `prek` (config in `.pre-commit-config.yaml`) runs trailing-whitespace/EOF/YAML/large-file checks; `prek install` to activate the git hook. CI is fmt + clippy + test on ubuntu-latest only — no windowed/GPU run is needed or expected.

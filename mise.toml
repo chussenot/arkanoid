@@ -1,3 +1,31 @@
 [tools]
 prek = "latest"
 rust = "latest"
+
+[tasks.build]
+description = "Build the game"
+run = "cargo build"
+
+[tasks.run]
+description = "Launch the game"
+run = "cargo run --release"
+
+[tasks.test]
+description = "Run headless unit tests"
+run = "cargo test"
+
+[tasks.fmt]
+description = "Format the code"
+run = "cargo fmt"
+
+[tasks."fmt-check"]
+description = "Check formatting without writing changes"
+run = "cargo fmt --check"
+
+[tasks.clippy]
+description = "Lint (warnings are errors)"
+run = "cargo clippy --all-targets -- -D warnings"
+
+[tasks.ci]
+description = "Full quality gate: fmt-check, clippy, test"
+depends = ["fmt-check", "clippy", "test"]
