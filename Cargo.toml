@@ -9,3 +9,11 @@ glyphon = "0.12.0"
 rand = "0.10.2"
 wgpu = "30.0.0"
 winit = "0.30.13"
+# src/render3d/ (arkanoid-v2-c1) needs a view/projection matrix and
+# perspective divide for its cinematic camera. glam is the community-
+# standard math crate for exactly this (see docs/spec.md's "no hand-rolled
+# 4x4 math" framing) and its `Mat4::perspective_rh` already targets wgpu's
+# 0..1 clip-space depth range, unlike hand-rolling the OpenGL -1..1
+# convention wrong. Used only by render3d/ -- the classic 2D renderer has
+# no matrices to justify pulling this in for itself.
+glam = "0.33.3"

@@ -5,12 +5,13 @@ mod events;
 mod game;
 mod levels;
 mod render;
+mod render3d;
 
 use std::sync::Arc;
 use std::time::Instant;
 
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
+use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -18,6 +19,41 @@ use winit::window::{Window, WindowId};
 
 use game::{Game, Input};
 use render::{RenderState, Renderer};
+
+/// Dispatches between the classic 2D quad renderer and the sibling 3D
+/// perspective renderer per `--renderer` (see `cli.rs`). A plain enum
+/// rather than a trait object: exactly two implementations exist, and this
+/// is the one place that ever needs to pick between them.
+enum AnyRenderer {
+    // Boxed: both renderers hold sizeable wgpu/glyphon state inline, and an
+    // enum's size is its largest variant's -- boxing avoids every `App`
+    // (there's only ever one) paying for whichever variant it didn't pick.
+    Classic(Box<Renderer>),
+    ThreeD(Box<render3d::Renderer3D>),
+}
+
+impl AnyRenderer {
+    fn new(kind: cli::RendererKind, window: Arc<Window>) -> Self {
+        match kind {
+            cli::RendererKind::Classic => Self::Classic(Box::new(Renderer::new(window))),
+            cli::RendererKind::ThreeD => Self::ThreeD(Box::new(render3d::Renderer3D::new(window))),
+        }
+    }
+
+    fn resize(&mut self, size: PhysicalSize<u32>) {
+        match self {
+            Self::Classic(r) => r.resize(size),
+            Self::ThreeD(r) => r.resize(size),
+        }
+    }
+
+    fn render(&mut self, clear_color: wgpu::Color, prev: &RenderState, curr: &Game, alpha: f32) {
+        match self {
+            Self::Classic(r) => r.render(clear_color, prev, curr, alpha),
+            Self::ThreeD(r) => r.render(clear_color, prev, curr, alpha),
+        }
+    }
+}
 
 /// Fixed logical playfield (spec: 800x600). Scaling/letterboxing a resized
 /// window onto this is a later milestone -- for now the window just opens at
@@ -47,7 +83,10 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color {
 /// the fixed-timestep accumulator driving `Game::tick`.
 struct App {
     window: Option<Arc<Window>>,
-    renderer: Option<Renderer>,
+    renderer: Option<AnyRenderer>,
+    /// Which renderer `resumed()` constructs, set once from `--renderer`
+    /// before the event loop starts running (see `main()`).
+    renderer_kind: cli::RendererKind,
     game: Game,
     /// Held-key state, updated by `WindowEvent::KeyboardInput` and read once
     /// per tick -- persists across frames since a key stays down across many
@@ -73,6 +112,7 @@ impl Default for App {
         Self {
             window: None,
             renderer: None,
+            renderer_kind: cli::RendererKind::default(),
             render_prev: RenderState::from(&game),
             game,
             input: Input::default(),
@@ -102,7 +142,7 @@ impl ApplicationHandler for App {
                 .expect("failed to create window"),
         );
 
-        self.renderer = Some(Renderer::new(Arc::clone(&window)));
+        self.renderer = Some(AnyRenderer::new(self.renderer_kind, Arc::clone(&window)));
         self.window = Some(window);
         self.last_update = Instant::now();
 
@@ -212,10 +252,12 @@ impl App {
 }
 
 fn main() {
-    // Unused until a v2 workstream adds its first flag -- see cli.rs.
-    let _args = cli::parse();
+    let args = cli::parse();
     let event_loop = EventLoop::new().expect("failed to create event loop");
-    let mut app = App::default();
+    let mut app = App {
+        renderer_kind: args.renderer,
+        ..App::default()
+    };
     event_loop
         .run_app(&mut app)
         .expect("event loop terminated with an error");
