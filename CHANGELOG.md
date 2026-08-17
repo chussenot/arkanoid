@@ -2,6 +2,29 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## 0.2.0 - 2026-08-17
+#### Bug Fixes
+- Remove the placeholder in the README - (0f2169d) - Clement HUSSENOT-DESENONGES
+#### Documentation
+- **(levels)** document the LBreakoutHD levelset format subset - (c59f1d0) - Clement HUSSENOT-DESENONGES
+- **(readme)** explain thousands-of-levels fetch and GPL/MIT rationale - (237a6b9) - Clement HUSSENOT-DESENONGES
+#### Features
+- **(cli)** add --levelset flag wiring and mod levelset; - (d2a7cf5) - Clement HUSSENOT-DESENONGES
+- **(levels)** wire --levelset into Game's level progression - (fd223c0) - Clement HUSSENOT-DESENONGES
+- **(levels)** level-set progression + RANDOM10 mode - (0d9fac6) - Clement HUSSENOT-DESENONGES
+- **(levels)** src/levelset.rs loader for LBreakoutHD .lbl levelsets - (8e7acd8) - Clement HUSSENOT-DESENONGES
+- **(levels)** add LBreakoutHD levelset fetch script - (4e9a587) - Clement HUSSENOT-DESENONGES
+- **(v2)** deterministic-replay foundation + CLI/fleet conventions - (546ba69) - Clement HUSSENOT-DESENONGES
+#### Miscellaneous Chores
+- **(pact)** sync the coordination protocol block - (6695156) - Clement HUSSENOT-DESENONGES
+- Add the pact and beads files - (2c8b3d1) - Clement HUSSENOT-DESENONGES
+- Pact sync - (8013a6d) - Clement HUSSENOT-DESENONGES
+- Add a screenshot - (1d757cf) - Clement HUSSENOT-DESENONGES
+#### Tests
+- **(levels)** add homemade fixture levelset + loader/scripted-clear tests - (6ac32f8) - Clement HUSSENOT-DESENONGES
+
+- - -
+
 ## 0.1.0 - 2026-08-08
 #### Documentation
 - add game design spec and pact merge strategy - (99770c6) - Clement HUSSENOT-DESENONGES
