@@ -1,0 +1,24 @@
+Third-party texture asset attribution
+======================================
+
+assets/pack/ (gitignored if under the repo root; populated by
+scripts/fetch-assets.sh) is a 6-sprite subset of Kenney's Puzzle Pack:
+
+  Source:  https://kenney.nl/assets/puzzle-pack-1
+  License: CC0 1.0 Universal (public domain) -- see the pack's own
+           License.txt for the full text.
+
+This repo is MIT-licensed; CC0 content may be redistributed freely,
+but the fetched pack is still left gitignored (like this project's
+other fetched-asset script, scripts/fetch-levelsets.sh) rather than
+committed as binary blobs. Crediting Kenney here isn't required by
+CC0 -- it's just good practice.
+
+Sprites used (Kenney filename -> this game's sprite file):
+
+  - PNG/Default/paddleBlu.png -> paddle.png
+  - PNG/Default/ballBlue.png -> ball.png
+  - PNG/Default/element_red_rectangle.png -> brick_normal.png
+  - PNG/Default/element_blue_rectangle_glossy.png -> brick_armored_intact.png
+  - PNG/Default/element_yellow_rectangle.png -> brick_armored_hit.png
+  - PNG/Default/element_grey_square.png -> brick_indestructible.png

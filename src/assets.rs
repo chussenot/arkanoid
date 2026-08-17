@@ -36,7 +36,7 @@
 //!   texturing the same way b5 does for the classic renderer.
 #![allow(dead_code)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Where texture pixels come from. `Procedural` is the default and can
 /// never fail; `Pack` names a directory a loader (b3) reads sprite images
@@ -65,11 +65,28 @@ impl TextureSource {
     pub fn load(&self) -> Atlas {
         match self {
             TextureSource::Procedural => Atlas::procedural_placeholder(),
-            // b3 replaces this arm with: try to decode `path` into an
-            // `Atlas` via the `image` crate; on any I/O/decode error,
-            // `eprintln!` a warning and fall back to exactly this.
-            TextureSource::Pack(_path) => Atlas::procedural_placeholder(),
+            TextureSource::Pack(path) => Atlas::load_pack(path).unwrap_or_else(|err| {
+                eprintln!(
+                    "warning: failed to load asset pack from {} ({err}) -- falling back to procedural textures",
+                    path.display()
+                );
+                Atlas::procedural_placeholder()
+            }),
         }
+    }
+}
+
+/// Filename a pack directory must provide for `id`, exhaustively matched
+/// so adding a `SpriteId` without adding its filename here is a compile
+/// error rather than a silent missing-sprite fallback at runtime.
+fn pack_filename(id: SpriteId) -> &'static str {
+    match id {
+        SpriteId::Paddle => "paddle.png",
+        SpriteId::Ball => "ball.png",
+        SpriteId::BrickNormal => "brick_normal.png",
+        SpriteId::BrickArmoredIntact => "brick_armored_intact.png",
+        SpriteId::BrickArmoredHit => "brick_armored_hit.png",
+        SpriteId::BrickIndestructible => "brick_indestructible.png",
     }
 }
 
@@ -231,6 +248,35 @@ impl Atlas {
             atlas.set_sprite(id, &beveled_brick_panel(id, base));
         }
         atlas
+    }
+
+    /// Decodes one PNG per [`SpriteId`] out of `dir` (see [`pack_filename`]
+    /// for the expected name) into a fresh atlas with the same grid layout
+    /// [`procedural_placeholder`](Self::procedural_placeholder) uses.
+    /// A source image that isn't exactly [`CELL_SIZE`] square is resized
+    /// to fit -- `scripts/fetch-assets.sh`'s converted pack already is, but
+    /// a hand-edited pack directory shouldn't have to be pixel-perfect.
+    ///
+    /// All-or-nothing: the first missing file or decode error aborts the
+    /// whole load ([`TextureSource::load`] catches it and falls back to
+    /// the full procedural atlas) rather than mixing some real sprites
+    /// with some placeholders, which would be a more confusing failure
+    /// mode than either atlas on its own.
+    fn load_pack(dir: &Path) -> image::ImageResult<Atlas> {
+        let (width, height) = Self::grid_size();
+        let mut atlas = Atlas {
+            width,
+            height,
+            pixels: vec![0; (width * height * 4) as usize],
+        };
+        for id in SpriteId::ALL {
+            let path = dir.join(pack_filename(id));
+            let sprite = image::open(&path)?
+                .resize_exact(CELL_SIZE, CELL_SIZE, image::imageops::FilterType::Triangle)
+                .to_rgba8();
+            atlas.set_sprite(id, sprite.as_raw());
+        }
+        Ok(atlas)
     }
 }
 
@@ -585,5 +631,82 @@ mod tests {
             255,
             "cell center should be fully inside the ball"
         );
+    }
+
+    /// A fresh, unique scratch directory under the OS temp dir -- these
+    /// pack-loader tests are the one place in this module that touches
+    /// the filesystem, so each test gets its own directory (PID + an
+    /// atomic counter) rather than risking two tests, or two parallel
+    /// test runs, colliding on one path.
+    fn make_temp_dir(label: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "arkanoid-assets-test-{}-{label}-{n}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("failed to create test scratch dir");
+        dir
+    }
+
+    /// A pack directory with a correctly named PNG (deliberately *not*
+    /// `CELL_SIZE` square, to exercise `load_pack`'s resize path) for
+    /// every `SpriteId` should decode into an atlas carrying that exact
+    /// pixel, proving the pack path is actually wired up end to end
+    /// rather than silently falling back to procedural pixels.
+    #[test]
+    fn pack_loads_a_distinct_pixel_per_sprite_from_disk() {
+        let dir = make_temp_dir("valid");
+        for id in SpriteId::ALL {
+            let pixel = image::Rgba([id as u8 * 10, 20, 30, 255]);
+            image::RgbaImage::from_pixel(10, 10, pixel)
+                .save(dir.join(pack_filename(id)))
+                .expect("failed to write test sprite PNG");
+        }
+
+        let atlas = TextureSource::Pack(dir.clone()).load();
+        for id in SpriteId::ALL {
+            let (x, y, _, _) = Atlas::cell_rect(id);
+            let idx = ((y * atlas.width + x) * 4) as usize;
+            assert_eq!(
+                atlas.pixels[idx..idx + 4],
+                [id as u8 * 10, 20, 30, 255],
+                "sprite {id:?} did not load from its pack file"
+            );
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// This bead's headline acceptance criterion: a directory that simply
+    /// doesn't exist must warn (not tested here -- `eprintln!` isn't
+    /// observable from a unit test) and fall back to byte-identical
+    /// procedural pixels, never panic.
+    #[test]
+    fn pack_falls_back_to_procedural_on_missing_directory() {
+        let atlas =
+            TextureSource::Pack(PathBuf::from("/nonexistent/definitely-not-a-real-pack-dir"))
+                .load();
+        let procedural = TextureSource::Procedural.load();
+        assert_eq!(atlas.pixels, procedural.pixels);
+    }
+
+    /// Same fallback contract, but for a pack directory that exists and
+    /// has the right filenames, just not valid image data in them --
+    /// the "malformed pack" half of this bead's acceptance criterion.
+    #[test]
+    fn pack_falls_back_to_procedural_on_malformed_sprite() {
+        let dir = make_temp_dir("malformed");
+        for id in SpriteId::ALL {
+            std::fs::write(dir.join(pack_filename(id)), b"not a png file")
+                .expect("failed to write malformed test file");
+        }
+
+        let atlas = TextureSource::Pack(dir.clone()).load();
+        let procedural = TextureSource::Procedural.load();
+        assert_eq!(atlas.pixels, procedural.pixels);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

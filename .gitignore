@@ -14,3 +14,8 @@
 # Added by cargo
 
 /target
+
+# Kenney puzzle pack fetched by scripts/fetch-assets.sh: CC0, but left
+# gitignored like this repo's other fetched asset script rather than
+# committed as binary blobs. See ATTRIBUTION for source/license.
+/assets/pack/
