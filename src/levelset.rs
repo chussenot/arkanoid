@@ -24,9 +24,13 @@
 //! `source:line: message` warning onto the returned `LevelSet`, satisfying
 //! "warn with file:line, never panic or silently misrender".
 //!
-//! ponytail: not wired into `main.rs` yet (`mod levelset;` + the
-//! `--levelset` CLI flag are arkanoid-v2-a4's job, tests+fixture are
-//! arkanoid-v2-a6's) -- `#[allow(dead_code)]` until one of those lands.
+//! Wired into `main.rs` via `mod levelset;` and `--levelset <path>`
+//! (arkanoid-v2-a4), which only reads `LevelSet.{levels,warnings}` to log
+//! what loaded -- it doesn't yet feed a loaded set into `Game`'s level
+//! progression (arkanoid-v2-a5's job, since that touches `game.rs`).
+//! Until then `ExternalLevel`'s/`ExternalBrickSpawn`'s individual fields
+//! are read only by this module's own tests, hence the module-wide
+//! `#[allow(dead_code)]` still standing.
 #![allow(dead_code)]
 
 use std::fs;
