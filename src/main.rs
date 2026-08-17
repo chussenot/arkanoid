@@ -1,5 +1,6 @@
 //! Window/event loop wiring only (see docs/spec.md, Architecture section).
 
+mod assets;
 mod cli;
 mod events;
 mod game;
