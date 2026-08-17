@@ -107,7 +107,7 @@ Module boundaries (the strict separation is the architectural point — don't bl
 - Commit after each milestone in docs/spec.md, in order — don't jump ahead or batch milestones into one commit.
 - The spec explicitly says: ask before deviating from it.
 
-<!-- pact:begin -->
+<!-- pact:begin hash:8546f7af -->
 ## pact coordination protocol
 
 Claude Code loads this file, not `AGENTS.md`, so the protocol is imported
