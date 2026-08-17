@@ -61,11 +61,14 @@ const MAX_BRICKS: usize = 14 * 8;
 const MAX_POWERUPS: usize = 16;
 const MAX_EXTRA_BALLS: usize = 16;
 const WALL_COUNT: usize = 3;
-/// Upper bound on simultaneous destroy-tumble ghosts (see `TumbleGhost`) --
-/// mirrors `render.rs`'s own `MAX_DESTROY_GHOSTS` cap and reasoning: at most
-/// one brick dies per ball per substep, so this is generous headroom for a
-/// worst-case multiball/catch-up-ticks frame, not a real gameplay limit.
-const MAX_DESTROY_GHOSTS: usize = 8;
+/// Upper bound on simultaneous destroy-tumble ghosts (see `TumbleGhost`).
+/// Raised from `render.rs`'s original 8 to this bead's (arkanoid-v2-c5)
+/// named stress scenario -- "full 14x8 board + multiball + 20 tumbling
+/// corpses" -- since a multiball fleet catching up `MAX_TICKS_PER_FRAME`
+/// (10) queued ticks in one frame can plausibly destroy well past 8 bricks
+/// before a single render(); this is still headroom for a worst case, not
+/// a real gameplay limit.
+const MAX_DESTROY_GHOSTS: usize = 20;
 /// Fading sphere instances behind the ball (see `push_trail`) -- matches
 /// `render.rs`'s own `TRAIL_LEN` (spec: "a 4-quad fading trail").
 const TRAIL_LEN: usize = 4;
@@ -1242,17 +1245,27 @@ impl Renderer3D {
         self.depth_view = depth_view;
     }
 
-    /// Clears the surface and depth buffer, then draws the paddle, ball(s),
+    /// Clears `view` and the depth buffer, then draws the paddle, ball(s),
     /// bricks, falling power-ups, and the three boundary walls as instances
     /// of one shared pipeline in two draw calls (cubes, then the sphere
-    /// mesh). `prev`/`curr`/`alpha` are the same interpolation inputs
-    /// `render::Renderer::render` takes -- see `interpolate`.
-    pub fn render(
+    /// mesh), submitting the result to the queue. `prev`/`curr`/`alpha` are
+    /// the same interpolation inputs `render::Renderer::render` takes --
+    /// see `interpolate`.
+    ///
+    /// Split out of `render()` (which draws to the real swapchain surface)
+    /// so `render_offscreen_for_bench` (arkanoid-v2-c5's perf harness, see
+    /// `src/bin/bench_render3d.rs`) can drive the exact same drawing code
+    /// against a plain offscreen texture instead -- measuring real render
+    /// cost without a swapchain/compositor in the loop, whose present-mode
+    /// pacing (vsync, unfocused-window throttling, etc.) has nothing to do
+    /// with this renderer's own performance.
+    fn render_into(
         &mut self,
         clear_color: wgpu::Color,
         prev: &RenderState,
         curr: &Game,
         alpha: f32,
+        view: &wgpu::TextureView,
     ) {
         let drawn = interpolate(prev, &RenderState::from(curr), alpha);
 
@@ -1446,20 +1459,6 @@ impl Renderer3D {
             bytemuck::cast_slice(&sphere_instances),
         );
 
-        let surface_texture = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(t)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
-            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                self.surface.configure(&self.device, &self.config);
-                return;
-            }
-            wgpu::CurrentSurfaceTexture::Timeout
-            | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Validation => return,
-        };
-        let view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1469,7 +1468,7 @@ impl Renderer3D {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("render3d pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -1515,7 +1514,82 @@ impl Renderer3D {
             );
         }
         self.queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    /// Acquires the swapchain's current frame and draws into it via
+    /// `render_into`, then presents. This is the real, production render
+    /// path -- see `render_into`'s doc comment for why the actual drawing
+    /// is factored out of this method.
+    pub fn render(
+        &mut self,
+        clear_color: wgpu::Color,
+        prev: &RenderState,
+        curr: &Game,
+        alpha: f32,
+    ) {
+        let surface_texture = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(t)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                self.surface.configure(&self.device, &self.config);
+                return;
+            }
+            wgpu::CurrentSurfaceTexture::Timeout
+            | wgpu::CurrentSurfaceTexture::Occluded
+            | wgpu::CurrentSurfaceTexture::Validation => return,
+        };
+        let view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.render_into(clear_color, prev, curr, alpha, &view);
         self.queue.present(surface_texture);
+    }
+
+    /// Same drawing work as `render`, but into a throwaway offscreen
+    /// texture instead of the swapchain, and blocking (via `device.poll`)
+    /// until the GPU has actually finished the frame before returning.
+    ///
+    /// Exists for `src/bin/bench_render3d.rs` (arkanoid-v2-c5's "measure
+    /// before optimizing" perf harness): a swapchain's present-mode pacing
+    /// (vsync, or a desktop compositor throttling an unfocused/off-screen
+    /// window to as little as 1 fps to save power -- both observed while
+    /// building this bench) has nothing to do with this renderer's own
+    /// per-frame cost, so timing real GPU+CPU work needs a path that never
+    /// waits on a compositor at all.
+    ///
+    /// `#[allow(dead_code)]`: only that sibling `[[bin]]` target ever calls
+    /// this -- the main `arkanoid` binary's own dead-code analysis has no
+    /// visibility into a separate binary crate's call sites.
+    #[allow(dead_code)]
+    pub fn render_offscreen_for_bench(
+        &mut self,
+        clear_color: wgpu::Color,
+        prev: &RenderState,
+        curr: &Game,
+        alpha: f32,
+    ) {
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("render3d offscreen bench target"),
+            size: wgpu::Extent3d {
+                width: self.config.width.max(1),
+                height: self.config.height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.render_into(clear_color, prev, curr, alpha, &view);
+        // Block until this frame's submitted work is actually done, so the
+        // caller's wall-clock timing around this call reflects real GPU
+        // completion time, not just how fast the CPU could enqueue it.
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("device poll failed");
     }
 }
 
@@ -1915,5 +1989,143 @@ mod tests {
         let mut ghosts = Vec::new();
         ingest_brick_destroyed_events(&mut ghosts, &events);
         assert_eq!(ghosts.len(), MAX_DESTROY_GHOSTS);
+    }
+
+    // -- camera/instance-buffer math properties (arkanoid-v2-c5) ---------
+    //
+    // This bead's acceptance criteria calls for exactly these two headless
+    // (no-GPU) properties in addition to the tumble determinism test above:
+    // a view/projection matrix round-trip, and instance buffer layout.
+
+    use glam::Mat4;
+
+    #[test]
+    fn camera_view_proj_round_trips_world_points_through_its_inverse() {
+        let aspect = 800.0 / 600.0;
+        let vp = Mat4::from_cols_array(&camera_view_proj(aspect, CAMERA_EYE, CAMERA_TARGET));
+        let inv = vp.inverse();
+
+        // A spread of points across the playfield's ground plane (world-Y
+        // "up" stays 0) plus one lifted to wall height -- project to clip
+        // space, perspective-divide to NDC, then unproject back through
+        // `inv` and confirm the same world point comes out.
+        let points = [
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(-380.0, 0.0, -280.0),
+            Vec3::new(380.0, 0.0, 280.0),
+            Vec3::new(120.0, WALL_HEIGHT, -50.0),
+        ];
+        for p in points {
+            let clip = vp * p.extend(1.0);
+            assert!(clip.w > 0.0, "point must be in front of the camera");
+            let ndc = clip.truncate() / clip.w;
+            assert!(
+                (0.0..=1.0).contains(&ndc.z),
+                "directx-convention NDC z must land in [0, 1], got {}",
+                ndc.z
+            );
+
+            // Unproject: NDC -> clip (undo the perspective divide) -> world.
+            let clip_back = ndc.extend(1.0) * clip.w;
+            let world_back = inv * clip_back;
+            let world_back = world_back.truncate() / world_back.w;
+            // Tolerance is sub-pixel (world units == logical pixels here)
+            // but well above the f32 round-off this matrix inversion picks
+            // up at ~900-2000 unit camera distances -- tight enough to
+            // catch a real bug (wrong handedness, missing `w` divide, wrong
+            // FOV convention) while not flaking on float noise.
+            assert!(
+                (world_back - p).length() < 0.1,
+                "round trip drifted: {p:?} -> {world_back:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn camera_view_proj_moves_only_off_axis_points_when_aspect_changes() {
+        // Resizing the window changes `aspect` but never the fixed eye/
+        // target/FOV (see `camera_view_proj`'s doc comment) -- a point
+        // directly on the camera's view axis must land at the same NDC no
+        // matter the aspect ratio; only an off-axis point's NDC x should
+        // move, since aspect only rescales the horizontal FOV.
+        let on_axis = CAMERA_TARGET;
+        let off_axis = CAMERA_TARGET + Vec3::new(200.0, 0.0, 0.0);
+        let ndc = |aspect: f32, p: Vec3| {
+            let vp = Mat4::from_cols_array(&camera_view_proj(aspect, CAMERA_EYE, CAMERA_TARGET));
+            let clip = vp * p.extend(1.0);
+            clip.truncate() / clip.w
+        };
+
+        let on_axis_narrow = ndc(1.0, on_axis);
+        let on_axis_wide = ndc(2.0, on_axis);
+        assert!((on_axis_narrow.x - on_axis_wide.x).abs() < 1e-5);
+        assert!((on_axis_narrow.y - on_axis_wide.y).abs() < 1e-5);
+
+        let off_axis_narrow = ndc(1.0, off_axis);
+        let off_axis_wide = ndc(2.0, off_axis);
+        assert!(
+            (off_axis_narrow.x - off_axis_wide.x).abs() > 1e-3,
+            "a wider aspect ratio must change an off-axis point's NDC x"
+        );
+    }
+
+    #[test]
+    fn instance3d_field_offsets_match_the_wgpu_vertex_attr_array() {
+        // `INSTANCE_ATTRS` is built by `wgpu::vertex_attr_array!`, which
+        // derives each attribute's byte offset purely from the *order* and
+        // *format* of the entries listed -- it has no idea what
+        // `Instance3D` actually looks like. If a field were ever added,
+        // removed, or reordered without updating that macro call to match,
+        // every instance this pipeline draws would silently read the wrong
+        // bytes for that field. This pins the two together.
+        let expected: &[(u32, usize)] = &[
+            (2, std::mem::offset_of!(Instance3D, center)),
+            (3, std::mem::offset_of!(Instance3D, scale)),
+            (4, std::mem::offset_of!(Instance3D, color)),
+            (6, std::mem::offset_of!(Instance3D, uv_rect)),
+            (7, std::mem::offset_of!(Instance3D, rotation)),
+            (8, std::mem::offset_of!(Instance3D, emissive)),
+        ];
+        assert_eq!(INSTANCE_ATTRS.len(), expected.len());
+        for attr in INSTANCE_ATTRS {
+            let (_, offset) = expected
+                .iter()
+                .find(|(loc, _)| *loc == attr.shader_location)
+                .unwrap_or_else(|| {
+                    panic!("no expected offset for location {}", attr.shader_location)
+                });
+            assert_eq!(
+                attr.offset as usize, *offset,
+                "shader_location {} offset drifted from Instance3D's real field layout",
+                attr.shader_location
+            );
+        }
+        // The vertex-buffer array stride the pipeline is configured with
+        // (`size_of::<Instance3D>()`, see `Renderer3D::new`) must cover
+        // exactly the last field with no trailing padding, or instance N+1
+        // would start reading mid-struct.
+        let emissive_offset = std::mem::offset_of!(Instance3D, emissive);
+        assert_eq!(size_of::<Instance3D>(), emissive_offset + size_of::<f32>());
+    }
+
+    #[test]
+    fn vertex3d_field_offsets_match_the_wgpu_vertex_attr_array() {
+        let expected: &[(u32, usize)] = &[
+            (0, std::mem::offset_of!(Vertex3D, position)),
+            (1, std::mem::offset_of!(Vertex3D, normal)),
+            (5, std::mem::offset_of!(Vertex3D, uv)),
+        ];
+        assert_eq!(VERTEX_ATTRS.len(), expected.len());
+        for attr in VERTEX_ATTRS {
+            let (_, offset) = expected
+                .iter()
+                .find(|(loc, _)| *loc == attr.shader_location)
+                .unwrap_or_else(|| {
+                    panic!("no expected offset for location {}", attr.shader_location)
+                });
+            assert_eq!(attr.offset as usize, *offset);
+        }
+        let uv_offset = std::mem::offset_of!(Vertex3D, uv);
+        assert_eq!(size_of::<Vertex3D>(), uv_offset + size_of::<[f32; 2]>());
     }
 }
