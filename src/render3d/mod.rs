@@ -5,15 +5,13 @@
 //! ambient). Selected via `--renderer 3d` (see `cli.rs`); `render.rs` is
 //! untouched and stays the default renderer for the rest of this epic.
 //!
-//! Scope note: this bead is the pipeline foundation only. HUD text, the
-//! menu/pause/game-over/victory overlay, and the trail/flash/shake "juice"
-//! `render.rs` layers on top of its own quads are explicitly out of scope
-//! here -- see arkanoid-v2-c2 (event data for juice), arkanoid-v2-c3
-//! (juice itself), and arkanoid-v2-c4 (brick texturing), which build on
-//! this module. What *is* drawn -- paddle, ball(s), bricks, falling
-//! power-ups, and three static boundary walls -- is interpolated between
-//! ticks exactly like the classic renderer, per this bead's acceptance
-//! criteria.
+//! Scope note: HUD text and the menu/pause/game-over/victory overlay are
+//! still out of scope here (a later bead's concern). What *is* drawn --
+//! paddle, ball(s), bricks, falling power-ups, and three static boundary
+//! walls -- is interpolated between ticks exactly like the classic
+//! renderer. Brick texturing (arkanoid-v2-c4) and juice (arkanoid-v2-c3:
+//! hit-flash, destroy-tumble, ball trail, screen shake, power-up spin --
+//! see the "-- juice --" section below) are both now implemented.
 //!
 //! World space: playfield x/y (pixels, y-down, per `game.rs`) map onto this
 //! renderer's ground plane as world X/Z, centered so world (0, 0, 0) is the
@@ -24,18 +22,20 @@
 
 mod atlas;
 
+use std::collections::VecDeque;
 use std::f32::consts::PI;
 use std::mem::size_of;
 use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
+use std::time::Instant;
 
 use glam::camera::rh::{proj::directx, view};
-use glam::Vec3;
+use glam::{Quat, Vec3};
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
-use crate::events::PowerUpKind;
+use crate::events::{GameEvent, PowerUpKind};
 use crate::game::{Ball, Brick, Game, Paddle, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH};
 use crate::levels::BrickKind;
 use crate::render::RenderState;
@@ -61,8 +61,17 @@ const MAX_BRICKS: usize = 14 * 8;
 const MAX_POWERUPS: usize = 16;
 const MAX_EXTRA_BALLS: usize = 16;
 const WALL_COUNT: usize = 3;
-const MAX_CUBE_INSTANCES: usize = 1 /* paddle */ + MAX_BRICKS + MAX_POWERUPS + WALL_COUNT;
-const MAX_SPHERE_INSTANCES: usize = 1 /* main ball */ + MAX_EXTRA_BALLS;
+/// Upper bound on simultaneous destroy-tumble ghosts (see `TumbleGhost`) --
+/// mirrors `render.rs`'s own `MAX_DESTROY_GHOSTS` cap and reasoning: at most
+/// one brick dies per ball per substep, so this is generous headroom for a
+/// worst-case multiball/catch-up-ticks frame, not a real gameplay limit.
+const MAX_DESTROY_GHOSTS: usize = 8;
+/// Fading sphere instances behind the ball (see `push_trail`) -- matches
+/// `render.rs`'s own `TRAIL_LEN` (spec: "a 4-quad fading trail").
+const TRAIL_LEN: usize = 4;
+const MAX_CUBE_INSTANCES: usize =
+    1 /* paddle */ + MAX_BRICKS + MAX_POWERUPS + WALL_COUNT + MAX_DESTROY_GHOSTS;
+const MAX_SPHERE_INSTANCES: usize = 1 /* main ball */ + MAX_EXTRA_BALLS + TRAIL_LEN;
 
 /// Maps a playfield-space (x right, y down, pixels) position to this
 /// renderer's world-space X/Z ground-plane coordinates.
@@ -86,13 +95,22 @@ const POWERUP_WIDEN_COLOR: [f32; 4] = [0.35, 0.85, 0.40, 1.0];
 const POWERUP_SLOW_COLOR: [f32; 4] = [0.35, 0.55, 0.95, 1.0];
 const POWERUP_MULTIBALL_COLOR: [f32; 4] = [0.80, 0.35, 0.90, 1.0];
 
-fn brick_color(brick: &Brick) -> [f32; 4] {
-    match brick.kind {
+/// Shared by `brick_color` (a standing brick) and `TumbleGhost::spawn` (a
+/// just-destroyed one, which by the time `BrickDestroyedAt` fires is
+/// already gone from `Game::bricks` -- see the module doc comment -- so it
+/// has no live `&Brick` to read a color off of, only the event's copied
+/// fields).
+fn brick_color_for(kind: BrickKind, hits_remaining: u8) -> [f32; 4] {
+    match kind {
         BrickKind::Normal => NORMAL_BRICK_COLOR,
-        BrickKind::Armored if brick.hits_remaining >= 2 => ARMORED_BRICK_COLOR,
+        BrickKind::Armored if hits_remaining >= 2 => ARMORED_BRICK_COLOR,
         BrickKind::Armored => ARMORED_BRICK_COLOR_HIT,
         BrickKind::Indestructible => INDESTRUCTIBLE_BRICK_COLOR,
     }
+}
+
+fn brick_color(brick: &Brick) -> [f32; 4] {
+    brick_color_for(brick.kind, brick.hits_remaining)
 }
 
 /// Which atlas sprite a brick's front face samples -- same kind/hits-
@@ -142,8 +160,12 @@ const FAR: f32 = 2000.0;
 /// convention's `[-1, 1]`) already targets wgpu's clip-space depth range,
 /// which is the whole reason this module reaches for glam instead of
 /// hand-rolling the matrix.
-fn camera_view_proj(aspect: f32) -> [f32; 16] {
-    let view_mat = view::look_at_mat4(CAMERA_EYE, CAMERA_TARGET, Vec3::Y);
+/// `eye`/`target` are `CAMERA_EYE`/`CAMERA_TARGET` plus this frame's screen-
+/// shake offset (arkanoid-v2-c3, see `next_shake_remaining`) -- both nudged
+/// by the same vector so the shake is a pure camera-rig translation, not a
+/// look-direction change.
+fn camera_view_proj(aspect: f32, eye: Vec3, target: Vec3) -> [f32; 16] {
+    let view_mat = view::look_at_mat4(eye, target, Vec3::Y);
     let proj = directx::perspective(FOV_Y_RADIANS, aspect, NEAR, FAR);
     (proj * view_mat).to_cols_array()
 }
@@ -171,12 +193,23 @@ struct Vertex3D {
     uv: [f32; 2],
 }
 
-/// Per-instance transform + color for one cube or sphere. Deliberately just
-/// a translation (`center`) and an axis-aligned `scale` -- no rotation --
-/// which keeps the vertex shader's normal transform exact (inverse-
-/// transpose of a diagonal scale matrix is just its reciprocal) without a
-/// full per-instance normal matrix. A future juice bead adding rotation
-/// (tumble) needs to extend this format; see the module doc comment.
+/// Identity quaternion (x, y, z, w) -- every instance that doesn't spin or
+/// tumble carries this in `Instance3D::rotation`.
+const ROTATION_IDENTITY: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
+
+/// Per-instance transform + color for one cube or sphere: a translation
+/// (`center`), axis-aligned `scale`, and now (arkanoid-v2-c3) a `rotation`
+/// quaternion -- the "extend this format" upgrade this struct's previous
+/// doc comment flagged, needed for power-up spin and the brick
+/// destroy-tumble effect (see the module doc comment's "-- juice --"
+/// section). `scale` is still applied in object space *before* `rotation`
+/// (`center + rotation * (vert.position * scale)` in `SHADER_SRC`'s
+/// `vs_main`), so the normal transform stays exact for every shape this
+/// pipeline draws: for `M = R * S`, `transpose(inverse(M)) = R *
+/// inverse(S)` (S diagonal, R orthogonal) -- i.e. the same "normal /
+/// scale" rescale this module always did, just also rotated by the same
+/// quaternion as the position, which is the "real normal matrix" upgrade
+/// promised there.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Instance3D {
@@ -188,6 +221,13 @@ struct Instance3D {
     /// et al.) for every instance that isn't a textured brick, which the
     /// fragment shader reads as "use flat `color` on every face instead."
     uv_rect: [f32; 4],
+    rotation: [f32; 4],
+    /// Added straight to the shader's lit color (see `SHADER_SRC`'s
+    /// `fs_main`), bypassing the Blinn-Phong lighting term -- an unlit
+    /// brightness boost used for the brick hit-flash effect so it reads
+    /// clearly regardless of the light's angle on that face. `0.0` for
+    /// every instance that isn't mid-flash.
+    emissive: f32,
 }
 
 impl Instance3D {
@@ -197,6 +237,8 @@ impl Instance3D {
             scale,
             color,
             uv_rect: [0.0; 4],
+            rotation: ROTATION_IDENTITY,
+            emissive: 0.0,
         }
     }
 
@@ -205,11 +247,19 @@ impl Instance3D {
     /// `Vertex3D::uv`'s doc comment and `SHADER_SRC`'s `fs_main`).
     fn textured(center: [f32; 3], scale: [f32; 3], color: [f32; 4], uv: atlas::UvRect) -> Self {
         Self {
-            center,
-            scale,
-            color,
             uv_rect: [uv.u0, uv.v0, uv.u1, uv.v1],
+            ..Self::new(center, scale, color)
         }
+    }
+
+    fn with_rotation(mut self, rotation: [f32; 4]) -> Self {
+        self.rotation = rotation;
+        self
+    }
+
+    fn with_emissive(mut self, emissive: f32) -> Self {
+        self.emissive = emissive;
+        self
     }
 }
 
@@ -416,8 +466,14 @@ fn build_sphere_mesh(stacks: u32, sectors: u32) -> (Vec<Vertex3D>, Vec<u16>) {
 
 const VERTEX_ATTRS: [wgpu::VertexAttribute; 3] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 5 => Float32x2];
-const INSTANCE_ATTRS: [wgpu::VertexAttribute; 4] =
-    wgpu::vertex_attr_array![2 => Float32x3, 3 => Float32x3, 4 => Float32x4, 6 => Float32x4];
+const INSTANCE_ATTRS: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
+    2 => Float32x3, // center
+    3 => Float32x3, // scale
+    4 => Float32x4, // color
+    6 => Float32x4, // uv_rect
+    7 => Float32x4, // rotation
+    8 => Float32,   // emissive
+];
 
 const SHADER_SRC: &str = r#"
 struct Camera {
@@ -443,6 +499,8 @@ struct InstanceInput {
     @location(3) scale: vec3<f32>,
     @location(4) color: vec4<f32>,
     @location(6) uv_rect: vec4<f32>,
+    @location(7) rotation: vec4<f32>,
+    @location(8) emissive: f32,
 };
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -451,7 +509,18 @@ struct VertexOutput {
     @location(2) color: vec4<f32>,
     @location(3) uv: vec2<f32>,
     @location(4) uv_rect: vec4<f32>,
+    @location(5) emissive: f32,
 };
+
+// Standard quaternion*vector rotation (q assumed unit-length, which every
+// `Instance3D::rotation` this module ever writes is -- see `TumbleGhost`'s
+// and the power-up spin's `Quat` constructors, both of which only ever
+// build a unit quaternion). See `Instance3D`'s doc comment for why this is
+// also the correct *normal* transform here, not just the position one.
+fn quat_rotate(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
+    let axis = q.xyz;
+    return v + 2.0 * cross(axis, cross(axis, v) + q.w * v);
+}
 
 // Key light direction (points FROM the surface TOWARD the light) and fill
 // ambient -- the "one Blinn-Phong shader (key light + fill ambient)" this
@@ -465,12 +534,15 @@ const SHININESS: f32 = 24.0;
 
 @vertex
 fn vs_main(vert: VertexInput, inst: InstanceInput) -> VertexOutput {
-    let world_pos = inst.center + vert.position * inst.scale;
-    // Axis-aligned, non-rotated scaling only (see `Instance3D`'s doc
-    // comment): the inverse-transpose of a diagonal scale matrix is just
-    // its reciprocal, so this rescale-then-normalize is the exact correct
-    // normal transform for every shape this pipeline currently draws.
-    let world_normal = normalize(vert.normal / inst.scale);
+    let scaled = vert.position * inst.scale;
+    let world_pos = inst.center + quat_rotate(inst.rotation, scaled);
+    // See `Instance3D`'s doc comment: rescale by the (diagonal) scale's
+    // reciprocal first -- exact for axis-aligned scaling -- then rotate by
+    // the same quaternion as the position. Identity rotation (every
+    // non-spinning, non-tumbling instance) makes this a no-op, so this is
+    // a strict upgrade of the pre-c3 "normal / scale" transform, not a
+    // behavior change for anything that doesn't rotate.
+    let world_normal = normalize(quat_rotate(inst.rotation, vert.normal / inst.scale));
 
     var out: VertexOutput;
     out.clip_position = camera.view_proj * vec4<f32>(world_pos, 1.0);
@@ -479,6 +551,7 @@ fn vs_main(vert: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.color = inst.color;
     out.uv = vert.uv;
     out.uv_rect = inst.uv_rect;
+    out.emissive = inst.emissive;
     return out;
 }
 
@@ -511,7 +584,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         albedo = textureSampleLevel(atlas_tex, atlas_samp, atlas_uv, 0.0).rgb;
     }
 
-    let lit = albedo * (AMBIENT + diffuse) + vec3<f32>(spec, spec, spec);
+    // `in.emissive` (brick hit-flash -- see `Instance3D`'s doc comment)
+    // adds flat brightness on top of the lit result, unaffected by `n`/`l`
+    // so the flash reads the same regardless of which face or light angle.
+    let lit = albedo * (AMBIENT + diffuse) + vec3<f32>(spec, spec, spec) + vec3<f32>(in.emissive);
     return vec4<f32>(lit, in.color.a);
 }
 "#;
@@ -547,6 +623,204 @@ fn interpolate(prev: &RenderState, curr: &RenderState, alpha: f32) -> RenderStat
                 attached: curr.ball.attached,
             }
         },
+    }
+}
+
+// -- juice: hit-flash, destroy-tumble, ball trail, screen shake, power-up
+// spin (arkanoid-v2-c3) --------------------------------------------------
+//
+// Hit-flash and shake are frame-to-frame *diffs* against a snapshot kept on
+// `Renderer3D`, same technique and same reasoning `render.rs`'s own (private
+// -to-that-module) `bricks_just_hit`/`next_shake_remaining` use -- see that
+// module's "-- juice --" comment: by the time `render()` runs, `main.rs`
+// has already drained whatever events this frame's tick(s) pushed, and
+// `hits_remaining` is fully present on `Game::bricks` every tick anyway, so
+// no event is needed for either. Destroy-tumble is the one exception: a
+// destroyed brick is already gone from `Game::bricks` by the time
+// `BrickDestroyedAt` fires (see events.rs's doc comment), so it really is
+// "spawned from the event" -- fed in via `Renderer3D::ingest_tick_events`,
+// which `main.rs` must call once per tick, before draining `Game::events`.
+// Ball trail and power-up spin need neither: a trail is just recent ball
+// positions, and a spin is just wall-clock time -- both plain per-frame
+// state on `Renderer3D`.
+
+/// White-hot flash color for a brick that was just hit (surviving or not).
+const HIT_FLASH_EMISSIVE: f32 = 0.9;
+
+/// Alpha of the newest (closest to the ball) trail sphere; older ones fade
+/// linearly toward 0 from there. Matches `render.rs`'s own constant.
+const TRAIL_BASE_ALPHA: f32 = 0.5;
+
+/// How long a destroyed brick's tumble-away ghost stays on screen (spec:
+/// "the cube tumbles away with gravity for 0.5s").
+const TUMBLE_DURATION_SECS: f32 = 0.5;
+/// World-Y units/s^2 the ghost falls under -- tuned only so the fall reads
+/// clearly within `TUMBLE_DURATION_SECS`, not against any real-world unit.
+const TUMBLE_GRAVITY: f32 = 1400.0;
+/// Initial upward launch speed (world-Y units/s) so a destroyed brick
+/// visibly "pops" before gravity takes over, instead of only ever falling.
+const TUMBLE_LAUNCH_SPEED: f32 = 220.0;
+/// Radians/s each ghost spins around its own (per-ghost) axis.
+const TUMBLE_SPIN_RATE: f32 = 6.0;
+
+/// Radians/s a falling power-up capsule spins around world-Y (spec:
+/// "power-up capsules rotate slowly").
+const POWERUP_SPIN_RATE: f32 = 1.6;
+
+/// Screen-space shake, camera-nudge flavor: `render.rs`'s 2D shake moves
+/// quads by up to 3 world/screen px; this camera sits ~900 world units
+/// back (see `CAMERA_EYE`), so a translation that small would be invisible
+/// -- this is the same juice at a larger, camera-appropriate scale.
+const CAMERA_SHAKE_MAX_OFFSET: f32 = 26.0;
+const SHAKE_DURATION_SECS: f32 = 0.15;
+
+/// Which currently-standing bricks just took a hit and survived it (e.g. an
+/// armored brick's first hit): present in both snapshots at the same
+/// position, with fewer hits left now than before. Duplicated from
+/// `render.rs`'s own (private) function of the same name/behavior -- see
+/// the module doc comment's established convention for why (`brick_color`,
+/// `interpolate`, etc.).
+fn bricks_just_hit(prev: &[Brick], curr: &[Brick]) -> Vec<(f32, f32)> {
+    curr.iter()
+        .filter(|b| {
+            prev.iter()
+                .any(|p| p.x == b.x && p.y == b.y && p.hits_remaining > b.hits_remaining)
+        })
+        .map(|b| (b.x, b.y))
+        .collect()
+}
+
+/// Shake time remaining after `dt` seconds elapse, refreshed back to
+/// `SHAKE_DURATION_SECS` when `score_increased`. Duplicated from
+/// `render.rs`'s function of the same name/behavior.
+fn next_shake_remaining(current: f32, dt: f32, score_increased: bool) -> f32 {
+    let refreshed = if score_increased {
+        SHAKE_DURATION_SECS
+    } else {
+        current
+    };
+    (refreshed - dt).max(0.0)
+}
+
+/// Ball trail history update for one frame: cleared while the ball is
+/// parked on the paddle, otherwise the new position is appended and the
+/// oldest one dropped past `TRAIL_LEN`. Duplicated from `render.rs`'s
+/// function of the same name/behavior.
+fn push_trail(trail: &mut VecDeque<(f32, f32)>, ball: &Ball) {
+    if ball.attached {
+        trail.clear();
+        return;
+    }
+    trail.push_back((ball.x, ball.y));
+    while trail.len() > TRAIL_LEN {
+        trail.pop_front();
+    }
+}
+
+/// Deterministic per-brick "randomness" for a tumble ghost's spin axis,
+/// derived from its own spawn position rather than an RNG -- two bricks at
+/// different positions tumble around visibly different axes, and the same
+/// brick always tumbles the same way (see the `tumble_*` tests below,
+/// which are exactly this bead's "headless determinism test given a
+/// seeded event stream").
+fn tumble_axis(x: f32, y: f32) -> Vec3 {
+    Vec3::new(
+        (x * 0.073).sin(),
+        0.6 + 0.4 * (y * 0.051).cos(),
+        (x * 0.037 + y * 0.029).cos(),
+    )
+    .normalize()
+}
+
+/// One destroyed brick's render-only "tumble away" physics (spec:
+/// "render-side only, spawned from the event, no sim change"). Spawned by
+/// `Renderer3D::ingest_tick_events` from a `GameEvent::BrickDestroyedAt`,
+/// stepped forward by wall-clock `dt` in `Renderer3D::render`, and dropped
+/// once `elapsed` passes `TUMBLE_DURATION_SECS`. Plain data plus pure
+/// functions (`spawn`/`step`/`instance`) below, deliberately kept free of
+/// any wgpu handle, so this is unit-testable without a GPU `Renderer3D`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TumbleGhost {
+    x: f32,
+    z: f32,
+    y_offset: f32,
+    vy: f32,
+    half_extent: [f32; 3],
+    color: [f32; 4],
+    axis: Vec3,
+    spin_dir: f32,
+    elapsed: f32,
+}
+
+impl TumbleGhost {
+    fn spawn(x: f32, y: f32, width: f32, height: f32, kind: BrickKind) -> Self {
+        let (wx, wz) = world_xz(x, y);
+        Self {
+            x: wx,
+            z: wz,
+            y_offset: 0.0,
+            vy: TUMBLE_LAUNCH_SPEED,
+            half_extent: [width / 2.0, BRICK_THICKNESS / 2.0, height / 2.0],
+            // `hits_remaining: 0`: the brick's last-shown appearance before
+            // dying (an armored brick's final hit already shows its "hit"
+            // color -- see `brick_color_for` -- and every other kind has
+            // only one color regardless of hit count).
+            color: brick_color_for(kind, 0),
+            axis: tumble_axis(x, y),
+            spin_dir: if x >= 0.0 { 1.0 } else { -1.0 },
+            elapsed: 0.0,
+        }
+    }
+
+    /// Advances gravity/spin by `dt` seconds of wall-clock time.
+    fn step(&mut self, dt: f32) {
+        self.elapsed += dt;
+        self.vy -= TUMBLE_GRAVITY * dt;
+        self.y_offset += self.vy * dt;
+    }
+
+    fn alive(&self) -> bool {
+        self.elapsed < TUMBLE_DURATION_SECS
+    }
+
+    fn rotation(&self) -> Quat {
+        Quat::from_axis_angle(self.axis, self.spin_dir * self.elapsed * TUMBLE_SPIN_RATE)
+    }
+
+    /// Linear fade to fully transparent by the time the ghost expires, so
+    /// it doesn't just vanish with a pop at exactly `TUMBLE_DURATION_SECS`.
+    fn alpha_fade(&self) -> f32 {
+        (1.0 - self.elapsed / TUMBLE_DURATION_SECS).clamp(0.0, 1.0)
+    }
+
+    fn instance(&self) -> Instance3D {
+        let center = [self.x, BRICK_THICKNESS / 2.0 + self.y_offset, self.z];
+        let mut color = self.color;
+        color[3] *= self.alpha_fade();
+        Instance3D::new(center, self.half_extent, color).with_rotation(self.rotation().to_array())
+    }
+}
+
+/// Pure core of `Renderer3D::ingest_tick_events`: appends one fresh
+/// `TumbleGhost` per `BrickDestroyedAt` in `events` (every other variant is
+/// ignored -- this effect is the one juice effect that genuinely needs the
+/// event, see the module doc comment), capped at `MAX_DESTROY_GHOSTS`.
+/// Extracted as a free function, independent of any wgpu handle, so it's
+/// unit-testable without constructing a GPU-backed `Renderer3D`.
+fn ingest_brick_destroyed_events(ghosts: &mut Vec<TumbleGhost>, events: &[GameEvent]) {
+    for event in events {
+        if let GameEvent::BrickDestroyedAt {
+            x,
+            y,
+            width,
+            height,
+            kind,
+        } = *event
+        {
+            if ghosts.len() < MAX_DESTROY_GHOSTS {
+                ghosts.push(TumbleGhost::spawn(x, y, width, height, kind));
+            }
+        }
     }
 }
 
@@ -597,6 +871,36 @@ pub struct Renderer3D {
     sphere_index_buffer: wgpu::Buffer,
     sphere_index_count: u32,
     sphere_instance_buffer: wgpu::Buffer,
+    // -- juice: hit-flash, destroy-tumble, ball trail, screen shake,
+    // power-up spin -- see the module-level "-- juice --" comment above
+    // `bricks_just_hit` for why this is diffed/timed here rather than read
+    // off `Game::events` (except tumble, which really does need the event).
+    /// Ball's last few interpolated positions, oldest-first; see
+    /// `push_trail`.
+    ball_trail: VecDeque<(f32, f32)>,
+    /// Snapshot of `curr.bricks` as of the last `render()` call, diffed
+    /// against this frame's by `bricks_just_hit`.
+    prev_bricks: Vec<Brick>,
+    /// `curr.level` as of the last `render()` call -- a change means the
+    /// diff above would be comparing two different levels' grids, so it's
+    /// skipped for that one frame, same reasoning `render.rs` documents.
+    prev_level: usize,
+    /// `curr.score` as of the last `render()` call -- see
+    /// `next_shake_remaining`.
+    prev_score: u32,
+    /// Seconds of screen shake left to play; see `next_shake_remaining`.
+    shake_remaining: f32,
+    /// Wall-clock time of the last `render()` call, used to compute the
+    /// real elapsed `dt` the shake timer, tumble ghosts, and power-up spin
+    /// all advance by (frames don't map 1:1 to fixed simulation ticks).
+    last_frame_instant: Instant,
+    /// Currently tumbling destroy-ghosts; see `TumbleGhost` and
+    /// `ingest_tick_events`.
+    tumbling: Vec<TumbleGhost>,
+    /// Accumulated power-up spin angle (radians, world-Y axis), wrapped to
+    /// `[0, 2*PI)` each frame so it never grows unbounded over a long
+    /// session.
+    powerup_spin_angle: f32,
 }
 
 impl Renderer3D {
@@ -826,10 +1130,14 @@ impl Renderer3D {
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    // No blending needed: every instance this pipeline
-                    // draws is fully opaque (no scrim/trail here, unlike
-                    // `render.rs` -- see the module doc comment).
-                    blend: None,
+                    // Alpha blending (arkanoid-v2-c3): the ball trail and
+                    // the destroy-tumble ghosts (see the "-- juice --"
+                    // section) fade via `color.a` < 1. Every other
+                    // instance keeps alpha 1.0, for which blending
+                    // produces the same pixels `REPLACE` would -- same
+                    // reasoning `render.rs`'s own pipeline gives for
+                    // always blending.
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -890,7 +1198,32 @@ impl Renderer3D {
             sphere_index_buffer,
             sphere_index_count: sphere_indices.len() as u32,
             sphere_instance_buffer,
+            ball_trail: VecDeque::new(),
+            prev_bricks: Vec::new(),
+            prev_level: 0,
+            prev_score: 0,
+            shake_remaining: 0.0,
+            last_frame_instant: Instant::now(),
+            tumbling: Vec::new(),
+            powerup_spin_angle: 0.0,
         }
+    }
+
+    /// Feeds one tick's `GameEvent`s into this renderer's own juice state
+    /// -- currently only `BrickDestroyedAt`, for the destroy-tumble effect
+    /// (see the module doc comment). Must be called once per tick, by the
+    /// caller (`main.rs`'s fixed-timestep loop), *before* it drains
+    /// `Game::events` for that tick -- `render()` alone runs too late, once
+    /// per display frame rather than once per (up to `MAX_TICKS_PER_FRAME`)
+    /// simulation tick, and after the events that fired are already gone.
+    ///
+    /// Thin wrapper over `ingest_brick_destroyed_events`, which does the
+    /// actual work as a free function so it's unit-testable without a
+    /// GPU-backed `Renderer3D` -- see the `tumble_ghosts_*` tests below,
+    /// this bead's "headless determinism test given a seeded event
+    /// stream".
+    pub fn ingest_tick_events(&mut self, events: &[GameEvent]) {
+        ingest_brick_destroyed_events(&mut self.tumbling, events);
     }
 
     /// Reconfigures the surface and depth buffer after a window resize.
@@ -923,17 +1256,68 @@ impl Renderer3D {
     ) {
         let drawn = interpolate(prev, &RenderState::from(curr), alpha);
 
+        // -- juice bookkeeping: see the module-level "-- juice --" comment
+        // above `bricks_just_hit` for why most of this is diffed/timed
+        // here rather than read off `Game::events`.
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_frame_instant).as_secs_f32();
+        self.last_frame_instant = now;
+
+        self.powerup_spin_angle =
+            (self.powerup_spin_angle + dt * POWERUP_SPIN_RATE).rem_euclid(2.0 * PI);
+        let powerup_rotation = Quat::from_rotation_y(self.powerup_spin_angle).to_array();
+
+        let score_increased = curr.score > self.prev_score;
+        self.prev_score = curr.score;
+        self.shake_remaining = next_shake_remaining(self.shake_remaining, dt, score_increased);
+        let shake_offset = if self.shake_remaining > 0.0 {
+            let amplitude = CAMERA_SHAKE_MAX_OFFSET * (self.shake_remaining / SHAKE_DURATION_SECS);
+            Vec3::new(
+                rand::random_range(-amplitude..=amplitude),
+                0.0,
+                rand::random_range(-amplitude..=amplitude),
+            )
+        } else {
+            Vec3::ZERO
+        };
+        let eye = CAMERA_EYE + shake_offset;
+        let target = CAMERA_TARGET + shake_offset;
+
+        // Level change: `advance_level` reloads `bricks` wholesale, so the
+        // diff below would misread every leftover brick as "just hit" --
+        // skip it for this one frame instead (see `render.rs`'s own
+        // `level_changed` handling for the same reasoning).
+        let level_changed = curr.level != self.prev_level;
+        self.prev_level = curr.level;
+        let hit_flash = if level_changed {
+            Vec::new()
+        } else {
+            bricks_just_hit(&self.prev_bricks, &curr.bricks)
+        };
+        self.prev_bricks.clear();
+        self.prev_bricks.extend_from_slice(&curr.bricks);
+
+        // Destroy-tumble ghosts: advance by wall-clock `dt`, drop any that
+        // just expired. New ones arrive via `ingest_tick_events`, called by
+        // the caller once per tick -- see that method's doc comment.
+        for ghost in &mut self.tumbling {
+            ghost.step(dt);
+        }
+        self.tumbling.retain(TumbleGhost::alive);
+
         let aspect = self.config.width as f32 / self.config.height as f32;
         let camera_uniform = CameraUniform {
-            view_proj: camera_view_proj(aspect),
-            eye_pos: [CAMERA_EYE.x, CAMERA_EYE.y, CAMERA_EYE.z, 0.0],
+            view_proj: camera_view_proj(aspect, eye, target),
+            eye_pos: [eye.x, eye.y, eye.z, 0.0],
         };
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera_uniform));
 
-        let mut cube_instances =
-            Vec::with_capacity(1 + curr.bricks.len() + curr.powerups.len() + WALL_COUNT);
-        let mut sphere_instances = Vec::with_capacity(1 + curr.extra_balls.len());
+        let mut cube_instances = Vec::with_capacity(
+            1 + curr.bricks.len() + curr.powerups.len() + WALL_COUNT + self.tumbling.len(),
+        );
+        let mut sphere_instances =
+            Vec::with_capacity(1 + curr.extra_balls.len() + self.ball_trail.len());
 
         // Paddle.
         {
@@ -948,6 +1332,29 @@ impl Renderer3D {
                 PADDLE_COLOR,
             ));
         }
+
+        // Ball's fading trail: up to `TRAIL_LEN` spheres at its last few
+        // interpolated positions (oldest/faintest first), added *before*
+        // the opaque ball sphere below so the ball itself always ends up
+        // layered on top of its own trail. Uses the trail as it stood at
+        // the *start* of this frame, then updates it (`push_trail`) after.
+        let trail_len = self.ball_trail.len().max(1) as f32;
+        sphere_instances.extend(self.ball_trail.iter().enumerate().map(|(i, &(x, y))| {
+            let fade = (i + 1) as f32 / trail_len;
+            let (wx, wz) = world_xz(x, y);
+            let radius = drawn.ball.radius * (0.5 + 0.5 * fade);
+            Instance3D::new(
+                [wx, radius, wz],
+                [radius; 3],
+                [
+                    BALL_COLOR[0],
+                    BALL_COLOR[1],
+                    BALL_COLOR[2],
+                    TRAIL_BASE_ALPHA * fade,
+                ],
+            )
+        }));
+        push_trail(&mut self.ball_trail, &drawn.ball);
 
         // Main ball (interpolated) and Multiball's extra balls (read
         // straight off `curr`, same simplification `render.rs` makes for
@@ -968,20 +1375,35 @@ impl Renderer3D {
         // Bricks -- front face textured from `self.atlas` (see
         // `sprite_for_brick`/`Instance3D::textured`), side/top/bottom
         // faces stay `brick_color`'s flat palette (see `SHADER_SRC`'s
-        // `fs_main`). `.take(MAX_BRICKS)` is defensive only -- `levels.rs`'s
+        // `fs_main`). A brick that was just hit and survived (e.g.
+        // armored's first hit) gets an emissive white flash for this one
+        // frame instead of `brick_color`'s ordinary lit palette (see
+        // `hit_flash`). `.take(MAX_BRICKS)` is defensive only -- `levels.rs`'s
         // own tests already enforce every built-in level fits this cap.
         cube_instances.extend(curr.bricks.iter().take(MAX_BRICKS).map(|brick| {
             let (x, z) = world_xz(brick.x, brick.y);
             let uv = self.atlas.uv_rect(sprite_for_brick(brick));
+            let emissive = if hit_flash.contains(&(brick.x, brick.y)) {
+                HIT_FLASH_EMISSIVE
+            } else {
+                0.0
+            };
             Instance3D::textured(
                 [x, BRICK_THICKNESS / 2.0, z],
                 [brick.width / 2.0, BRICK_THICKNESS / 2.0, brick.height / 2.0],
                 brick_color(brick),
                 uv,
             )
+            .with_emissive(emissive)
         }));
 
-        // Falling power-up capsules, colored by kind.
+        // Destroy-tumble ghosts: bricks destroyed recently enough that
+        // they're still mid-tumble (spec: "the cube tumbles away with
+        // gravity for 0.5s"). See `TumbleGhost` and `ingest_tick_events`.
+        cube_instances.extend(self.tumbling.iter().map(TumbleGhost::instance));
+
+        // Falling power-up capsules, colored by kind, slowly spinning
+        // around world-Y (spec: "power-up capsules rotate slowly").
         cube_instances.extend(curr.powerups.iter().take(MAX_POWERUPS).map(|powerup| {
             let (x, z) = world_xz(powerup.x, powerup.y);
             Instance3D::new(
@@ -989,6 +1411,7 @@ impl Renderer3D {
                 [POWERUP_HALF; 3],
                 powerup_color(powerup.kind),
             )
+            .with_rotation(powerup_rotation)
         }));
 
         // Three static boundary walls (left, right, top) -- see the
@@ -1315,5 +1738,182 @@ mod tests {
         for &i in &CUBE_INDICES {
             assert!((i as usize) < CUBE_VERTICES.len());
         }
+    }
+
+    // -- juice (arkanoid-v2-c3) ---------------------------------------
+
+    fn brick_of(kind: BrickKind, hits: u8) -> Brick {
+        Brick {
+            x: 100.0,
+            y: 200.0,
+            width: 52.0,
+            height: 22.0,
+            kind,
+            hits_remaining: hits,
+            score: 20,
+        }
+    }
+
+    #[test]
+    fn new_instance_carries_identity_rotation_and_no_emissive() {
+        let inst = Instance3D::new([0.0; 3], [1.0; 3], PADDLE_COLOR);
+        assert_eq!(inst.rotation, ROTATION_IDENTITY);
+        assert_eq!(inst.emissive, 0.0);
+    }
+
+    #[test]
+    fn with_rotation_and_with_emissive_override_only_their_own_field() {
+        let inst = Instance3D::new([0.0; 3], [1.0; 3], PADDLE_COLOR)
+            .with_rotation([0.1, 0.2, 0.3, 0.9])
+            .with_emissive(0.5);
+        assert_eq!(inst.rotation, [0.1, 0.2, 0.3, 0.9]);
+        assert_eq!(inst.emissive, 0.5);
+        assert_eq!(inst.color, PADDLE_COLOR);
+    }
+
+    #[test]
+    fn bricks_just_hit_flags_a_surviving_armored_brick_after_its_first_hit() {
+        let prev = vec![brick_of(BrickKind::Armored, 2)];
+        let curr = vec![brick_of(BrickKind::Armored, 1)];
+        assert_eq!(bricks_just_hit(&prev, &curr), vec![(100.0, 200.0)]);
+    }
+
+    #[test]
+    fn bricks_just_hit_ignores_bricks_whose_hit_count_is_unchanged() {
+        let prev = vec![brick_of(BrickKind::Armored, 2)];
+        let curr = vec![brick_of(BrickKind::Armored, 2)];
+        assert!(bricks_just_hit(&prev, &curr).is_empty());
+    }
+
+    #[test]
+    fn next_shake_remaining_refreshes_on_a_score_increase_and_decays_otherwise() {
+        let refreshed = next_shake_remaining(0.0, 0.01, true);
+        assert!((refreshed - (SHAKE_DURATION_SECS - 0.01)).abs() < 1e-6);
+
+        let decayed = next_shake_remaining(0.05, 0.02, false);
+        assert!((decayed - 0.03).abs() < 1e-6);
+
+        let floored = next_shake_remaining(0.01, 0.5, false);
+        assert_eq!(floored, 0.0);
+    }
+
+    #[test]
+    fn push_trail_clears_while_attached_and_caps_length_once_launched() {
+        let mut trail = VecDeque::new();
+        let mut ball = Ball {
+            x: 0.0,
+            y: 0.0,
+            vx: 0.0,
+            vy: 0.0,
+            radius: 6.0,
+            attached: true,
+        };
+        push_trail(&mut trail, &ball);
+        assert!(trail.is_empty(), "an attached ball leaves no trail");
+
+        ball.attached = false;
+        for i in 0..(TRAIL_LEN + 3) {
+            ball.x = i as f32;
+            push_trail(&mut trail, &ball);
+        }
+        assert_eq!(trail.len(), TRAIL_LEN, "trail must be capped at TRAIL_LEN");
+        assert_eq!(trail.back(), Some(&(ball.x, ball.y)));
+
+        ball.attached = true;
+        push_trail(&mut trail, &ball);
+        assert!(trail.is_empty(), "re-attaching (respawn) clears the trail");
+    }
+
+    #[test]
+    fn tumble_axis_is_deterministic_and_unit_length() {
+        let a = tumble_axis(120.0, 340.0);
+        let b = tumble_axis(120.0, 340.0);
+        assert_eq!(a, b, "same spawn position must give the same axis");
+        assert!((a.length() - 1.0).abs() < 1e-4);
+        assert_ne!(
+            a,
+            tumble_axis(500.0, 10.0),
+            "different bricks should tumble around different axes"
+        );
+    }
+
+    #[test]
+    fn tumble_ghost_falls_and_expires_after_its_duration() {
+        let mut ghost = TumbleGhost::spawn(100.0, 80.0, 52.0, 22.0, BrickKind::Normal);
+        assert!(ghost.alive());
+        let start_y = ghost.y_offset;
+        for _ in 0..61 {
+            // ~1.02s at 60 fps -- safely past TUMBLE_DURATION_SECS (0.5s).
+            ghost.step(1.0 / 60.0);
+        }
+        assert!(!ghost.alive(), "ghost should have expired by now");
+        assert_ne!(ghost.y_offset, start_y, "gravity should have moved it");
+        assert_eq!(ghost.alpha_fade(), 0.0, "a dead ghost is fully faded");
+    }
+
+    /// This bead's acceptance criteria: "tumble animation has a headless
+    /// determinism test given a seeded event stream." Two independent runs
+    /// ingesting the same `Vec<GameEvent>` and stepping the same fixed `dt`
+    /// sequence must land on bit-for-bit identical ghost state -- no RNG,
+    /// no wall-clock reads, anywhere in `ingest_brick_destroyed_events` or
+    /// `TumbleGhost::{spawn,step}`.
+    #[test]
+    fn tumble_ghosts_are_deterministic_given_a_seeded_event_stream() {
+        let events = vec![
+            GameEvent::BrickDestroyedAt {
+                x: 100.0,
+                y: 80.0,
+                width: 52.0,
+                height: 22.0,
+                kind: BrickKind::Normal,
+            },
+            GameEvent::BrickDestroyed, // must be ignored, not just skipped silently
+            GameEvent::BrickDestroyedAt {
+                x: -260.0,
+                y: 300.0,
+                width: 52.0,
+                height: 22.0,
+                kind: BrickKind::Armored,
+            },
+            GameEvent::LevelCleared,
+        ];
+
+        let run = || {
+            let mut ghosts = Vec::new();
+            ingest_brick_destroyed_events(&mut ghosts, &events);
+            for _ in 0..15 {
+                // 0.25s -- partway through the 0.5s tumble, both still alive.
+                for g in &mut ghosts {
+                    g.step(1.0 / 60.0);
+                }
+            }
+            ghosts
+        };
+
+        let a = run();
+        let b = run();
+        assert_eq!(a, b, "same seeded event stream must replay identically");
+        assert_eq!(
+            a.len(),
+            2,
+            "only the two BrickDestroyedAt events spawn a ghost"
+        );
+        assert!(a.iter().all(TumbleGhost::alive), "0.25s < 0.5s duration");
+    }
+
+    #[test]
+    fn ingest_brick_destroyed_events_caps_at_max_destroy_ghosts() {
+        let events: Vec<GameEvent> = (0..(MAX_DESTROY_GHOSTS + 5))
+            .map(|i| GameEvent::BrickDestroyedAt {
+                x: i as f32 * 10.0,
+                y: 0.0,
+                width: 52.0,
+                height: 22.0,
+                kind: BrickKind::Normal,
+            })
+            .collect();
+        let mut ghosts = Vec::new();
+        ingest_brick_destroyed_events(&mut ghosts, &events);
+        assert_eq!(ghosts.len(), MAX_DESTROY_GHOSTS);
     }
 }
