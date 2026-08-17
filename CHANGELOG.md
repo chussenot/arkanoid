@@ -2,6 +2,30 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## 0.3.0 - 2026-08-17
+#### Bug Fixes
+- **(cargo)** set default-run so cargo run/mise run run pick the game - (55a88d5) - Clement HUSSENOT-DESENONGES
+#### Documentation
+- **(readme)** add 3D renderer capture, confirm epic/presentation-3d ci gate - (d4ab585) - Clement HUSSENOT-DESENONGES
+- **(readme)** add procedural vs pack screenshot section - (4750920) - Clement HUSSENOT-DESENONGES
+#### Features
+- **(assets)** load Kenney CC0 puzzle pack via --assets, fall back to procedural - (c952cbb) - Clement HUSSENOT-DESENONGES
+- **(assets)** generate procedural texture atlas recipe - (e2d2c66) - Clement HUSSENOT-DESENONGES
+- **(events)** add BrickDestroyedAt for 3D destroy-tumble geometry - (f594820) - Clement HUSSENOT-DESENONGES
+- **(render)** sample the sprite atlas for paddle/ball/brick quads - (5988856) - Clement HUSSENOT-DESENONGES
+- **(render3d)** add juice -- hit-flash, destroy-tumble, trail, shake, spin - (59efaa6) - Clement HUSSENOT-DESENONGES
+- **(render3d)** texture brick front faces from a local atlas mirror - (034c324) - Clement HUSSENOT-DESENONGES
+- **(render3d)** add perspective 3D pipeline skeleton + --renderer flag - (2ac4fd1) - Clement HUSSENOT-DESENONGES
+- **(textures)** add TextureSource enum + atlas abstraction - (ba7c710) - Clement HUSSENOT-DESENONGES
+#### Miscellaneous Chores
+- Update the ATTRIBUTION - (d675c7d) - Clement HUSSENOT-DESENONGES
+#### Performance Improvements
+- **(render3d)** measure full-board+multiball+tumble fps, add math property tests - (402bdb6) - Clement HUSSENOT-DESENONGES
+#### Tests
+- **(assets)** pack-loader test against a committed fixture atlas - (2148a22) - Clement HUSSENOT-DESENONGES
+
+- - -
+
 ## 0.2.0 - 2026-08-17
 #### Bug Fixes
 - Remove the placeholder in the README - (0f2169d) - Clement HUSSENOT-DESENONGES
