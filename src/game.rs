@@ -665,6 +665,13 @@ impl Game {
         let brick = self.bricks.remove(index);
         self.score += brick.score;
         self.events.push(GameEvent::BrickDestroyed);
+        self.events.push(GameEvent::BrickDestroyedAt {
+            x: brick.x,
+            y: brick.y,
+            width: brick.width,
+            height: brick.height,
+            kind: brick.kind,
+        });
         self.maybe_drop_powerup(brick.x, brick.y);
     }
 

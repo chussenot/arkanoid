@@ -33,7 +33,7 @@ pub enum PowerUpKind {
 /// constructs these variants yet -- `#[allow(dead_code)]` until paddle/
 /// ball/brick gameplay (M2+) starts pushing onto `Game::events`.
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum GameEvent {
     /// A brick was destroyed (last hit on a normal or armored brick).
     BrickDestroyed,
@@ -52,4 +52,20 @@ pub enum GameEvent {
     Victory,
     /// Lives reached zero.
     GameOver,
+    /// Same moment as `BrickDestroyed`, carrying the destroyed brick's
+    /// world geometry and kind -- data `BrickDestroyed` itself doesn't
+    /// carry. Added for the 3D renderer's destroy-tumble effect
+    /// (arkanoid-v2-c3): by the time the event fires the brick is already
+    /// gone from `Game::bricks` (removed just before this pushes), so a
+    /// render-side consumer has nowhere else to read its position/size/
+    /// kind from in order to spawn a tumbling cube in the right place.
+    /// Pushed alongside `BrickDestroyed` at the same call site, same
+    /// tick -- not a replacement for it.
+    BrickDestroyedAt {
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        kind: crate::levels::BrickKind,
+    },
 }
