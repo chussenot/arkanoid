@@ -775,4 +775,103 @@ mod tests {
         }
         panic!("scripted play did not clear the fixture's level 1 within {MAX_TICKS} ticks");
     }
+
+    // -- arkanoid-v2-a8: epic/levels integration gate ----------------------
+    //
+    // Ignored by default (GPL-licensed data fetched by
+    // `scripts/fetch-levelsets.sh`, gitignored -- not present on a fresh
+    // checkout or in CI): `cargo test -- --ignored` after running that
+    // script to confirm the wiring plays a *real* upstream levelset, not
+    // just the hand-written fixture above. Unlike the fixture's level 1
+    // (deliberately armor-free so a full clear is realistic), a real
+    // levelset's difficulty is out of our control, so this only asserts
+    // that the loaded bricks actually take real damage under scripted
+    // play -- a full clear is a bonus, not a requirement.
+    #[test]
+    #[ignore = "requires scripts/fetch-levelsets.sh to have populated levels/ first"]
+    fn scripted_headless_play_damages_a_real_fetched_levelset() {
+        use crate::events::GameEvent;
+        use crate::game::{Brick, Game, GameState, Input};
+
+        let path = Path::new("levels/Classique");
+        let set = load_file(path).unwrap_or_else(|e| {
+            panic!("run scripts/fetch-levelsets.sh first (failed to read {path:?}): {e}")
+        });
+        assert!(
+            !set.levels.is_empty(),
+            "{path:?} should have at least one level"
+        );
+        let level_one = &set.levels[0];
+        assert!(!level_one.bricks.is_empty());
+
+        // Same centering math as the fixture test above (`game::build_bricks`'s
+        // private layout for a 14-column grid in the 800-wide playfield).
+        const OFFSET_X: f32 = 36.0;
+        const MARGIN_TOP: f32 = 60.0;
+
+        let mut game = Game::with_seed(0xA8);
+        game.state = GameState::Playing;
+        game.bricks = level_one
+            .bricks
+            .iter()
+            .map(|spawn| Brick {
+                x: spawn.x + OFFSET_X + BRICK_WIDTH / 2.0,
+                y: spawn.y + MARGIN_TOP + BRICK_HEIGHT / 2.0,
+                width: BRICK_WIDTH,
+                height: BRICK_HEIGHT,
+                kind: spawn.kind,
+                hits_remaining: match spawn.kind {
+                    BrickKind::Normal => 1,
+                    BrickKind::Armored => 2,
+                    BrickKind::Indestructible => 0,
+                },
+                score: 10,
+            })
+            .collect();
+        let starting_destructible = game
+            .bricks
+            .iter()
+            .filter(|b| b.kind != BrickKind::Indestructible)
+            .count();
+
+        const DT: f32 = 1.0 / 120.0;
+        const MAX_TICKS: u32 = 20_000; // ~166s of sim time -- generous.
+
+        for _ in 0..MAX_TICKS {
+            let input = Input {
+                left: game.ball.x < game.paddle.x,
+                right: game.ball.x > game.paddle.x,
+                space: true,
+                pause: false,
+            };
+            game.tick(&input, DT);
+
+            if game.events.contains(&GameEvent::LevelCleared) {
+                println!(
+                    "real levelset {path:?} level 1 ({:?}) fully cleared by scripted play",
+                    level_one.name
+                );
+                return;
+            }
+        }
+
+        let remaining_destructible = game
+            .bricks
+            .iter()
+            .filter(|b| b.kind != BrickKind::Indestructible)
+            .count();
+        assert!(
+            remaining_destructible < starting_destructible,
+            "scripted play against real levelset {path:?} destroyed zero bricks in \
+             {MAX_TICKS} ticks -- external brick mapping or collision is broken"
+        );
+        println!(
+            "real levelset {path:?} level 1 ({:?}): {}/{} destructible bricks destroyed \
+             by scripted play in {MAX_TICKS} ticks (full clear not required for a real, \
+             possibly hard, upstream layout)",
+            level_one.name,
+            starting_destructible - remaining_destructible,
+            starting_destructible
+        );
+    }
 }

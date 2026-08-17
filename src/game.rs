@@ -476,12 +476,9 @@ impl Game {
     /// was already active), so a caller never has to special-case an
     /// empty load.
     ///
-    /// `main.rs` doesn't call this yet -- feeding a loaded `LevelSet` in
-    /// from the `--levelset` flag is arkanoid-v2-a8's integration job, so
-    /// today this is exercised only by this module's own tests (see
-    /// `with_seed`'s doc comment just above for why that alone means
-    /// `#[cfg(test)]` in a binary crate with no other consumer).
-    #[cfg(test)]
+    /// Wired in from `main.rs` (arkanoid-v2-a8's integration job): a
+    /// successfully-resolved `--levelset` load is fed straight in here
+    /// before the event loop starts driving frames.
     pub fn load_external_levels(&mut self, levels: Vec<ExternalLevel>) {
         if levels.is_empty() {
             return;
