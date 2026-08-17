@@ -466,4 +466,155 @@ mod tests {
         let result = load_dir(Path::new("/nonexistent/path/for/arkanoid-tests"));
         assert_eq!(result.unwrap(), Vec::new());
     }
+
+    // -- arkanoid-v2-a6: our own hand-written fixture levelset -------------
+    //
+    // `tests/fixtures/homemade.lbl` is an original, MIT-licensed 3-level
+    // file (not derived from LBreakoutHD's GPLv3 level data -- see
+    // `tests/fixtures/README.md` for provenance) authored to exercise every
+    // character in both `docs/levelset-format.md` tables at least once,
+    // plus one unsupported char per grid (`Q` in Bricks, `_` in Bonus).
+    //
+    // Layout:
+    // - Level 1 "Clearable Cluster": 6 plain `a` (Normal) bricks, nothing
+    //   else -- small and armor-free so a scripted headless play can
+    //   realistically clear it.
+    // - Level 2 "Full Table Sweep": row 0 + row 1 of Bricks hold all 26
+    //   documented non-empty brick chars plus `Q`; row 0-2 of Bonus hold
+    //   all 29 documented non-empty bonus chars plus `_`. Bonus row 0's
+    //   `+`/`</`b` sit over Bricks row 0's `E`/`#`/`@` specifically so the
+    //   "mapped" power-ups actually attach to a real spawn.
+    // - Level 3 "Corner Sentinels": a handful of `E`/`b` bricks, just to
+    //   round the fixture out to the bead's "3 levels" requirement.
+
+    fn homemade_fixture() -> &'static str {
+        include_str!("../tests/fixtures/homemade.lbl")
+    }
+
+    #[test]
+    fn homemade_fixture_has_exactly_three_levels() {
+        let set = parse_levelset("tests/fixtures/homemade.lbl", homemade_fixture());
+        assert_eq!(set.levels.len(), 3);
+        assert_eq!(set.levels[0].name, "Clearable Cluster");
+        assert_eq!(set.levels[1].name, "Full Table Sweep");
+        assert_eq!(set.levels[2].name, "Corner Sentinels");
+    }
+
+    #[test]
+    fn homemade_fixture_exercises_every_supported_brick_and_bonus_char() {
+        let set = parse_levelset("tests/fixtures/homemade.lbl", homemade_fixture());
+        let sweep = &set.levels[1];
+
+        let at = |col: usize, row: usize| {
+            sweep
+                .bricks
+                .iter()
+                .find(|b| b.x == col as f32 * BRICK_WIDTH && b.y == row as f32 * BRICK_HEIGHT)
+                .unwrap_or_else(|| panic!("no spawn at col {col} row {row}"))
+        };
+
+        // The three "Mapped" bonus chars sit over Bricks row 0's three
+        // Indestructible chars -- proves both that the mapping is correct
+        // and that Bricks/Bonus are read from two independent tables (`b`
+        // means Armored in one and Multiball in the other).
+        assert_eq!(at(0, 0).kind, BrickKind::Indestructible); // 'E'
+        assert_eq!(at(0, 0).powerup, Some(PowerUpKind::Widen)); // '+'
+        assert_eq!(at(1, 0).kind, BrickKind::Indestructible); // '#'
+        assert_eq!(at(1, 0).powerup, Some(PowerUpKind::Slow)); // '<'
+        assert_eq!(at(2, 0).kind, BrickKind::Indestructible); // '@'
+        assert_eq!(at(2, 0).powerup, Some(PowerUpKind::Multiball)); // 'b' (Bonus)
+        assert_eq!(at(3, 0).kind, BrickKind::Armored); // 'b' (Bricks)
+        assert_eq!(at(3, 0).powerup, None, "'0' is Recognized, not Mapped");
+        assert_eq!(at(6, 1).kind, BrickKind::Normal, "'F' is an alias of 'f'");
+
+        // Exactly the 26 documented non-empty brick chars produced a spawn
+        // -- the 27th non-'.' cell (`Q`, row 1 col 12) is Unsupported and
+        // must map to no spawn at all.
+        assert_eq!(sweep.bricks.len(), 26);
+        assert!(sweep
+            .bricks
+            .iter()
+            .all(|b| !(b.x == 12.0 * BRICK_WIDTH && b.y == BRICK_HEIGHT)));
+    }
+
+    #[test]
+    fn homemade_fixture_warns_on_every_unsupported_or_unmapped_char_and_nothing_else() {
+        let set = parse_levelset("tests/fixtures/homemade.lbl", homemade_fixture());
+
+        // Levels 1 and 3 use only supported chars and never populate
+        // Bonus, so every warning in the whole fixture comes from level 2.
+        let count = |needle: &str| set.warnings.iter().filter(|w| w.contains(needle)).count();
+
+        assert_eq!(count("brick char 'Q'"), 1, "the one unsupported brick char");
+        assert_eq!(count("bonus char '_'"), 1, "the one unsupported bonus char");
+        // The 26 documented-but-unmapped Bonus chars ('0'..'W') each warn
+        // once with this reason.
+        assert_eq!(count("no matching power-up"), 26);
+        assert_eq!(set.warnings.len(), 28, "nothing else should ever warn");
+    }
+
+    #[test]
+    fn scripted_headless_play_clears_the_fixtures_first_level() {
+        use crate::events::GameEvent;
+        use crate::game::{Brick, Game, GameState, Input};
+
+        let set = load_file(Path::new("tests/fixtures/homemade.lbl"))
+            .expect("fixture file must load from disk");
+        let level_one = &set.levels[0];
+        assert_eq!(level_one.name, "Clearable Cluster");
+        assert!(!level_one.bricks.is_empty());
+
+        // Mirrors `game::build_bricks`'s centering math (private to that
+        // module, for a 14-column grid in the 800-wide playfield) plus its
+        // top margin -- exact pixel placement doesn't matter for this test,
+        // only that the bricks land somewhere above the paddle.
+        const OFFSET_X: f32 = 36.0;
+        const MARGIN_TOP: f32 = 60.0;
+
+        let mut game = Game::with_seed(0xA6);
+        game.state = GameState::Playing;
+        game.bricks = level_one
+            .bricks
+            .iter()
+            .map(|spawn| Brick {
+                x: spawn.x + OFFSET_X + BRICK_WIDTH / 2.0,
+                y: spawn.y + MARGIN_TOP + BRICK_HEIGHT / 2.0,
+                width: BRICK_WIDTH,
+                height: BRICK_HEIGHT,
+                kind: spawn.kind,
+                hits_remaining: match spawn.kind {
+                    BrickKind::Normal => 1,
+                    BrickKind::Armored => 2,
+                    BrickKind::Indestructible => 0,
+                },
+                score: 10,
+            })
+            .collect();
+
+        const DT: f32 = 1.0 / 120.0;
+        const MAX_TICKS: u32 = 20_000; // ~166s of sim time -- generous.
+
+        // Bang-bang autoplay: always steer the paddle toward the ball and
+        // hold Space (a no-op once the ball is launched) -- a scripted
+        // headless "play" of the level, not a hand-rolled physics shortcut.
+        for _ in 0..MAX_TICKS {
+            let input = Input {
+                left: game.ball.x < game.paddle.x,
+                right: game.ball.x > game.paddle.x,
+                space: true,
+                pause: false,
+            };
+            game.tick(&input, DT);
+
+            assert_ne!(
+                game.state,
+                GameState::GameOver,
+                "scripted play lost all lives before clearing the fixture's level 1"
+            );
+            if game.events.contains(&GameEvent::LevelCleared) {
+                return;
+            }
+        }
+        panic!("scripted play did not clear the fixture's level 1 within {MAX_TICKS} ticks");
+    }
 }
