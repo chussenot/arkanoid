@@ -692,6 +692,87 @@ mod tests {
         assert_eq!(atlas.pixels, procedural.pixels);
     }
 
+    /// One-shot fixture generator, not part of the suite (`#[ignore]`):
+    /// run manually (`cargo test --ignored generate_fixture_pack_pngs --
+    /// --exact`) whenever `tests/fixtures/pack/`'s committed PNGs need
+    /// regenerating. Writes the same flat-color-per-sprite pixels
+    /// `pack_loader_reads_our_committed_fixture_atlas` asserts against,
+    /// at a size that isn't `CELL_SIZE` square (so the committed fixture
+    /// also exercises `load_pack`'s resize path, same as the temp-dir
+    /// test above).
+    #[test]
+    #[ignore = "generates the committed tests/fixtures/pack PNGs; run manually to regenerate"]
+    fn generate_fixture_pack_pngs() {
+        let dir = fixture_pack_dir();
+        std::fs::create_dir_all(&dir).expect("failed to create tests/fixtures/pack");
+        for id in SpriteId::ALL {
+            let [r, g, b, a] = fixture_pixel(id);
+            image::RgbaImage::from_pixel(6, 6, image::Rgba([r, g, b, a]))
+                .save(dir.join(pack_filename(id)))
+                .expect("failed to write fixture sprite PNG");
+        }
+    }
+
+    /// Absolute path to the committed fixture pack directory this bead
+    /// owns, resolved from the crate root so the test works regardless of
+    /// the process's current directory.
+    fn fixture_pack_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pack")
+    }
+
+    /// Our own flat RGBA pixel for `id`'s fixture sprite -- plain solid
+    /// colors we picked, not Kenney art, distinct per sprite so a mix-up
+    /// between sprites would fail loudly.
+    fn fixture_pixel(id: SpriteId) -> [u8; 4] {
+        match id {
+            SpriteId::Paddle => [10, 20, 30, 255],
+            SpriteId::Ball => [40, 50, 60, 255],
+            SpriteId::BrickNormal => [70, 80, 90, 255],
+            SpriteId::BrickArmoredIntact => [100, 110, 120, 255],
+            SpriteId::BrickArmoredHit => [130, 140, 150, 255],
+            SpriteId::BrickIndestructible => [160, 170, 180, 255],
+        }
+    }
+
+    /// This bead's headline deliverable: a pack-loader test against a
+    /// fixture atlas *committed to the repo* under `tests/fixtures/`
+    /// (unlike the temp-dir tests above, which write and delete their
+    /// pack directory per run) so the pixels a reviewer sees in `git show`
+    /// are exactly the pixels this test loads and checks -- our own flat
+    /// colors, never Kenney's.
+    ///
+    /// The fixture directory holds all six `SpriteId::ALL` files, not
+    /// just two, because `load_pack` is all-or-nothing (see its doc
+    /// comment): a directory missing any one sprite fails the whole load
+    /// and falls back to procedural pixels, which this test's exact-pixel
+    /// assertions would then correctly fail rather than silently pass.
+    /// The "2-sprite" fixture this bead's brief asks for is expressed in
+    /// what the test *checks*: two representative sprites (Paddle, Ball)
+    /// spot-checked by exact pixel, since exhaustively re-checking all six
+    /// is already covered by `pack_loads_a_distinct_pixel_per_sprite_from_disk`
+    /// above.
+    #[test]
+    fn pack_loader_reads_our_committed_fixture_atlas() {
+        let atlas = TextureSource::Pack(fixture_pack_dir()).load();
+
+        let pixel_at = |id: SpriteId| -> [u8; 4] {
+            let (x, y, _, _) = Atlas::cell_rect(id);
+            let idx = ((y * atlas.width + x) * 4) as usize;
+            atlas.pixels[idx..idx + 4].try_into().unwrap()
+        };
+
+        assert_eq!(
+            pixel_at(SpriteId::Paddle),
+            fixture_pixel(SpriteId::Paddle),
+            "Paddle did not load its committed fixture pixel"
+        );
+        assert_eq!(
+            pixel_at(SpriteId::Ball),
+            fixture_pixel(SpriteId::Ball),
+            "Ball did not load its committed fixture pixel"
+        );
+    }
+
     /// Same fallback contract, but for a pack directory that exists and
     /// has the right filenames, just not valid image data in them --
     /// the "malformed pack" half of this bead's acceptance criterion.
