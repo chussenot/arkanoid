@@ -14,6 +14,20 @@ cargo run --release
 No assets or setup required — it builds and launches straight from a fresh
 clone.
 
+### 3D renderer (experimental)
+
+An alternate perspective-camera renderer (`src/render3d/`) draws the same
+simulation as cubes and a sphere instead of flat quads. It's opt-in behind a
+flag until the presentation-3d epic is done, and never changes gameplay —
+`src/game.rs`'s physics are identical either way (see the deterministic-replay
+test in `game.rs`, pinned to the same hash in both renderers):
+
+```bash
+cargo run --release -- --renderer 3d
+```
+
+![3D renderer](render3d.png)
+
 ## Controls
 
 | Key                | Action                  |
