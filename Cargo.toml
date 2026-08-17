@@ -6,6 +6,14 @@ edition = "2021"
 [dependencies]
 bytemuck = "1.25.2"
 glyphon = "0.12.0"
+# Decodes the optional Kenney asset pack (bead arkanoid-v2-b3,
+# `assets::TextureSource::Pack`) into RGBA8 for `Atlas::set_sprite`.
+# `default-features = false` + `features = ["png"]`: the pack this repo's
+# fetch script produces is PNG-only, and every other format decoder
+# (jpeg/gif/webp/tiff/...) the crate ships would just be dead compile
+# weight on this fixed dependency budget. Explicitly authorized by this
+# bead's bd description.
+image = { version = "0.25.9", default-features = false, features = ["png"] }
 rand = "0.10.2"
 wgpu = "30.0.0"
 winit = "0.30.13"

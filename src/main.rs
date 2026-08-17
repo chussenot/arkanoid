@@ -213,8 +213,18 @@ impl App {
 }
 
 fn main() {
-    // Unused until a v2 workstream adds its first flag -- see cli.rs.
-    let _args = cli::parse();
+    let args = cli::parse();
+    // Not stored anywhere yet -- a later bead wires an `Atlas` into the
+    // wgpu texture pipeline (see assets.rs's module doc). Loading it here
+    // is what actually exercises `--assets <dir>`: a missing or malformed
+    // pack directory warns on stderr and falls back to procedural pixels
+    // instead of panicking (assets::TextureSource::load's contract).
+    let texture_source = match args.assets {
+        Some(dir) => assets::TextureSource::Pack(std::path::PathBuf::from(dir)),
+        None => assets::TextureSource::default(),
+    };
+    let _atlas = texture_source.load();
+
     let event_loop = EventLoop::new().expect("failed to create event loop");
     let mut app = App::default();
     event_loop
