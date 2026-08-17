@@ -205,12 +205,19 @@ impl Atlas {
         }
     }
 
-    /// Flat-color placeholder atlas: fills each sprite's cell with a
-    /// single solid color loosely matching `render.rs`'s existing
-    /// flat-color palette, so the type is real, drawable, and
-    /// deterministically testable before b2's recipe-driven pass lands.
-    /// b2 replaces the *pixels* this produces, not its role as
-    /// `Procedural`'s default builder.
+    /// Procedural texture atlas (bead b2): every sprite is generated at
+    /// startup from the const-driven recipes below this `impl` block
+    /// instead of loaded from disk. This is `TextureSource::Procedural`'s
+    /// builder and b3's fallback when a pack fails to load.
+    ///
+    /// Deterministic by construction, which is what this bead's
+    /// acceptance criterion ("same seed -> byte-identical atlas") reduces
+    /// to: every recipe below derives its pixels -- including noise --
+    /// purely from a pixel's fixed `(x, y)` position in the atlas grid via
+    /// [`hash_signed`], never from wall-clock time or a stateful RNG
+    /// stream. There is exactly one seed, [`NOISE_SEED`], and it's a
+    /// `const`, so two calls (same process or two separate processes)
+    /// always produce byte-identical pixels.
     fn procedural_placeholder() -> Atlas {
         let (width, height) = Self::grid_size();
         let mut atlas = Atlas {
@@ -218,30 +225,262 @@ impl Atlas {
             height,
             pixels: vec![0; (width * height * 4) as usize],
         };
-        for &(id, color) in PLACEHOLDER_COLORS.iter() {
-            atlas.set_sprite(id, &solid_rgba(color));
+        atlas.set_sprite(SpriteId::Paddle, &brushed_metal_paddle());
+        atlas.set_sprite(SpriteId::Ball, &specular_ball());
+        for &(id, base) in BRICK_PALETTE.iter() {
+            atlas.set_sprite(id, &beveled_brick_panel(id, base));
         }
         atlas
     }
 }
 
-/// One solid RGBA8 color per [`SpriteId`], loosely matching the flat
-/// colors `render.rs` already draws (`PADDLE_COLOR`, `BALL_COLOR`,
-/// `NORMAL_BRICK_COLOR`, etc.) so the placeholder atlas doesn't look like
-/// an unrelated palette swap.
-const PLACEHOLDER_COLORS: [(SpriteId, [u8; 4]); 6] = [
-    (SpriteId::Paddle, [204, 217, 242, 255]),
-    (SpriteId::Ball, [255, 199, 51, 255]),
-    (SpriteId::BrickNormal, [217, 64, 64, 255]),
-    (SpriteId::BrickArmoredIntact, [77, 115, 173, 255]),
-    (SpriteId::BrickArmoredHit, [230, 153, 38, 255]),
-    (SpriteId::BrickIndestructible, [64, 64, 71, 255]),
+/// Fixed seed for every procedural noise/hash lookup in this module. The
+/// *only* knob the "seed" in this bead's acceptance criterion refers to --
+/// it never changes at runtime, so determinism is just "this is a plain
+/// `const`, not read from the clock or an RNG."
+const NOISE_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
+
+/// Color as three `0.0..=1.0` linear-ish channels, the working space for
+/// every recipe below. Converted to `u8` only at the very end
+/// ([`to_rgba8`]), so bevel/gloss/noise adjustments can add and multiply
+/// freely without repeated round-trip rounding error.
+type Rgb = [f32; 3];
+
+fn clamp01(v: f32) -> f32 {
+    v.clamp(0.0, 1.0)
+}
+
+/// Multiplies every channel by `factor` (e.g. a gloss-ramp or noise
+/// brightness multiplier), clamped back into range.
+fn scale(c: Rgb, factor: f32) -> Rgb {
+    [
+        clamp01(c[0] * factor),
+        clamp01(c[1] * factor),
+        clamp01(c[2] * factor),
+    ]
+}
+
+/// Blends `c` toward white by `amount` (`0` = unchanged, `1` = white) --
+/// used for bevel highlight edges and the ball's specular hotspot.
+fn lighten(c: Rgb, amount: f32) -> Rgb {
+    [
+        clamp01(c[0] + (1.0 - c[0]) * amount),
+        clamp01(c[1] + (1.0 - c[1]) * amount),
+        clamp01(c[2] + (1.0 - c[2]) * amount),
+    ]
+}
+
+/// Blends `c` toward black by `amount` -- used for bevel shadow edges and
+/// the ball's rim shading.
+fn darken(c: Rgb, amount: f32) -> Rgb {
+    [
+        clamp01(c[0] * (1.0 - amount)),
+        clamp01(c[1] * (1.0 - amount)),
+        clamp01(c[2] * (1.0 - amount)),
+    ]
+}
+
+fn to_rgba8(c: Rgb, alpha: u8) -> [u8; 4] {
+    [
+        (c[0] * 255.0).round() as u8,
+        (c[1] * 255.0).round() as u8,
+        (c[2] * 255.0).round() as u8,
+        alpha,
+    ]
+}
+
+/// Writes one `[u8; 4]` pixel into a `CELL_SIZE`-square RGBA8 buffer at
+/// local `(x, y)`. Every recipe below builds its sprite into a fresh
+/// buffer this way before handing it to [`Atlas::set_sprite`].
+fn put_pixel(buf: &mut [u8], x: u32, y: u32, rgba: [u8; 4]) {
+    let idx = ((y * CELL_SIZE + x) * 4) as usize;
+    buf[idx..idx + 4].copy_from_slice(&rgba);
+}
+
+/// Cheap deterministic position hash (the MurmurHash3 finalizer mix,
+/// values folded into [`NOISE_SEED`] up front). A pure function of
+/// `(x, y)` -- no RNG stream to advance, no iteration-order dependence --
+/// which is *why* noise "seeded by grid position" is automatically stable
+/// across calls/frames/processes: the same coordinate always mixes down
+/// to the same bits.
+fn hash_u32(x: u32, y: u32) -> u32 {
+    let mut h = NOISE_SEED
+        ^ (x as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        ^ (y as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
+    h ^= h >> 33;
+    h = h.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+    h ^= h >> 33;
+    h = h.wrapping_mul(0xC4CE_B9FE_1A85_EC53);
+    h ^= h >> 33;
+    h as u32
+}
+
+/// [`hash_u32`] remapped to a signed unit range, ready to use as additive
+/// noise/brightness jitter.
+fn hash_signed(x: u32, y: u32) -> f32 {
+    (hash_u32(x, y) as f32 / u32::MAX as f32) * 2.0 - 1.0
+}
+
+/// Bevel rim thickness, in pixels, on every brick sprite's top/left
+/// (highlight) and bottom/right (shadow) edges.
+const BEVEL_WIDTH: u32 = 5;
+/// How far the top/left rim is blended toward white.
+const BEVEL_HIGHLIGHT: f32 = 0.35;
+/// How far the bottom/right rim is blended toward black.
+const BEVEL_SHADOW: f32 = 0.35;
+/// Vertical gloss-ramp magnitude on a brick's interior: the top of the
+/// panel is brighter, the bottom darker, simulating a light from above
+/// (the same corner the bevel highlight implies).
+const GLOSS_STRENGTH: f32 = 0.22;
+/// Amplitude of the subtle per-pixel brightness noise on brick interiors.
+/// Small on purpose -- "subtle," per this bead's brief -- it should read
+/// as material grain, not visible static.
+const BRICK_NOISE_AMPLITUDE: f32 = 0.05;
+
+/// Per-type brick palette: base color only, loosely matching the flat
+/// colors `render.rs` already draws (`NORMAL_BRICK_COLOR`,
+/// `ARMORED_BRICK_COLOR`, `ARMORED_BRICK_COLOR_HIT`,
+/// `INDESTRUCTIBLE_BRICK_COLOR`) so the new beveled look doesn't read as
+/// an unrelated palette swap. Everything else -- bevel, gloss, noise -- is
+/// the one shared [`beveled_brick_panel`] recipe; only the base color
+/// changes per type.
+const BRICK_PALETTE: [(SpriteId, Rgb); 4] = [
+    (SpriteId::BrickNormal, [0.85, 0.25, 0.25]),
+    (SpriteId::BrickArmoredIntact, [0.30, 0.45, 0.68]),
+    (SpriteId::BrickArmoredHit, [0.90, 0.60, 0.15]),
+    (SpriteId::BrickIndestructible, [0.25, 0.25, 0.28]),
 ];
 
-/// One `CELL_SIZE x CELL_SIZE` RGBA8 sprite's worth of a single solid
-/// color, ready for [`Atlas::set_sprite`].
-fn solid_rgba(color: [u8; 4]) -> Vec<u8> {
-    color[..].repeat((CELL_SIZE * CELL_SIZE) as usize)
+/// Shared brick recipe: a directional gloss ramp (bright top, dark
+/// bottom) plus subtle position-seeded noise on the interior, framed by a
+/// beveled rim (light top/left, shadow bottom/right) so every brick type
+/// reads as a raised panel rather than a flat swatch.
+///
+/// Noise is seeded by this sprite's *absolute* pixel position in the
+/// atlas grid (via [`Atlas::cell_rect`]), not just its local `(x, y)`
+/// within the cell -- so distinct brick types never accidentally share
+/// the same noise pattern, without needing a separate per-type salt
+/// constant.
+fn beveled_brick_panel(id: SpriteId, base: Rgb) -> Vec<u8> {
+    let (cell_x, cell_y, _, _) = Atlas::cell_rect(id);
+    let mut out = vec![0u8; (CELL_SIZE * CELL_SIZE * 4) as usize];
+    for y in 0..CELL_SIZE {
+        let v = y as f32 / (CELL_SIZE - 1) as f32;
+        let gloss = 1.0 + GLOSS_STRENGTH * (0.5 - v);
+        for x in 0..CELL_SIZE {
+            let noise = hash_signed(cell_x + x, cell_y + y) * BRICK_NOISE_AMPLITUDE;
+            let mut color = scale(base, gloss + noise);
+            if x < BEVEL_WIDTH || y < BEVEL_WIDTH {
+                color = lighten(color, BEVEL_HIGHLIGHT);
+            } else if x >= CELL_SIZE - BEVEL_WIDTH || y >= CELL_SIZE - BEVEL_WIDTH {
+                color = darken(color, BEVEL_SHADOW);
+            }
+            put_pixel(&mut out, x, y, to_rgba8(color, 255));
+        }
+    }
+    out
+}
+
+/// `render.rs`'s flat `PADDLE_COLOR` -- the brushed-metal recipe's base.
+const PADDLE_BASE: Rgb = [0.80, 0.85, 0.95];
+/// Row-to-row brightness jitter amplitude: brushed metal's horizontal
+/// grain lines. Deliberately depends only on `y` (see
+/// [`brushed_metal_paddle`]), never `x`, so the streaks run horizontally
+/// the full width of the paddle.
+const PADDLE_STREAK_AMPLITUDE: f32 = 0.06;
+/// Fine per-pixel brightness jitter on top of the row streaks, for grain
+/// within a streak rather than perfectly flat bands.
+const PADDLE_GRAIN_AMPLITUDE: f32 = 0.025;
+/// Where the specular gloss band sits, as a fraction down the cell (near
+/// the top, like an overhead light reflecting off brushed aluminum).
+const PADDLE_GLOSS_BAND_CENTER: f32 = 0.30;
+/// Gaussian falloff width of the gloss band.
+const PADDLE_GLOSS_BAND_WIDTH: f32 = 0.18;
+/// Peak brightness boost at the gloss band's center.
+const PADDLE_GLOSS_STRENGTH: f32 = 0.30;
+
+/// Brushed-metal paddle: horizontal brightness streaks (one jittered
+/// value per row, so grain reads as anisotropic/directional the way a
+/// brushed finish does) plus fine per-pixel grain and a soft horizontal
+/// specular gloss band near the top.
+fn brushed_metal_paddle() -> Vec<u8> {
+    let (cell_x, cell_y, _, _) = Atlas::cell_rect(SpriteId::Paddle);
+    let mut out = vec![0u8; (CELL_SIZE * CELL_SIZE * 4) as usize];
+    for y in 0..CELL_SIZE {
+        let streak = hash_signed(0, cell_y + y) * PADDLE_STREAK_AMPLITUDE;
+        let v = y as f32 / (CELL_SIZE - 1) as f32;
+        let band_dist = v - PADDLE_GLOSS_BAND_CENTER;
+        let band = (-(band_dist * band_dist)
+            / (2.0 * PADDLE_GLOSS_BAND_WIDTH * PADDLE_GLOSS_BAND_WIDTH))
+            .exp();
+        for x in 0..CELL_SIZE {
+            let grain = hash_signed(cell_x + x, cell_y + y) * PADDLE_GRAIN_AMPLITUDE;
+            let brightness = 1.0 + streak + grain + band * PADDLE_GLOSS_STRENGTH;
+            let color = scale(PADDLE_BASE, brightness);
+            put_pixel(&mut out, x, y, to_rgba8(color, 255));
+        }
+    }
+    out
+}
+
+/// `render.rs`'s flat `BALL_COLOR` -- the specular ball recipe's base.
+const BALL_BASE: Rgb = [1.0, 0.78, 0.2];
+/// Ball radius as a fraction of the cell's half-size, leaving a thin
+/// transparent margin so the round sprite doesn't touch the cell edge.
+const BALL_RADIUS_FRAC: f32 = 0.94;
+/// Width, in pixels, of the antialiased silhouette edge.
+const BALL_EDGE_SOFTEN_PX: f32 = 1.5;
+/// Specular hotspot center, in unit-circle space, offset toward the same
+/// top-left light direction the brick bevels imply.
+const BALL_SPECULAR_OFFSET: (f32, f32) = (-0.30, -0.30);
+/// Specular hotspot falloff radius, in unit-circle space.
+const BALL_SPECULAR_RADIUS: f32 = 0.35;
+/// Peak brightness boost at the specular hotspot's center.
+const BALL_SPECULAR_STRENGTH: f32 = 0.9;
+/// How far the ball darkens from center to silhouette rim.
+const BALL_RIM_DARKEN: f32 = 0.55;
+
+/// Specular ball: a round (alpha-masked) sprite shaded darker toward its
+/// rim, with a bright specular highlight offset toward the top-left, the
+/// way a glossy sphere reflects an overhead light.
+fn specular_ball() -> Vec<u8> {
+    let mut out = vec![0u8; (CELL_SIZE * CELL_SIZE * 4) as usize];
+    let center = (CELL_SIZE - 1) as f32 / 2.0;
+    let radius_px = center * BALL_RADIUS_FRAC;
+    for y in 0..CELL_SIZE {
+        for x in 0..CELL_SIZE {
+            let dx = x as f32 - center;
+            let dy = y as f32 - center;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let alpha = if dist <= radius_px - BALL_EDGE_SOFTEN_PX {
+                1.0
+            } else if dist >= radius_px {
+                0.0
+            } else {
+                (radius_px - dist) / BALL_EDGE_SOFTEN_PX
+            };
+            if alpha <= 0.0 {
+                put_pixel(&mut out, x, y, [0, 0, 0, 0]);
+                continue;
+            }
+            let nx = dx / radius_px;
+            let ny = dy / radius_px;
+            let rim = (nx * nx + ny * ny).sqrt().min(1.0);
+            let mut color = darken(BALL_BASE, rim * BALL_RIM_DARKEN);
+            let sx = nx - BALL_SPECULAR_OFFSET.0;
+            let sy = ny - BALL_SPECULAR_OFFSET.1;
+            let spec_dist = (sx * sx + sy * sy).sqrt();
+            let spec = (1.0 - spec_dist / BALL_SPECULAR_RADIUS).max(0.0);
+            color = lighten(color, spec * BALL_SPECULAR_STRENGTH);
+            put_pixel(
+                &mut out,
+                x,
+                y,
+                to_rgba8(color, (alpha * 255.0).round() as u8),
+            );
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -294,5 +533,57 @@ mod tests {
     fn set_sprite_panics_on_wrong_size_buffer() {
         let mut atlas = TextureSource::Procedural.load();
         atlas.set_sprite(SpriteId::Ball, &[0u8; 4]);
+    }
+
+    /// This bead's acceptance criterion, stated directly: generating the
+    /// procedural atlas twice (same fixed `NOISE_SEED`, no RNG stream,
+    /// see `procedural_placeholder`'s doc comment) must yield the exact
+    /// same bytes, not just "close" or "same dimensions."
+    #[test]
+    fn procedural_atlas_is_byte_identical_across_generations() {
+        let a = TextureSource::Procedural.load();
+        let b = TextureSource::Procedural.load();
+        assert_eq!(a.width, b.width);
+        assert_eq!(a.height, b.height);
+        assert_eq!(a.pixels, b.pixels);
+    }
+
+    /// Exercises the beveled-panel recipe's directional lighting: with a
+    /// light implied from the top-left, that corner should end up
+    /// brighter than the bottom-right corner. A regression that dropped
+    /// the bevel (or reversed its direction) would flatten or invert this.
+    #[test]
+    fn brick_sprite_has_a_directional_bevel() {
+        let atlas = TextureSource::Procedural.load();
+        let (cx, cy, w, h) = Atlas::cell_rect(SpriteId::BrickNormal);
+        let pixel = |x: u32, y: u32| -> u32 {
+            let idx = (((cy + y) * atlas.width + (cx + x)) * 4) as usize;
+            atlas.pixels[idx..idx + 3].iter().map(|&c| c as u32).sum()
+        };
+        let top_left = pixel(0, 0);
+        let bottom_right = pixel(w - 1, h - 1);
+        assert!(
+            top_left > bottom_right,
+            "expected a brighter top-left highlight than bottom-right shadow, got {top_left} vs {bottom_right}"
+        );
+    }
+
+    /// Exercises the specular-ball recipe's round alpha mask and shading:
+    /// the cell's corner sits outside the ball's radius (transparent) and
+    /// its center sits deep inside it (fully opaque).
+    #[test]
+    fn ball_sprite_is_round_with_transparent_corners() {
+        let atlas = TextureSource::Procedural.load();
+        let (cx, cy, w, h) = Atlas::cell_rect(SpriteId::Ball);
+        let alpha = |x: u32, y: u32| -> u8 {
+            let idx = (((cy + y) * atlas.width + (cx + x)) * 4) as usize;
+            atlas.pixels[idx + 3]
+        };
+        assert_eq!(alpha(0, 0), 0, "cell corner should be outside the ball");
+        assert_eq!(
+            alpha(w / 2, h / 2),
+            255,
+            "cell center should be fully inside the ball"
+        );
     }
 }
