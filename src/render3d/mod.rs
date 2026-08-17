@@ -22,6 +22,8 @@
 //! have something to shade. Nothing about *where* an entity is on the board
 //! changes -- it's `render.rs`'s own layout, just given a third dimension.
 
+mod atlas;
+
 use std::f32::consts::PI;
 use std::mem::size_of;
 use std::sync::Arc;
@@ -37,6 +39,7 @@ use crate::events::PowerUpKind;
 use crate::game::{Ball, Brick, Game, Paddle, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH};
 use crate::levels::BrickKind;
 use crate::render::RenderState;
+use atlas::{Atlas, SpriteId};
 
 // -- entity extrusion / placement constants --------------------------------
 
@@ -89,6 +92,19 @@ fn brick_color(brick: &Brick) -> [f32; 4] {
         BrickKind::Armored if brick.hits_remaining >= 2 => ARMORED_BRICK_COLOR,
         BrickKind::Armored => ARMORED_BRICK_COLOR_HIT,
         BrickKind::Indestructible => INDESTRUCTIBLE_BRICK_COLOR,
+    }
+}
+
+/// Which atlas sprite a brick's front face samples -- same kind/hits-
+/// remaining split `brick_color` uses for its own two armored colors, so
+/// the textured front face and the flat side faces always agree on which
+/// visual state a brick is in.
+fn sprite_for_brick(brick: &Brick) -> SpriteId {
+    match brick.kind {
+        BrickKind::Normal => SpriteId::BrickNormal,
+        BrickKind::Armored if brick.hits_remaining >= 2 => SpriteId::BrickArmoredIntact,
+        BrickKind::Armored => SpriteId::BrickArmoredHit,
+        BrickKind::Indestructible => SpriteId::BrickIndestructible,
     }
 }
 
@@ -148,6 +164,11 @@ struct CameraUniform {
 struct Vertex3D {
     position: [f32; 3],
     normal: [f32; 3],
+    /// Local 0..1 quad UV, meaningful only on the +Z (front) face -- the
+    /// only face this pipeline ever textures (bricks' front face, see
+    /// `Instance3D::textured`). Every other face carries `[0.0, 0.0]`
+    /// stub coordinates since nothing ever samples them.
+    uv: [f32; 2],
 }
 
 /// Per-instance transform + color for one cube or sphere. Deliberately just
@@ -162,6 +183,11 @@ struct Instance3D {
     center: [f32; 3],
     scale: [f32; 3],
     color: [f32; 4],
+    /// Atlas UV rect (`u0, v0, u1, v1`) this instance's front face
+    /// samples, or `[0.0; 4]` (zero-area -- see `textured_brick_instance`
+    /// et al.) for every instance that isn't a textured brick, which the
+    /// fragment shader reads as "use flat `color` on every face instead."
+    uv_rect: [f32; 4],
 }
 
 impl Instance3D {
@@ -170,6 +196,19 @@ impl Instance3D {
             center,
             scale,
             color,
+            uv_rect: [0.0; 4],
+        }
+    }
+
+    /// Same as `new`, but with a nonzero-area atlas UV rect so the
+    /// shader's front face samples `uv_rect` instead of `color` (see
+    /// `Vertex3D::uv`'s doc comment and `SHADER_SRC`'s `fs_main`).
+    fn textured(center: [f32; 3], scale: [f32; 3], color: [f32; 4], uv: atlas::UvRect) -> Self {
+        Self {
+            center,
+            scale,
+            color,
+            uv_rect: [uv.u0, uv.v0, uv.u1, uv.v1],
         }
     }
 }
@@ -179,107 +218,134 @@ impl Instance3D {
 /// smooth-shaded shapes here. Hardcoded like `render.rs`'s `QUAD_VERTICES`:
 /// small, fixed data with no reason to generate it at runtime.
 const CUBE_VERTICES: [Vertex3D; 24] = [
-    // +X
+    // +X (untextured -- stub uv, see `Vertex3D::uv`'s doc comment)
     Vertex3D {
         position: [1.0, -1.0, -1.0],
         normal: [1.0, 0.0, 0.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [1.0, 1.0, -1.0],
         normal: [1.0, 0.0, 0.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [1.0, 1.0, 1.0],
         normal: [1.0, 0.0, 0.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [1.0, -1.0, 1.0],
         normal: [1.0, 0.0, 0.0],
+        uv: [0.0, 0.0],
     },
-    // -X
+    // -X (untextured)
     Vertex3D {
         position: [-1.0, -1.0, 1.0],
         normal: [-1.0, 0.0, 0.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [-1.0, 1.0, 1.0],
         normal: [-1.0, 0.0, 0.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [-1.0, 1.0, -1.0],
         normal: [-1.0, 0.0, 0.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [-1.0, -1.0, -1.0],
         normal: [-1.0, 0.0, 0.0],
+        uv: [0.0, 0.0],
     },
-    // +Y
+    // +Y (untextured)
     Vertex3D {
         position: [-1.0, 1.0, -1.0],
         normal: [0.0, 1.0, 0.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [-1.0, 1.0, 1.0],
         normal: [0.0, 1.0, 0.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [1.0, 1.0, 1.0],
         normal: [0.0, 1.0, 0.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [1.0, 1.0, -1.0],
         normal: [0.0, 1.0, 0.0],
+        uv: [0.0, 0.0],
     },
-    // -Y
+    // -Y (untextured)
     Vertex3D {
         position: [-1.0, -1.0, 1.0],
         normal: [0.0, -1.0, 0.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [-1.0, -1.0, -1.0],
         normal: [0.0, -1.0, 0.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [1.0, -1.0, -1.0],
         normal: [0.0, -1.0, 0.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [1.0, -1.0, 1.0],
         normal: [0.0, -1.0, 0.0],
+        uv: [0.0, 0.0],
     },
-    // +Z (toward the camera/paddle side)
+    // +Z (toward the camera/paddle side -- the only face this pipeline
+    // ever textures; see `Instance3D::textured` and `SHADER_SRC`'s
+    // `fs_main`). uv is a standard y-down quad mapping: local -Y (bottom)
+    // is v=1, local +Y (top) is v=0.
     Vertex3D {
         position: [-1.0, -1.0, 1.0],
         normal: [0.0, 0.0, 1.0],
+        uv: [0.0, 1.0],
     },
     Vertex3D {
         position: [1.0, -1.0, 1.0],
         normal: [0.0, 0.0, 1.0],
+        uv: [1.0, 1.0],
     },
     Vertex3D {
         position: [1.0, 1.0, 1.0],
         normal: [0.0, 0.0, 1.0],
+        uv: [1.0, 0.0],
     },
     Vertex3D {
         position: [-1.0, 1.0, 1.0],
         normal: [0.0, 0.0, 1.0],
+        uv: [0.0, 0.0],
     },
-    // -Z (far side, away from the camera)
+    // -Z (far side, away from the camera -- untextured)
     Vertex3D {
         position: [1.0, -1.0, -1.0],
         normal: [0.0, 0.0, -1.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [-1.0, -1.0, -1.0],
         normal: [0.0, 0.0, -1.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [-1.0, 1.0, -1.0],
         normal: [0.0, 0.0, -1.0],
+        uv: [0.0, 0.0],
     },
     Vertex3D {
         position: [1.0, 1.0, -1.0],
         normal: [0.0, 0.0, -1.0],
+        uv: [0.0, 0.0],
     },
 ];
 
@@ -319,9 +385,12 @@ fn build_sphere_mesh(stacks: u32, sectors: u32) -> (Vec<Vertex3D>, Vec<u16>) {
             let y = sin_phi;
             let z = cos_phi * sin_theta;
             // Unit sphere: the surface normal at a point IS that point.
+            // Balls are never textured (see `Vertex3D::uv`'s doc comment
+            // -- only bricks' +Z face is), so `uv` is an unused stub here.
             vertices.push(Vertex3D {
                 position: [x, y, z],
                 normal: [x, y, z],
+                uv: [0.0, 0.0],
             });
         }
     }
@@ -345,10 +414,10 @@ fn build_sphere_mesh(stacks: u32, sectors: u32) -> (Vec<Vertex3D>, Vec<u16>) {
     (vertices, indices)
 }
 
-const VERTEX_ATTRS: [wgpu::VertexAttribute; 2] =
-    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
-const INSTANCE_ATTRS: [wgpu::VertexAttribute; 3] =
-    wgpu::vertex_attr_array![2 => Float32x3, 3 => Float32x3, 4 => Float32x4];
+const VERTEX_ATTRS: [wgpu::VertexAttribute; 3] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 5 => Float32x2];
+const INSTANCE_ATTRS: [wgpu::VertexAttribute; 4] =
+    wgpu::vertex_attr_array![2 => Float32x3, 3 => Float32x3, 4 => Float32x4, 6 => Float32x4];
 
 const SHADER_SRC: &str = r#"
 struct Camera {
@@ -357,20 +426,31 @@ struct Camera {
 };
 @group(0) @binding(0) var<uniform> camera: Camera;
 
+// Brick front-face atlas (see `Renderer3D::new`'s atlas/texture setup and
+// `render3d::atlas`'s module doc comment for where these pixels come
+// from). Nothing else this pipeline draws samples this texture -- see
+// `fs_main`'s `has_sprite` check below.
+@group(1) @binding(0) var atlas_tex: texture_2d<f32>;
+@group(1) @binding(1) var atlas_samp: sampler;
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
+    @location(5) uv: vec2<f32>,
 };
 struct InstanceInput {
     @location(2) center: vec3<f32>,
     @location(3) scale: vec3<f32>,
     @location(4) color: vec4<f32>,
+    @location(6) uv_rect: vec4<f32>,
 };
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) world_pos: vec3<f32>,
     @location(1) world_normal: vec3<f32>,
     @location(2) color: vec4<f32>,
+    @location(3) uv: vec2<f32>,
+    @location(4) uv_rect: vec4<f32>,
 };
 
 // Key light direction (points FROM the surface TOWARD the light) and fill
@@ -397,6 +477,8 @@ fn vs_main(vert: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.world_pos = world_pos;
     out.world_normal = world_normal;
     out.color = inst.color;
+    out.uv = vert.uv;
+    out.uv_rect = inst.uv_rect;
     return out;
 }
 
@@ -410,7 +492,26 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let diffuse = max(dot(n, l), 0.0);
     let spec = pow(max(dot(n, h), 0.0), SHININESS) * SPEC_STRENGTH;
 
-    let lit = in.color.rgb * (AMBIENT + diffuse) + vec3<f32>(spec, spec, spec);
+    // Front-face-only texturing (bricks' +Z side -- see `Instance3D`'s
+    // doc comment): a nonzero-area `uv_rect` means "this instance carries
+    // an atlas sprite," and `n.z` close to 1 means "this fragment belongs
+    // to that unrotated cube's +Z face" (no rotation ever happens here,
+    // so object-space and world-space normals are identical). Every other
+    // face/instance keeps the flat `color` albedo. `textureSampleLevel`
+    // (not `textureSample`) is used deliberately: this atlas has no
+    // mipmaps, and an explicit LOD sidesteps WGSL's derivative-uniformity
+    // requirement for a texture sample inside this per-fragment branch.
+    let has_sprite = (in.uv_rect.z - in.uv_rect.x) > 0.0;
+    var albedo = in.color.rgb;
+    if has_sprite && n.z > 0.9 {
+        let atlas_uv = vec2<f32>(
+            mix(in.uv_rect.x, in.uv_rect.z, in.uv.x),
+            mix(in.uv_rect.y, in.uv_rect.w, in.uv.y)
+        );
+        albedo = textureSampleLevel(atlas_tex, atlas_samp, atlas_uv, 0.0).rgb;
+    }
+
+    let lit = albedo * (AMBIENT + diffuse) + vec3<f32>(spec, spec, spec);
     return vec4<f32>(lit, in.color.a);
 }
 "#;
@@ -483,6 +584,12 @@ pub struct Renderer3D {
     depth_view: wgpu::TextureView,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    /// Brick front-face atlas sprite lookup (see `sprite_for_brick` and
+    /// `atlas::Atlas::uv_rect`). The pixels themselves are uploaded once
+    /// into `texture_bind_group`'s texture at construction time; this is
+    /// kept around only for its cheap per-frame `uv_rect` arithmetic.
+    atlas: Atlas,
+    texture_bind_group: wgpu::BindGroup,
     cube_vertex_buffer: wgpu::Buffer,
     cube_index_buffer: wgpu::Buffer,
     cube_instance_buffer: wgpu::Buffer,
@@ -575,13 +682,106 @@ impl Renderer3D {
             }],
         });
 
+        // Brick front-face atlas -- see `render3d::atlas`'s module doc
+        // comment for why this is a local copy of Workstream B's real
+        // `epic/textures:src/assets.rs` recipe rather than an import of
+        // it, and why that's still "B's atlas" rather than an invented
+        // placeholder.
+        eprintln!(
+            "render3d: brick front faces textured via a LOCAL COPY of Workstream B's real \
+             atlas recipe (epic/textures src/assets.rs, beads b1/b2) -- hand-synced pending \
+             the cross-epic merge into master, see src/render3d/atlas.rs's doc comment. This \
+             is B's real beveled-brick-panel recipe, not an invented flat placeholder."
+        );
+        let atlas = Atlas::procedural_placeholder();
+        let atlas_texture_size = wgpu::Extent3d {
+            width: atlas.width,
+            height: atlas.height,
+            depth_or_array_layers: 1,
+        };
+        let atlas_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("render3d brick atlas texture"),
+            size: atlas_texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &atlas_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &atlas.pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(atlas.width * 4),
+                rows_per_image: Some(atlas.height),
+            },
+            atlas_texture_size,
+        );
+        let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // Nearest filtering: the atlas is small pixel-art-style sprites
+        // sampled at roughly 1:1 on screen, not photographic detail --
+        // bilinear would just blur the bevel/noise recipe's fine detail.
+        let atlas_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("render3d brick atlas sampler"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("render3d atlas texture bind group layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("render3d atlas texture bind group"),
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&atlas_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&atlas_sampler),
+                },
+            ],
+        });
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("render3d blinn-phong shader"),
             source: wgpu::ShaderSource::Wgsl(SHADER_SRC.into()),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("render3d pipeline layout"),
-            bind_group_layouts: &[Some(&camera_bind_group_layout)],
+            bind_group_layouts: &[
+                Some(&camera_bind_group_layout),
+                Some(&texture_bind_group_layout),
+            ],
             immediate_size: 0,
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -681,6 +881,8 @@ impl Renderer3D {
             depth_view,
             camera_buffer,
             camera_bind_group,
+            atlas,
+            texture_bind_group,
             cube_vertex_buffer,
             cube_index_buffer,
             cube_instance_buffer,
@@ -763,14 +965,19 @@ impl Renderer3D {
             Instance3D::new([x, ball.radius, z], [ball.radius; 3], BALL_COLOR)
         }));
 
-        // Bricks. `.take(MAX_BRICKS)` is defensive only -- `levels.rs`'s
+        // Bricks -- front face textured from `self.atlas` (see
+        // `sprite_for_brick`/`Instance3D::textured`), side/top/bottom
+        // faces stay `brick_color`'s flat palette (see `SHADER_SRC`'s
+        // `fs_main`). `.take(MAX_BRICKS)` is defensive only -- `levels.rs`'s
         // own tests already enforce every built-in level fits this cap.
         cube_instances.extend(curr.bricks.iter().take(MAX_BRICKS).map(|brick| {
             let (x, z) = world_xz(brick.x, brick.y);
-            Instance3D::new(
+            let uv = self.atlas.uv_rect(sprite_for_brick(brick));
+            Instance3D::textured(
                 [x, BRICK_THICKNESS / 2.0, z],
                 [brick.width / 2.0, BRICK_THICKNESS / 2.0, brick.height / 2.0],
                 brick_color(brick),
+                uv,
             )
         }));
 
@@ -861,6 +1068,7 @@ impl Renderer3D {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            pass.set_bind_group(1, &self.texture_bind_group, &[]);
 
             pass.set_vertex_buffer(0, self.cube_vertex_buffer.slice(..));
             pass.set_vertex_buffer(1, self.cube_instance_buffer.slice(..));
@@ -1005,6 +1213,62 @@ mod tests {
         assert_ne!(normal, armored);
         assert_ne!(normal, indestructible);
         assert_ne!(armored, indestructible);
+    }
+
+    #[test]
+    fn sprite_for_brick_agrees_with_brick_color_on_the_armored_hit_split() {
+        let brick_of = |kind, hits| Brick {
+            x: 0.0,
+            y: 0.0,
+            width: 52.0,
+            height: 22.0,
+            kind,
+            hits_remaining: hits,
+            score: 10,
+        };
+        // Every kind/hit combination gets its own sprite, and in
+        // particular the armored intact/hit split -- the one place a
+        // single `BrickKind` maps to two different visual states -- must
+        // land on two distinct sprites, same as `brick_color`'s two
+        // distinct colors for the same split.
+        let normal = sprite_for_brick(&brick_of(BrickKind::Normal, 1));
+        let armored_intact = sprite_for_brick(&brick_of(BrickKind::Armored, 2));
+        let armored_hit = sprite_for_brick(&brick_of(BrickKind::Armored, 1));
+        let indestructible = sprite_for_brick(&brick_of(BrickKind::Indestructible, 0));
+        assert_eq!(normal, SpriteId::BrickNormal);
+        assert_eq!(armored_intact, SpriteId::BrickArmoredIntact);
+        assert_eq!(armored_hit, SpriteId::BrickArmoredHit);
+        assert_eq!(indestructible, SpriteId::BrickIndestructible);
+        assert_ne!(armored_intact, armored_hit);
+    }
+
+    #[test]
+    fn textured_brick_instance_carries_a_nonzero_area_uv_rect() {
+        let atlas = Atlas::procedural_placeholder();
+        let brick = Brick {
+            x: 0.0,
+            y: 0.0,
+            width: 52.0,
+            height: 22.0,
+            kind: BrickKind::Normal,
+            hits_remaining: 1,
+            score: 10,
+        };
+        let uv = atlas.uv_rect(sprite_for_brick(&brick));
+        let instance = Instance3D::textured([0.0; 3], [1.0; 3], brick_color(&brick), uv);
+        assert!(
+            instance.uv_rect[2] > instance.uv_rect[0],
+            "u1 must exceed u0"
+        );
+        assert!(
+            instance.uv_rect[3] > instance.uv_rect[1],
+            "v1 must exceed v0"
+        );
+
+        // A plain (non-textured) instance keeps the zero-area rect the
+        // shader reads as "no sprite, use flat color everywhere."
+        let flat = Instance3D::new([0.0; 3], [1.0; 3], PADDLE_COLOR);
+        assert_eq!(flat.uv_rect, [0.0; 4]);
     }
 
     #[test]
