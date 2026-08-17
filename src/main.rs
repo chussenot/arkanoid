@@ -4,8 +4,10 @@ mod cli;
 mod events;
 mod game;
 mod levels;
+mod levelset;
 mod render;
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -211,12 +213,122 @@ impl App {
     }
 }
 
+/// Resolves `--levelset <path>` into a loaded [`levelset::LevelSet`].
+/// `path_arg` naming a file loads it directly; naming a directory loads
+/// every `.lbl` file in it (`levelset::load_dir`) and logs each one found
+/// -- that printed list is the "menu" of what was available -- picking
+/// the first (sorted-by-path) as active. `None` here (bad path, empty
+/// directory, I/O error) means the caller falls back to the built-in 3
+/// levels; `main` never panics on a bad `--levelset` value.
+///
+/// ponytail: picking the directory's first entry rather than presenting
+/// an in-game selection screen is deliberately minimal -- an interactive
+/// menu needs `game.rs`/`render.rs` (both out of this bead's file scope,
+/// and `game.rs` doesn't yet accept an external level source at all).
+/// Real progression through a loaded set is arkanoid-v2-a5's job.
+fn resolve_levelset(path_arg: &str) -> Option<levelset::LevelSet> {
+    let path = Path::new(path_arg);
+    if path.is_dir() {
+        let mut found = levelset::load_dir(path).ok()?;
+        if found.is_empty() {
+            return None;
+        }
+        for (p, set) in &found {
+            println!(
+                "levelset menu: {} ({} level(s))",
+                p.display(),
+                set.levels.len()
+            );
+        }
+        Some(found.remove(0).1)
+    } else {
+        levelset::load_file(path).ok()
+    }
+}
+
 fn main() {
-    // Unused until a v2 workstream adds its first flag -- see cli.rs.
-    let _args = cli::parse();
+    let args = cli::parse();
+    let loaded_levelset = args
+        .levelset
+        .as_deref()
+        .and_then(|path| match resolve_levelset(path) {
+            Some(set) => {
+                for warning in &set.warnings {
+                    eprintln!("levelset warning: {warning}");
+                }
+                println!(
+                    "--levelset {path}: loaded {} level(s){}",
+                    set.levels.len(),
+                    if set.warnings.is_empty() {
+                        ""
+                    } else {
+                        " (see warnings above)"
+                    }
+                );
+                Some(set)
+            }
+            None => {
+                eprintln!(
+                "--levelset {path}: no levelset found there; falling back to the built-in 3 levels"
+            );
+                None
+            }
+        });
+
     let event_loop = EventLoop::new().expect("failed to create event loop");
     let mut app = App::default();
+    // Feed a successfully-resolved `--levelset` load into `Game` before the
+    // event loop starts driving frames (arkanoid-v2-a8's integration job --
+    // see `Game::load_external_levels`'s doc comment). A `None` here (no
+    // flag, bad path, empty directory) leaves the built-in 3 levels active.
+    if let Some(set) = loaded_levelset {
+        app.game.load_external_levels(set.levels);
+    }
     event_loop
         .run_app(&mut app)
         .expect("event loop terminated with an error");
+}
+
+#[cfg(test)]
+mod resolve_levelset_tests {
+    use super::*;
+
+    #[test]
+    fn missing_path_falls_back_to_none() {
+        assert!(resolve_levelset("does/not/exist.lbl").is_none());
+    }
+
+    #[test]
+    fn file_path_loads_directly() {
+        let set = resolve_levelset("tests/fixtures/homemade.lbl").expect("fixture should load");
+        assert_eq!(set.levels.len(), 3);
+    }
+
+    #[test]
+    fn directory_path_picks_the_first_sorted_entry() {
+        let set = resolve_levelset("tests/fixtures").expect("fixture dir should load");
+        // `tests/fixtures/homemade.lbl` is the only `.lbl` file there today.
+        assert_eq!(set.levels.len(), 3);
+    }
+
+    /// Exercises the actual `main()` wiring (arkanoid-v2-a8's integration
+    /// job): a resolved levelset's levels reach `Game` via
+    /// `load_external_levels`, not just `resolve_levelset`'s own parsing.
+    /// Uses the checked-in MIT fixture rather than a fetched GPL levelset
+    /// so this runs in every `cargo test`, no `scripts/fetch-levelsets.sh`
+    /// required.
+    #[test]
+    fn resolved_levelset_reaches_game_via_load_external_levels() {
+        let set = resolve_levelset("tests/fixtures/homemade.lbl").expect("fixture should load");
+        let expected_first_level_bricks = set.levels[0].bricks.len();
+
+        let mut game = Game::new();
+        game.load_external_levels(set.levels);
+
+        assert_eq!(
+            game.bricks.len(),
+            expected_first_level_bricks,
+            "Game should be playing the external set's first level, not the built-in levels"
+        );
+    }
 }

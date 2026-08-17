@@ -8,6 +8,7 @@ use rand::{RngExt, SeedableRng};
 
 use crate::events::{GameEvent, PowerUpKind};
 use crate::levels::{self, BrickKind};
+use crate::levelset::{ExternalBrickSpawn, ExternalLevel, GRID_WIDTH};
 
 /// Player input for one fixed tick. Minimal for now; later milestones
 /// (pause menu navigation, etc.) may extend this.
@@ -219,6 +220,33 @@ fn score_for_row(row: usize) -> u32 {
     70u32.saturating_sub((row as u32) * 10).max(10)
 }
 
+/// One already-typed-and-positioned brick spawn -> a full `Brick` (row ->
+/// score, kind -> hit count, grid-local pixels -> playfield pixels via
+/// `offset_x`). Shared by the built-in-levels path (`build_bricks`) and
+/// the externally-loaded one (`build_external_bricks`, arkanoid-v2-a5) so
+/// this mapping only lives in one place.
+fn brick_from_spawn(x: f32, y: f32, kind: BrickKind, offset_x: f32) -> Brick {
+    let row = (y / levels::BRICK_HEIGHT).round() as usize;
+    let hits_remaining = match kind {
+        BrickKind::Normal => 1,
+        BrickKind::Armored => 2,
+        BrickKind::Indestructible => 0,
+    };
+    let score = match kind {
+        BrickKind::Indestructible => 0,
+        _ => score_for_row(row),
+    };
+    Brick {
+        x: x + offset_x + levels::BRICK_WIDTH / 2.0,
+        y: y + BRICK_GRID_MARGIN_TOP + levels::BRICK_HEIGHT / 2.0,
+        width: levels::BRICK_WIDTH,
+        height: levels::BRICK_HEIGHT,
+        kind,
+        hits_remaining,
+        score,
+    }
+}
+
 /// Builds the brick layout for `levels::LEVELS[level_index]`, centering
 /// the grid horizontally in the 800-wide playfield (levels can vary in
 /// column count) and offsetting it down by `BRICK_GRID_MARGIN_TOP`.
@@ -229,27 +257,20 @@ fn build_bricks(level_index: usize) -> Vec<Brick> {
 
     levels::parse_level(grid)
         .into_iter()
-        .map(|spawn| {
-            let row = (spawn.y / levels::BRICK_HEIGHT).round() as usize;
-            let hits_remaining = match spawn.kind {
-                BrickKind::Normal => 1,
-                BrickKind::Armored => 2,
-                BrickKind::Indestructible => 0,
-            };
-            let score = match spawn.kind {
-                BrickKind::Indestructible => 0,
-                _ => score_for_row(row),
-            };
-            Brick {
-                x: spawn.x + offset_x + levels::BRICK_WIDTH / 2.0,
-                y: spawn.y + BRICK_GRID_MARGIN_TOP + levels::BRICK_HEIGHT / 2.0,
-                width: levels::BRICK_WIDTH,
-                height: levels::BRICK_HEIGHT,
-                kind: spawn.kind,
-                hits_remaining,
-                score,
-            }
-        })
+        .map(|spawn| brick_from_spawn(spawn.x, spawn.y, spawn.kind, offset_x))
+        .collect()
+}
+
+/// Same brick-building contract as `build_bricks`, for one already-parsed
+/// external level's spawns (arkanoid-v2-a5). External grids are always
+/// `levelset::GRID_WIDTH` (14) columns wide per docs/levelset-format.md --
+/// unlike the built-in levels, which can vary -- so centering doesn't need
+/// to inspect the spawns themselves.
+fn build_external_bricks(spawns: &[ExternalBrickSpawn]) -> Vec<Brick> {
+    let offset_x = (PLAYFIELD_WIDTH - GRID_WIDTH as f32 * levels::BRICK_WIDTH) / 2.0;
+    spawns
+        .iter()
+        .map(|spawn| brick_from_spawn(spawn.x, spawn.y, spawn.kind, offset_x))
         .collect()
 }
 
@@ -387,6 +408,17 @@ pub struct Game {
     /// 1-based current level number (spec: HUD shows level number
     /// top-center; `levels::LEVELS[level - 1]` is the grid in play).
     pub level: usize,
+    /// Externally-loaded levels to progress through instead of the
+    /// built-in `levels::LEVELS` (arkanoid-v2-a5's level-select-per-loaded-
+    /// set). `None` -- the default `new`/`with_seed` leave it at -- keeps
+    /// the original built-in-3-levels behavior byte-for-byte, which is
+    /// what keeps `deterministic_replay_matches_the_pinned_v1_baseline`
+    /// green (that test never calls `load_external_levels`). Set via
+    /// `load_external_levels`, e.g. with a loaded set's levels in file
+    /// order, or with `levelset::random10`'s output for the RANDOM10 menu
+    /// mode -- either way this field doesn't care how its order was
+    /// chosen, only that it plays them in the order given.
+    external_levels: Option<Vec<ExternalLevel>>,
     /// Power-ups currently falling, not yet caught or missed.
     pub powerups: Vec<PowerUp>,
     /// Seconds left on an active Widen effect; 0 means inactive (paddle at
@@ -432,6 +464,53 @@ impl Game {
         Self::new_with_rng(StdRng::seed_from_u64(seed))
     }
 
+    /// Switches level progression to an externally-loaded level set
+    /// (arkanoid-v2-a5's "level-select per loaded set"), replacing the
+    /// built-in 3-level progression with `levels` in the order given --
+    /// e.g. file order to play a whole set, or `levelset::random10`'s
+    /// output for the RANDOM10 menu mode; this method itself doesn't care
+    /// which. Resets to level 1 of the new set with a fresh, re-attached
+    /// ball, mirroring the reset `advance_level`/`lose_life` already do
+    /// between levels. A no-op on an empty `levels` (nothing to play --
+    /// keeps whatever progression, built-in or a previously loaded set,
+    /// was already active), so a caller never has to special-case an
+    /// empty load.
+    ///
+    /// Wired in from `main.rs` (arkanoid-v2-a8's integration job): a
+    /// successfully-resolved `--levelset` load is fed straight in here
+    /// before the event loop starts driving frames.
+    pub fn load_external_levels(&mut self, levels: Vec<ExternalLevel>) {
+        if levels.is_empty() {
+            return;
+        }
+        self.external_levels = Some(levels);
+        self.level = 1;
+        self.bricks = self.current_level_bricks();
+        self.ball = Ball::attached_to(&self.paddle);
+        self.extra_balls.clear();
+        self.powerups.clear();
+    }
+
+    /// Bricks for whatever `self.level` currently refers to: the loaded
+    /// external set if `load_external_levels` switched to one, else the
+    /// built-in `levels::LEVELS` (unchanged default path).
+    fn current_level_bricks(&self) -> Vec<Brick> {
+        match &self.external_levels {
+            Some(levels) => build_external_bricks(&levels[self.level - 1].bricks),
+            None => build_bricks(self.level - 1),
+        }
+    }
+
+    /// Number of levels in whatever progression is currently active --
+    /// what `advance_level` compares `self.level` against to decide
+    /// "load the next level" vs. "Victory".
+    fn level_count(&self) -> usize {
+        match &self.external_levels {
+            Some(levels) => levels.len(),
+            None => levels::LEVELS.len(),
+        }
+    }
+
     fn new_with_rng(rng: StdRng) -> Self {
         let paddle = Paddle::new();
         let ball = Ball::attached_to(&paddle);
@@ -445,6 +524,7 @@ impl Game {
             bricks: build_bricks(0),
             score: 0,
             level: 1,
+            external_levels: None,
             powerups: Vec::new(),
             widen_timer: 0.0,
             pause_was_held: false,
@@ -695,14 +775,14 @@ impl Game {
     fn advance_level(&mut self) {
         self.events.push(GameEvent::LevelCleared);
 
-        if self.level >= levels::LEVELS.len() {
+        if self.level >= self.level_count() {
             self.state = GameState::Victory;
             self.events.push(GameEvent::Victory);
             return;
         }
 
         self.level += 1;
-        self.bricks = build_bricks(self.level - 1);
+        self.bricks = self.current_level_bricks();
         self.ball = Ball::attached_to(&self.paddle);
         self.extra_balls.clear();
         self.powerups.clear();
@@ -1236,6 +1316,94 @@ mod tests {
         let brick = test_brick(BrickKind::Normal, 1, 10);
         game.bricks = vec![brick];
         game.ball = approach_from_below(&brick);
+
+        game.tick(&Input::default(), DT);
+
+        assert_eq!(game.state, GameState::Victory);
+        assert!(game.events.contains(&GameEvent::Victory));
+    }
+
+    // -- level load / progression: externally-loaded level sets (a5) ------
+
+    fn external_level(name: &str, x: f32, kind: BrickKind) -> ExternalLevel {
+        ExternalLevel {
+            author: "test".to_string(),
+            name: name.to_string(),
+            bricks: vec![ExternalBrickSpawn {
+                x,
+                y: 0.0,
+                kind,
+                powerup: None,
+            }],
+        }
+    }
+
+    #[test]
+    fn loading_an_external_set_switches_to_its_level_1_bricks() {
+        let mut game = playing_game();
+
+        game.load_external_levels(vec![
+            external_level("One", 0.0, BrickKind::Normal),
+            external_level("Two", 52.0, BrickKind::Armored),
+        ]);
+
+        assert_eq!(game.level, 1);
+        assert_eq!(game.bricks.len(), 1);
+        assert_eq!(game.bricks[0].kind, BrickKind::Normal);
+        assert!(
+            game.ball.attached,
+            "loading a new set re-attaches the ball, like starting a level"
+        );
+    }
+
+    #[test]
+    fn loading_an_empty_external_set_is_a_no_op() {
+        let mut game = playing_game();
+        let bricks_before = game.bricks.clone();
+        let level_before = game.level;
+
+        game.load_external_levels(Vec::new());
+
+        assert_eq!(game.level, level_before);
+        assert_eq!(
+            game.bricks, bricks_before,
+            "an empty load must not disturb the built-in progression already in play"
+        );
+    }
+
+    #[test]
+    fn clearing_a_non_final_external_level_advances_to_the_next_one_in_the_set() {
+        let mut game = playing_game();
+        game.load_external_levels(vec![
+            external_level("One", 0.0, BrickKind::Normal),
+            external_level("Two", 52.0, BrickKind::Armored),
+        ]);
+        game.ball = approach_from_below(&game.bricks[0]);
+
+        game.tick(&Input::default(), DT);
+
+        assert_eq!(
+            game.level, 2,
+            "level 1 of the loaded set cleared -> its level 2"
+        );
+        assert_eq!(game.state, GameState::Playing);
+        assert_eq!(game.bricks.len(), 1);
+        assert_eq!(
+            game.bricks[0].kind,
+            BrickKind::Armored,
+            "the loaded set's own level 2 bricks are loaded, not the built-in ones"
+        );
+    }
+
+    #[test]
+    fn clearing_an_external_sets_final_level_reaches_victory_by_its_own_length() {
+        // A one-level external set: reaching Victory here (rather than
+        // playing through the built-in levels::LEVELS.len() == 3) proves
+        // `advance_level` compares against the loaded set's own length,
+        // not the hardcoded built-in one.
+        let mut game = playing_game();
+        game.load_external_levels(vec![external_level("Only", 0.0, BrickKind::Normal)]);
+        game.ball = approach_from_below(&game.bricks[0]);
 
         game.tick(&Input::default(), DT);
 

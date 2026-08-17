@@ -14,3 +14,7 @@
 # Added by cargo
 
 /target
+
+# LBreakoutHD levelsets fetched by scripts/fetch-levelsets.sh: GPLv3 data,
+# never committed to this MIT repo. See ATTRIBUTION for source/license.
+/levels/
