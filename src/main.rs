@@ -17,6 +17,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
+use events::GameEvent;
 use game::{Game, Input};
 use render::{RenderState, Renderer};
 
@@ -51,6 +52,19 @@ impl AnyRenderer {
         match self {
             Self::Classic(r) => r.render(clear_color, prev, curr, alpha),
             Self::ThreeD(r) => r.render(clear_color, prev, curr, alpha),
+        }
+    }
+
+    /// Forwards one tick's `GameEvent`s to whichever renderer wants them,
+    /// before `about_to_wait` drains `Game::events` for that tick (see
+    /// events.rs's drain contract). Only `render3d`'s destroy-tumble effect
+    /// (arkanoid-v2-c3) needs this today -- `render.rs`'s classic
+    /// 2D renderer derives its own juice from frame-to-frame `Game` state
+    /// diffs instead (see that module's "-- juice --" comment), so this is
+    /// a no-op for `Classic`.
+    fn ingest_tick_events(&mut self, events: &[GameEvent]) {
+        if let Self::ThreeD(r) = self {
+            r.ingest_tick_events(events);
         }
     }
 }
@@ -211,9 +225,15 @@ impl ApplicationHandler for App {
         let mut ticks = 0;
         while self.accumulator >= FIXED_DT && ticks < MAX_TICKS_PER_FRAME {
             self.game.tick(&self.input, FIXED_DT);
-            // No consumer yet (audio lands in a later milestone) -- drain
-            // so events never pile up across ticks, per the contract
-            // documented in events.rs.
+            // render3d's destroy-tumble effect (arkanoid-v2-c3) needs this
+            // tick's events before they're gone -- see
+            // `AnyRenderer::ingest_tick_events`'s doc comment. No audio
+            // consumer yet (later milestone); events are still drained
+            // right after so they never pile up across ticks, per the
+            // contract documented in events.rs.
+            if let Some(renderer) = &mut self.renderer {
+                renderer.ingest_tick_events(&self.game.events);
+            }
             self.game.events.clear();
             self.accumulator -= FIXED_DT;
             ticks += 1;
