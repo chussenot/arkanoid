@@ -1,0 +1,131 @@
+Third-party level data attribution
+===================================
+
+levels/ (gitignored, never committed to this repo) is populated by
+scripts/fetch-levelsets.sh from the LBreakoutHD project:
+
+  Source:  https://github.com/midzer/lbreakouthd
+  Commit:  3cd2a6160941557f48c49b184f0ad47ddd882c23 (v1.1.8)
+  License: GNU GPLv3 (see the project's own COPYING file)
+
+This repo is MIT-licensed; the fetched levelset data is GPL and is
+never committed here -- levels/ is gitignored. This file exists to
+credit the original levelset authors as required by the GPL, without
+reproducing any of their level data.
+
+The 'Arkanoid' levelset (a fan recreation of the original
+Taito Arkanoid brick layouts) is deliberately excluded from the fetch
+and never touches this repo, even in the gitignored levels/ directory.
+
+Levelset authors (each file's 'Level:' author line, deduplicated):
+
+  - _
+  - <->
+  - -===CC=-
+  - 1nfl2m3d
+  - abstract
+  - Ade
+  - Ademir
+  - anchois
+  - armenius
+  - Armish
+  - Bertrand GRONDIN
+  - best friend
+  - bio snakes
+  - Bjoern Ganslandt
+  - bluszcz
+  - Bluszcz
+  - B&Z
+  - cant swim
+  - Capoll
+  - Celine
+  - Celine GRONDIN
+  - Congratiolations
+  - Corrado
+  - Cpt. Charisma
+  - Daddy
+  - Dave W.
+  - Daxter304
+  - Derek "Kazan" Meek
+  - doc
+  - El Pollo Grande
+  - elvis
+  - enjoy it
+  - Eric Jacobson
+  - {f(c)=0}
+  - Felipe Ruiz P
+  - Freek
+  - G
+  - gmaestro
+  - (google brokenlinks)
+  - Guenter
+  - Hans
+  - Hasenfuss
+  - houghi
+  - i
+  - Jacques Buffa
+  - Johann
+  - John van Hooff
+  - journey
+  - Karnickel
+  - kbozen
+  - kern
+  - Kevin
+  - Kevin Nathan
+  - kl
+  - krzysiek
+  - Latts
+  - Lelldorin
+  - Leo Gruyters
+  - Lord
+  - LordSpockl
+  - Lourens
+  - luke
+  - Luke
+  - Martin Moeller
+  - Mench
+  - michael
+  - Michael Speck
+  - migs
+  - Mike Quinn
+  - Misty
+  - Morosoph
+  - mos19k-at-ecsis.net
+  - n@body
+  - neo
+  - Nester
+  - Nethippy
+  - new
+  - NJBilly
+  - noname
+  - oerg
+  - OFT
+  - Pabelo
+  - PabelO
+  - Paweusz
+  - pope1
+  - Rado Negundo
+  - RBA
+  - Redito
+  - riffraff
+  - Shimitar
+  - slayer
+  - Spockl
+  - SpocklLord
+  - (S,T,d,K)
+  - Tars
+  - tfry
+  - Twilight
+  - Ukog-Nos Takeuchi
+  - unknown
+  - vivian
+  - Vivian
+  - warbird-at-aaahawk.com
+  - Wraithlord
+  - WraithLord
+  - www.OFTanna.de
+  - Xposya
+  - Yexter
+  - zigie
+
+136 levelset file(s) fetched at commit 3cd2a6160941557f48c49b184f0ad47ddd882c23.
