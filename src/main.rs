@@ -7,21 +7,73 @@ mod game;
 mod levels;
 mod levelset;
 mod render;
+mod render3d;
 
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
+use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use assets::Atlas;
+use events::GameEvent;
 use game::{Game, Input};
 use render::{RenderState, Renderer};
+
+/// Dispatches between the classic 2D quad renderer and the sibling 3D
+/// perspective renderer per `--renderer` (see `cli.rs`). A plain enum
+/// rather than a trait object: exactly two implementations exist, and this
+/// is the one place that ever needs to pick between them.
+enum AnyRenderer {
+    // Boxed: both renderers hold sizeable wgpu/glyphon state inline, and an
+    // enum's size is its largest variant's -- boxing avoids every `App`
+    // (there's only ever one) paying for whichever variant it didn't pick.
+    Classic(Box<Renderer>),
+    ThreeD(Box<render3d::Renderer3D>),
+}
+
+impl AnyRenderer {
+    fn new(kind: cli::RendererKind, window: Arc<Window>, atlas: Atlas) -> Self {
+        match kind {
+            cli::RendererKind::Classic => Self::Classic(Box::new(Renderer::new(window, atlas))),
+            // Renderer3D manages its own brick-front-face atlas internally
+            // (see render3d/atlas.rs's doc comment) rather than taking B's.
+            cli::RendererKind::ThreeD => Self::ThreeD(Box::new(render3d::Renderer3D::new(window))),
+        }
+    }
+
+    fn resize(&mut self, size: PhysicalSize<u32>) {
+        match self {
+            Self::Classic(r) => r.resize(size),
+            Self::ThreeD(r) => r.resize(size),
+        }
+    }
+
+    fn render(&mut self, clear_color: wgpu::Color, prev: &RenderState, curr: &Game, alpha: f32) {
+        match self {
+            Self::Classic(r) => r.render(clear_color, prev, curr, alpha),
+            Self::ThreeD(r) => r.render(clear_color, prev, curr, alpha),
+        }
+    }
+
+    /// Forwards one tick's `GameEvent`s to whichever renderer wants them,
+    /// before `about_to_wait` drains `Game::events` for that tick (see
+    /// events.rs's drain contract). Only `render3d`'s destroy-tumble effect
+    /// (arkanoid-v2-c3) needs this today -- `render.rs`'s classic
+    /// 2D renderer derives its own juice from frame-to-frame `Game` state
+    /// diffs instead (see that module's "-- juice --" comment), so this is
+    /// a no-op for `Classic`.
+    fn ingest_tick_events(&mut self, events: &[GameEvent]) {
+        if let Self::ThreeD(r) = self {
+            r.ingest_tick_events(events);
+        }
+    }
+}
 
 /// Fixed logical playfield (spec: 800x600). Scaling/letterboxing a resized
 /// window onto this is a later milestone -- for now the window just opens at
@@ -51,11 +103,15 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color {
 /// the fixed-timestep accumulator driving `Game::tick`.
 struct App {
     window: Option<Arc<Window>>,
-    renderer: Option<Renderer>,
+    renderer: Option<AnyRenderer>,
+    /// Which renderer `resumed()` constructs, set once from `--renderer`
+    /// before the event loop starts running (see `main()`).
+    renderer_kind: cli::RendererKind,
     /// Sprite pixels this session draws with (see `assets::TextureSource`),
     /// resolved once in `main` -- held here only until `resumed` builds the
-    /// `Renderer` that actually uploads it, since window/renderer creation
-    /// has to wait for `ApplicationHandler::resumed`.
+    /// classic `Renderer` that actually uploads it, since window/renderer
+    /// creation has to wait for `ApplicationHandler::resumed`. The 3D
+    /// renderer doesn't consume this (see `main()`'s comment).
     atlas: Atlas,
     game: Game,
     /// Held-key state, updated by `WindowEvent::KeyboardInput` and read once
@@ -82,6 +138,7 @@ impl App {
         Self {
             window: None,
             renderer: None,
+            renderer_kind: cli::RendererKind::default(),
             atlas,
             render_prev: RenderState::from(&game),
             game,
@@ -112,7 +169,11 @@ impl ApplicationHandler for App {
                 .expect("failed to create window"),
         );
 
-        self.renderer = Some(Renderer::new(Arc::clone(&window), self.atlas.clone()));
+        self.renderer = Some(AnyRenderer::new(
+            self.renderer_kind,
+            Arc::clone(&window),
+            self.atlas.clone(),
+        ));
         self.window = Some(window);
         self.last_update = Instant::now();
 
@@ -181,9 +242,15 @@ impl ApplicationHandler for App {
         let mut ticks = 0;
         while self.accumulator >= FIXED_DT && ticks < MAX_TICKS_PER_FRAME {
             self.game.tick(&self.input, FIXED_DT);
-            // No consumer yet (audio lands in a later milestone) -- drain
-            // so events never pile up across ticks, per the contract
-            // documented in events.rs.
+            // render3d's destroy-tumble effect (arkanoid-v2-c3) needs this
+            // tick's events before they're gone -- see
+            // `AnyRenderer::ingest_tick_events`'s doc comment. No audio
+            // consumer yet (later milestone); events are still drained
+            // right after so they never pile up across ticks, per the
+            // contract documented in events.rs.
+            if let Some(renderer) = &mut self.renderer {
+                renderer.ingest_tick_events(&self.game.events);
+            }
             self.game.events.clear();
             self.accumulator -= FIXED_DT;
             ticks += 1;
@@ -261,8 +328,10 @@ fn main() {
     // or malformed pack directory warns on stderr and falls back to
     // procedural pixels instead of panicking
     // (assets::TextureSource::load's contract). The resulting `Atlas` rides
-    // along on `App` until `resumed` builds the `Renderer` that uploads it
-    // (see render.rs's bead b5 for the texture/UV wiring).
+    // along on `App` until `resumed` builds the classic `Renderer` that
+    // uploads it (see render.rs's bead b5 for the texture/UV wiring). The
+    // 3D renderer manages its own brick-front-face atlas internally (see
+    // render3d/atlas.rs's doc comment) rather than taking this one.
     let texture_source = match args.assets {
         Some(dir) => assets::TextureSource::Pack(std::path::PathBuf::from(dir)),
         None => assets::TextureSource::default(),
@@ -298,6 +367,7 @@ fn main() {
 
     let event_loop = EventLoop::new().expect("failed to create event loop");
     let mut app = App::new(atlas);
+    app.renderer_kind = args.renderer;
     // Feed a successfully-resolved `--levelset` load into `Game` before the
     // event loop starts driving frames (arkanoid-v2-a8's integration job --
     // see `Game::load_external_levels`'s doc comment). A `None` here (no
