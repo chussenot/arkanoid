@@ -25,17 +25,24 @@
 //! "warn with file:line, never panic or silently misrender".
 //!
 //! Wired into `main.rs` via `mod levelset;` and `--levelset <path>`
-//! (arkanoid-v2-a4), which only reads `LevelSet.{levels,warnings}` to log
-//! what loaded -- it doesn't yet feed a loaded set into `Game`'s level
-//! progression (arkanoid-v2-a5's job, since that touches `game.rs`).
-//! Until then `ExternalLevel`'s/`ExternalBrickSpawn`'s individual fields
-//! are read only by this module's own tests, hence the module-wide
+//! (arkanoid-v2-a4), which today only reads `LevelSet.{levels,warnings}`
+//! to log what loaded. `game.rs`'s level progression (arkanoid-v2-a5) can
+//! now play through a loaded set's `.bricks`/`.x`/`.y`/`.kind` via
+//! `Game::load_external_levels`, and [`random10`] below picks the
+//! RANDOM10 menu mode's subset -- but `main.rs` itself doesn't call
+//! either yet (feeding a real `--levelset` load into `Game` is
+//! arkanoid-v2-a8's integration job). `ExternalBrickSpawn.powerup` (no
+//! gameplay hook yet) and `ExternalLevel.author`/`.name` (no HUD yet)
+//! are still read only by this module's own tests, hence the module-wide
 //! `#[allow(dead_code)]` still standing.
 #![allow(dead_code)]
 
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+
+use rand::seq::IndexedRandom;
+use rand::Rng;
 
 use crate::events::PowerUpKind;
 use crate::levels::{BrickKind, BRICK_HEIGHT, BRICK_WIDTH};
@@ -299,9 +306,72 @@ pub fn load_dir(dir: &Path) -> io::Result<Vec<(PathBuf, LevelSet)>> {
         .collect()
 }
 
+/// Picks up to 10 distinct levels at random from `set`'s corpus (v2's
+/// RANDOM10 menu mode). Backed by `rand`'s `IndexedRandom::sample`, which
+/// already clamps `amount` to the slice's length -- a set with 10 or
+/// fewer levels just comes back with all of them once each (in shuffled
+/// order), since there's nothing "more random" to ask for from a smaller
+/// corpus. Feed the result straight into `Game::load_external_levels`.
+pub fn random10<R: Rng + ?Sized>(set: &LevelSet, rng: &mut R) -> Vec<ExternalLevel> {
+    set.levels.sample(rng, 10).cloned().collect()
+}
+
+/// Directory the local progress file lives under: reuses the `target/`
+/// build directory .gitignore already excludes (`$CARGO_TARGET_DIR` when
+/// a caller has redirected it, `target` otherwise) rather than adding a
+/// dedicated dotfile and a matching new ignore pattern.
+///
+/// ponytail: `cargo clean` wipes this along with build output -- move to
+/// a proper dotfile (with its own `.gitignore` line) if that ever matters
+/// more than the extra ignore pattern it'd cost.
+fn progress_dir() -> PathBuf {
+    PathBuf::from(std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string()))
+}
+
+fn progress_file_path() -> PathBuf {
+    progress_dir().join("arkanoid-progress.txt")
+}
+
+/// Whether the level set identified by `set_id` (conventionally the same
+/// path string passed to `load_file`/`load_dir`) has previously been
+/// recorded complete via `mark_set_completed`. A missing or unreadable
+/// progress file just reads as "not completed yet" -- never an error,
+/// same "warn, don't panic" policy as the rest of this module.
+pub fn is_set_completed(set_id: &str) -> bool {
+    is_set_completed_at(&progress_file_path(), set_id)
+}
+
+/// Records `set_id` as completed. Idempotent (recording the same id twice
+/// leaves the file's contents unchanged the second time) and best-effort:
+/// an I/O failure (read-only filesystem, no `target/` yet, ...) is
+/// swallowed rather than propagated -- losing a progress record isn't
+/// worth crashing a finished playthrough over.
+pub fn mark_set_completed(set_id: &str) {
+    mark_set_completed_at(&progress_file_path(), set_id);
+}
+
+fn is_set_completed_at(path: &Path, set_id: &str) -> bool {
+    fs::read_to_string(path)
+        .map(|content| content.lines().any(|line| line == set_id))
+        .unwrap_or(false)
+}
+
+fn mark_set_completed_at(path: &Path, set_id: &str) {
+    if is_set_completed_at(path, set_id) {
+        return;
+    }
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{set_id}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::SeedableRng;
 
     /// A minimal but complete one-level file: a single `a` (normal) brick
     /// at [0][0] with a `+` (Widen) bonus over it, an `E` (indestructible)
@@ -469,6 +539,90 @@ mod tests {
     fn load_dir_on_a_missing_directory_yields_no_levelsets_not_an_error() {
         let result = load_dir(Path::new("/nonexistent/path/for/arkanoid-tests"));
         assert_eq!(result.unwrap(), Vec::new());
+    }
+
+    // -- arkanoid-v2-a5: RANDOM10 menu mode + set-completion progress ------
+
+    fn level_set_of(count: usize) -> LevelSet {
+        LevelSet {
+            levels: (0..count)
+                .map(|i| ExternalLevel {
+                    author: "test".to_string(),
+                    name: format!("Level {i}"),
+                    bricks: Vec::new(),
+                })
+                .collect(),
+            warnings: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn random10_picks_10_distinct_levels_from_a_larger_corpus() {
+        let set = level_set_of(37);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(7);
+
+        let picked = random10(&set, &mut rng);
+
+        assert_eq!(picked.len(), 10);
+        let distinct_names: std::collections::HashSet<_> =
+            picked.iter().map(|level| &level.name).collect();
+        assert_eq!(
+            distinct_names.len(),
+            10,
+            "all 10 picks must be distinct levels"
+        );
+        for level in &picked {
+            assert!(
+                set.levels.contains(level),
+                "every pick must come from the loaded corpus"
+            );
+        }
+    }
+
+    #[test]
+    fn random10_on_a_corpus_of_10_or_fewer_returns_all_of_them() {
+        let set = level_set_of(3);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(7);
+
+        let picked = random10(&set, &mut rng);
+
+        assert_eq!(
+            picked.len(),
+            3,
+            "nothing more to pick from a 3-level corpus"
+        );
+        let distinct_names: std::collections::HashSet<_> =
+            picked.iter().map(|level| &level.name).collect();
+        assert_eq!(distinct_names.len(), 3);
+    }
+
+    #[test]
+    fn set_completion_round_trips_through_the_progress_file() {
+        let path = std::env::temp_dir().join(format!(
+            "arkanoid-progress-test-{}-{}.txt",
+            std::process::id(),
+            line!()
+        ));
+        let _ = fs::remove_file(&path); // start from a clean slate
+
+        assert!(!is_set_completed_at(&path, "levels/foo.lbl"));
+
+        mark_set_completed_at(&path, "levels/foo.lbl");
+        assert!(is_set_completed_at(&path, "levels/foo.lbl"));
+        assert!(
+            !is_set_completed_at(&path, "levels/other.lbl"),
+            "completion is tracked per set id, not a single global flag"
+        );
+
+        mark_set_completed_at(&path, "levels/foo.lbl"); // idempotent
+        let contents = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            contents.lines().count(),
+            1,
+            "marking the same set complete twice must not duplicate the record"
+        );
+
+        let _ = fs::remove_file(&path);
     }
 
     // -- arkanoid-v2-a6: our own hand-written fixture levelset -------------
