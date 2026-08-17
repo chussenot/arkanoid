@@ -3,6 +3,9 @@
 //! No wgpu, winit, or I/O types belong in this module — it must stay
 //! unit-testable headless. Populated starting at Milestone 1.
 
+use rand::rngs::StdRng;
+use rand::{RngExt, SeedableRng};
+
 use crate::events::{GameEvent, PowerUpKind};
 use crate::levels::{self, BrickKind};
 
@@ -398,6 +401,13 @@ pub struct Game {
     /// stayed held. Not part of the `GameState` machine itself — purely
     /// input debouncing for the one control that toggles it.
     pause_was_held: bool,
+    /// Source of randomness for the one non-deterministic simulation
+    /// decision (`maybe_drop_powerup`'s drop chance/kind). `new()` seeds
+    /// from OS entropy for normal play; `with_seed` seeds deterministically
+    /// so a fixed seed + scripted input reproduces the exact same run --
+    /// see the `deterministic_replay` test module for the property this
+    /// exists to support.
+    rng: StdRng,
 }
 
 impl Default for Game {
@@ -408,6 +418,21 @@ impl Default for Game {
 
 impl Game {
     pub fn new() -> Self {
+        Self::new_with_rng(StdRng::from_rng(&mut rand::rng()))
+    }
+
+    /// Same as `new()`, but with a deterministic RNG seed instead of OS
+    /// entropy -- fixed seed + the same scripted `Input` sequence then
+    /// always produces the same sequence of states (including power-up
+    /// drops), which is what makes the replay-hash property meaningful.
+    /// Test-only: this binary crate has no external API, so an unused
+    /// `pub` item still reads as dead code outside `#[cfg(test)]`.
+    #[cfg(test)]
+    pub fn with_seed(seed: u64) -> Self {
+        Self::new_with_rng(StdRng::seed_from_u64(seed))
+    }
+
+    fn new_with_rng(rng: StdRng) -> Self {
         let paddle = Paddle::new();
         let ball = Ball::attached_to(&paddle);
         Self {
@@ -423,6 +448,7 @@ impl Game {
             powerups: Vec::new(),
             widen_timer: 0.0,
             pause_was_held: false,
+            rng,
         }
     }
 
@@ -645,10 +671,10 @@ impl Game {
     /// Spec: 15% of destroyed bricks drop one of the three power-ups,
     /// uniformly at random, falling from where the brick was.
     fn maybe_drop_powerup(&mut self, x: f32, y: f32) {
-        if !rand::random_bool(POWERUP_DROP_CHANCE) {
+        if !self.rng.random_bool(POWERUP_DROP_CHANCE) {
             return;
         }
-        let kind = match rand::random_range(0..3) {
+        let kind = match self.rng.random_range(0..3) {
             0 => PowerUpKind::Widen,
             1 => PowerUpKind::Slow,
             _ => PowerUpKind::Multiball,
@@ -1495,5 +1521,104 @@ mod tests {
         assert!(!game
             .events
             .contains(&GameEvent::PowerUpCaught(PowerUpKind::Slow)));
+    }
+
+    // -- deterministic replay ---------------------------------------------
+    //
+    // v2's cross-workstream invariant: "a fixed seed + scripted input
+    // produces the same state hash before and after every workstream" is
+    // the contract that a workstream changed presentation, not physics.
+    // These two tests are that contract, pinned against *this* commit's
+    // simulation -- levels/textures/3D-presentation work must never touch
+    // game.rs in a way that moves the pinned hash below.
+
+    /// Hashes the physics-relevant fields of `Game` -- everything the
+    /// simulation actually computes, not `rng`'s internal state or the
+    /// per-tick `events` scratch buffer (draining events is a rendering
+    /// concern, not part of "the same game state"). f32 fields hash by
+    /// bit pattern (f32 itself isn't Hash/Eq, because of NaN) and enums
+    /// hash by their Debug string -- the simplest thing that can't
+    /// silently drift if a variant gets renamed.
+    fn state_hash(game: &Game) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        fn hash_ball(h: &mut impl Hasher, ball: &Ball) {
+            h.write_u32(ball.x.to_bits());
+            h.write_u32(ball.y.to_bits());
+            h.write_u32(ball.vx.to_bits());
+            h.write_u32(ball.vy.to_bits());
+            h.write_u32(ball.radius.to_bits());
+            ball.attached.hash(h);
+        }
+
+        let mut h = DefaultHasher::new();
+        h.write_u32(game.paddle.x.to_bits());
+        h.write_u32(game.paddle.y.to_bits());
+        h.write_u32(game.paddle.width.to_bits());
+        h.write_u32(game.paddle.height.to_bits());
+        hash_ball(&mut h, &game.ball);
+        game.extra_balls.len().hash(&mut h);
+        for ball in &game.extra_balls {
+            hash_ball(&mut h, ball);
+        }
+        game.lives.hash(&mut h);
+        format!("{:?}", game.state).hash(&mut h);
+        game.bricks.len().hash(&mut h);
+        for brick in &game.bricks {
+            h.write_u32(brick.x.to_bits());
+            h.write_u32(brick.y.to_bits());
+            h.write_u32(brick.width.to_bits());
+            h.write_u32(brick.height.to_bits());
+            format!("{:?}", brick.kind).hash(&mut h);
+            brick.hits_remaining.hash(&mut h);
+            brick.score.hash(&mut h);
+        }
+        game.score.hash(&mut h);
+        game.level.hash(&mut h);
+        game.powerups.len().hash(&mut h);
+        for powerup in &game.powerups {
+            h.write_u32(powerup.x.to_bits());
+            h.write_u32(powerup.y.to_bits());
+            format!("{:?}", powerup.kind).hash(&mut h);
+        }
+        h.write_u32(game.widen_timer.to_bits());
+        h.finish()
+    }
+
+    /// The scripted run pinned as the frozen-physics baseline: a fixed
+    /// seed, launch the ball, then hold the paddle still through several
+    /// seconds of bounces/brick hits/life losses -- long enough to
+    /// exercise `maybe_drop_powerup`'s RNG draw at least once, so the
+    /// property actually covers the one non-deterministic decision
+    /// `game.rs` makes. Both tests below replay this same script.
+    fn run_scripted_replay(seed: u64) -> u64 {
+        let mut game = Game::with_seed(seed);
+        game.state = GameState::Playing;
+        game.tick(&held(|i| i.space = true), DT);
+        for _ in 0..(120 * 25) {
+            game.tick(&Input::default(), DT);
+        }
+        state_hash(&game)
+    }
+
+    #[test]
+    fn deterministic_replay_same_seed_and_script_always_matches() {
+        assert_eq!(
+            run_scripted_replay(42),
+            run_scripted_replay(42),
+            "same seed + same scripted input must reproduce the exact same state"
+        );
+    }
+
+    #[test]
+    fn deterministic_replay_matches_the_pinned_v1_baseline() {
+        // Pinned against the pre-v2 simulation (see docs/pact-audit.md /
+        // the v2 spec for why). A failure here means something in
+        // game.rs's *physics* changed -- v2's workstreams are supposed to
+        // leave this frozen; re-pin only after confirming the change was
+        // an intentional, spec-approved game.rs edit, not an accident.
+        const V1_BASELINE_HASH: u64 = 16597883421283269447;
+        assert_eq!(run_scripted_replay(42), V1_BASELINE_HASH);
     }
 }

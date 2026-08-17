@@ -1,5 +1,6 @@
 //! Window/event loop wiring only (see docs/spec.md, Architecture section).
 
+mod cli;
 mod events;
 mod game;
 mod levels;
@@ -211,6 +212,8 @@ impl App {
 }
 
 fn main() {
+    // Unused until a v2 workstream adds its first flag -- see cli.rs.
+    let _args = cli::parse();
     let event_loop = EventLoop::new().expect("failed to create event loop");
     let mut app = App::default();
     event_loop
