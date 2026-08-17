@@ -19,6 +19,7 @@ use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
+use crate::assets::{Atlas, SpriteId, UvRect};
 use crate::events::PowerUpKind;
 use crate::game::{Ball, Brick, Game, GameState, Paddle, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH};
 use crate::levels::BrickKind;
@@ -52,9 +53,11 @@ const QUAD_VERTICES: [Vertex; 6] = [
     },
 ];
 
-/// Per-instance data for one quad: where it is, how big it is, and its
-/// color. Every entity (paddle, ball, and -- from Milestone 3 on -- bricks,
-/// walls, HUD panels) becomes one of these; the pipeline never changes.
+/// Per-instance data for one quad: where it is, how big it is, its color
+/// (a flat fill, or -- when `textured` is set -- a tint multiplied onto an
+/// atlas sample), and which atlas rect (if any) to sample. Every entity
+/// (paddle, ball, bricks, walls, HUD) becomes one of these; the pipeline
+/// never changes.
 ///
 /// `center`/`half_size` are in logical playfield pixels (800x600, y-down),
 /// matching `Paddle`/`Ball`'s own coordinate convention in `game.rs`.
@@ -64,17 +67,50 @@ struct QuadInstance {
     center: [f32; 2],
     half_size: [f32; 2],
     color: [f32; 4],
+    /// Atlas UV rect this quad samples, `(u0, v0, u1, v1)` -- see
+    /// `Atlas::uv_rect`. Meaningless (any value is fine) when `textured` is
+    /// `0.0`.
+    uv: [f32; 4],
+    /// `1.0`: sample the atlas texture at `uv` and multiply by `color`.
+    /// `0.0`: draw `color` flat, ignoring `uv` -- every quad's behavior
+    /// before this bead, still used by juice/HUD quads with no sprite of
+    /// their own (trail, extra-ball dots kept simple, powerups, the scrim,
+    /// life icons).
+    textured: f32,
 }
 
 impl QuadInstance {
+    /// Flat-colored quad -- no atlas sample. The pre-existing entry point;
+    /// every call site that isn't paddle/ball/a brick keeps using this
+    /// unchanged.
     fn new(center: [f32; 2], half_size: [f32; 2], color: [f32; 4]) -> Self {
         Self {
             center,
             half_size,
             color,
+            uv: [0.0; 4],
+            textured: 0.0,
+        }
+    }
+
+    /// Textured quad: samples `uv` out of the atlas and multiplies by
+    /// `tint` (pass opaque white to draw the sprite unmodified; a flash
+    /// effect wants flat `QuadInstance::new` instead, not a tinted sample --
+    /// see `render()`'s hit-flash handling).
+    fn new_textured(center: [f32; 2], half_size: [f32; 2], uv: UvRect, tint: [f32; 4]) -> Self {
+        Self {
+            center,
+            half_size,
+            color: tint,
+            uv: [uv.u0, uv.v0, uv.u1, uv.v1],
+            textured: 1.0,
         }
     }
 }
+
+/// Opaque white -- the tint that leaves a textured quad's sampled color
+/// unmodified.
+const WHITE_TINT: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
 /// Largest brick grid a level can declare (spec, checked by
 /// `levels.rs`'s own tests: up to 14 columns x 8 rows).
@@ -122,7 +158,9 @@ const MAX_QUADS: usize = 2
     + MAX_EXTRA_BALLS
     + MAX_POWERUPS;
 
-const PADDLE_COLOR: [f32; 4] = [0.80, 0.85, 0.95, 1.0];
+/// Flat fallback color kept only for quads that don't carry a sprite of
+/// their own (ball trail, life icons) -- the paddle and ball's own quads
+/// are textured (see `render()`), not flat-filled with this.
 const BALL_COLOR: [f32; 4] = [1.0, 0.78, 0.2, 1.0];
 
 const POWERUP_WIDEN_COLOR: [f32; 4] = [0.35, 0.85, 0.40, 1.0];
@@ -139,24 +177,16 @@ fn powerup_color(kind: PowerUpKind) -> [f32; 4] {
     }
 }
 
-const NORMAL_BRICK_COLOR: [f32; 4] = [0.85, 0.25, 0.25, 1.0];
-/// Armored, undamaged (2 hits left).
-const ARMORED_BRICK_COLOR: [f32; 4] = [0.30, 0.45, 0.68, 1.0];
-/// Armored, damaged (1 hit left) -- a distinctly different hue from
-/// `ARMORED_BRICK_COLOR` so the first hit reads as a visible state change,
-/// not just a subtle shade shift.
-const ARMORED_BRICK_COLOR_HIT: [f32; 4] = [0.90, 0.60, 0.15, 1.0];
-const INDESTRUCTIBLE_BRICK_COLOR: [f32; 4] = [0.25, 0.25, 0.28, 1.0];
-
-/// Picks a brick's fill color from its kind and remaining hits. Armored
-/// bricks are the one kind with two colors: `hits_remaining` alone (no
-/// separate flag) tells us whether the first hit has already landed.
-fn brick_color(brick: &Brick) -> [f32; 4] {
+/// Picks a brick's sprite from its kind and remaining hits. Armored bricks
+/// are the one kind with two sprites: `hits_remaining` alone (no separate
+/// flag) tells us whether the first hit has already landed -- mirrors
+/// `assets::pack_filename`'s doc on why armored gets an intact/hit pair.
+fn brick_sprite(brick: &Brick) -> SpriteId {
     match brick.kind {
-        BrickKind::Normal => NORMAL_BRICK_COLOR,
-        BrickKind::Armored if brick.hits_remaining >= 2 => ARMORED_BRICK_COLOR,
-        BrickKind::Armored => ARMORED_BRICK_COLOR_HIT,
-        BrickKind::Indestructible => INDESTRUCTIBLE_BRICK_COLOR,
+        BrickKind::Normal => SpriteId::BrickNormal,
+        BrickKind::Armored if brick.hits_remaining >= 2 => SpriteId::BrickArmoredIntact,
+        BrickKind::Armored => SpriteId::BrickArmoredHit,
+        BrickKind::Indestructible => SpriteId::BrickIndestructible,
     }
 }
 
@@ -173,8 +203,9 @@ fn brick_color(brick: &Brick) -> [f32; 4] {
 // above.
 
 /// White flash color for a brick that was just hit (surviving or not) --
-/// distinct from `ARMORED_BRICK_COLOR_HIT`, which is a permanent state
-/// change, not a one-frame flash.
+/// drawn flat (bypassing the atlas sample entirely, see `render()`), so it
+/// reads as a distinct one-frame pop rather than just a lighter version of
+/// the brick's normal sprite.
 const HIT_FLASH_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
 /// Spec: "screen-space shake 3 px / 80 ms on brick destruction".
@@ -337,11 +368,15 @@ struct InstanceInput {
     @location(1) center: vec2<f32>,
     @location(2) half_size: vec2<f32>,
     @location(3) color: vec4<f32>,
+    @location(4) uv_rect: vec4<f32>,
+    @location(5) textured: f32,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec4<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) textured: f32,
 };
 
 // Fixed logical playfield (spec: 800x600, physics never changes on resize).
@@ -353,27 +388,47 @@ struct VertexOutput {
 const PLAYFIELD_WIDTH: f32 = 800.0;
 const PLAYFIELD_HEIGHT: f32 = 600.0;
 
+@group(0) @binding(0) var atlas_tex: texture_2d<f32>;
+@group(0) @binding(1) var atlas_sampler: sampler;
+
 @vertex
 fn vs_main(vert: VertexInput, inst: InstanceInput) -> VertexOutput {
     let pixel_pos = inst.center + vert.corner * inst.half_size;
     let ndc_x = (pixel_pos.x / PLAYFIELD_WIDTH) * 2.0 - 1.0;
     let ndc_y = 1.0 - (pixel_pos.y / PLAYFIELD_HEIGHT) * 2.0;
 
+    // Local UV of this corner within the quad: corner is [-1, 1] on both
+    // axes (see `QUAD_VERTICES`), corner.y == -1 is the *top* of the quad
+    // (less pixel_pos.y, since this playfield space is y-down) -- matches
+    // `UvRect`/`Atlas::pixels`'s "top row first" convention, so no flip is
+    // needed here.
+    let local_uv = (vert.corner + vec2<f32>(1.0, 1.0)) * 0.5;
+
     var out: VertexOutput;
     out.clip_position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
     out.color = inst.color;
+    out.uv = mix(inst.uv_rect.xy, inst.uv_rect.zw, local_uv);
+    out.textured = inst.textured;
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    if in.textured > 0.5 {
+        return textureSample(atlas_tex, atlas_sampler, in.uv) * in.color;
+    }
     return in.color;
 }
 "#;
 
 const VERTEX_ATTRS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x2];
-const INSTANCE_ATTRS: [wgpu::VertexAttribute; 3] =
-    wgpu::vertex_attr_array![1 => Float32x2, 2 => Float32x2, 3 => Float32x4];
+const INSTANCE_ATTRS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
+    1 => Float32x2,
+    2 => Float32x2,
+    3 => Float32x4,
+    4 => Float32x4,
+    5 => Float32,
+];
 
 /// A snapshot of just the fields `Renderer::render` draws, read off `Game`.
 /// Two of these one fixed tick apart (see `main.rs`'s loop) are what let
@@ -448,6 +503,14 @@ pub struct Renderer {
     pipeline: wgpu::RenderPipeline,
     quad_vertex_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
+    /// Sprite pixels this session is drawing with -- kept around so
+    /// `sprite_uv` calls in `render()` have somewhere to read
+    /// `Atlas::uv_rect` from. The GPU-side copy lives in
+    /// `sprite_atlas_bind_group`; this is the CPU-side source of truth.
+    sprite_atlas: Atlas,
+    /// Binds `sprite_atlas`'s uploaded texture + sampler to `fs_main`'s
+    /// `@group(0)` -- see `create_atlas_bind_group`.
+    sprite_atlas_bind_group: wgpu::BindGroup,
     // -- text: HUD score/level, menu/pause/game-over/victory overlays --
     font_system: FontSystem,
     swash_cache: SwashCache,
@@ -484,7 +547,13 @@ impl Renderer {
     ///
     /// Blocks on adapter/device acquisition -- this only runs once at
     /// startup, so synchronous is simplest.
-    pub fn new(window: Arc<Window>) -> Self {
+    ///
+    /// `sprite_atlas` is whatever `assets::TextureSource::load` produced
+    /// (procedural or an on-disk pack, `TextureSource::load`'s contract
+    /// guarantees it's always a drawable atlas either way) -- uploaded once
+    /// here as a texture the whole session's paddle/ball/brick quads sample
+    /// from.
+    pub fn new(window: Arc<Window>, sprite_atlas: Atlas) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::default();
         let surface = instance
@@ -534,13 +603,16 @@ impl Renderer {
         };
         surface.configure(&device, &config);
 
+        let (sprite_atlas_bind_group_layout, sprite_atlas_bind_group) =
+            Self::create_atlas_bind_group(&device, &queue, &sprite_atlas);
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("quad shader"),
             source: wgpu::ShaderSource::Wgsl(SHADER_SRC.into()),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("quad pipeline layout"),
-            bind_group_layouts: &[],
+            bind_group_layouts: &[Some(&sprite_atlas_bind_group_layout)],
             immediate_size: 0,
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -624,6 +696,8 @@ impl Renderer {
             pipeline,
             quad_vertex_buffer,
             instance_buffer,
+            sprite_atlas,
+            sprite_atlas_bind_group,
             font_system,
             swash_cache,
             viewport,
@@ -636,6 +710,102 @@ impl Renderer {
             shake_remaining: 0.0,
             last_frame_instant: Instant::now(),
         }
+    }
+
+    /// Uploads `atlas`'s pixels as a wgpu texture and builds the bind
+    /// group (plus its layout, needed once more to build the pipeline
+    /// layout) that `fs_main`'s `@group(0)` samples through -- the one seam
+    /// between this bead's atlas plumbing and the rest of the pipeline.
+    fn create_atlas_bind_group(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        atlas: &Atlas,
+    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
+        let size = wgpu::Extent3d {
+            width: atlas.width,
+            height: atlas.height,
+            depth_or_array_layers: 1,
+        };
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("sprite atlas texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            // Not a `*Srgb` format: `assets.rs`'s recipes (and every flat
+            // color constant in this file) already work in the same plain
+            // 0..1 space `fs_main` writes straight to an sRGB *surface* --
+            // sampling this texture must hand those bytes back unchanged,
+            // not sRGB-decode them a second time.
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &atlas.pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(atlas.width * 4),
+                rows_per_image: Some(atlas.height),
+            },
+            size,
+        );
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // Linear, not nearest: sprites are drawn at whatever on-screen size
+        // the paddle/ball/brick quads happen to be, essentially never a 1:1
+        // pixel match with a `CELL_SIZE`-square cell, so smoothing the
+        // scale reads better than a blocky nearest-neighbor blowup. No
+        // mipmap chain (`mip_level_count: 1` above) -- this atlas is small
+        // and never drawn shrunk enough for aliasing to matter.
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("sprite atlas sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sprite atlas bind group layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("sprite atlas bind group"),
+            layout: &layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        (layout, bind_group)
     }
 
     /// Reconfigures the surface after a window resize.
@@ -727,10 +897,11 @@ impl Renderer {
                 + curr.extra_balls.len().min(MAX_EXTRA_BALLS)
                 + curr.powerups.len().min(MAX_POWERUPS),
         );
-        instances.push(QuadInstance::new(
+        instances.push(QuadInstance::new_textured(
             shaken(drawn.paddle.x, drawn.paddle.y),
             [drawn.paddle.width / 2.0, drawn.paddle.height / 2.0],
-            PADDLE_COLOR,
+            self.sprite_atlas.uv_rect(SpriteId::Paddle),
+            WHITE_TINT,
         ));
 
         // Ball's fading trail: up to `TRAIL_LEN` quads at its last few
@@ -755,26 +926,27 @@ impl Renderer {
         }));
         push_trail(&mut self.ball_trail, &drawn.ball);
 
-        instances.push(QuadInstance::new(
+        let ball_uv = self.sprite_atlas.uv_rect(SpriteId::Ball);
+        instances.push(QuadInstance::new_textured(
             shaken(drawn.ball.x, drawn.ball.y),
             [drawn.ball.radius, drawn.ball.radius],
-            BALL_COLOR,
+            ball_uv,
+            WHITE_TINT,
         ));
         // `.take(MAX_BRICKS)`: defensive only -- `levels.rs`'s own tests
         // already enforce every built-in level fits this cap. A brick that
-        // was just hit and survived (e.g. armored's first hit) flashes
-        // white for this one frame instead of its normal color.
+        // was just hit and survived (e.g. armored's first hit) flashes flat
+        // white for this one frame instead of its normal sprite -- a tinted
+        // *sample* wouldn't pop the same way (see `HIT_FLASH_COLOR`'s doc).
         instances.extend(curr.bricks.iter().take(MAX_BRICKS).map(|brick| {
-            let color = if hit_flash.contains(&(brick.x, brick.y)) {
-                HIT_FLASH_COLOR
+            let half_size = [brick.width / 2.0, brick.height / 2.0];
+            let center = shaken(brick.x, brick.y);
+            if hit_flash.contains(&(brick.x, brick.y)) {
+                QuadInstance::new(center, half_size, HIT_FLASH_COLOR)
             } else {
-                brick_color(brick)
-            };
-            QuadInstance::new(
-                shaken(brick.x, brick.y),
-                [brick.width / 2.0, brick.height / 2.0],
-                color,
-            )
+                let uv = self.sprite_atlas.uv_rect(brick_sprite(brick));
+                QuadInstance::new_textured(center, half_size, uv, WHITE_TINT)
+            }
         }));
         // Bricks destroyed this frame get one last white "ghost" quad at
         // their former spot -- otherwise a one-hit brick would vanish
@@ -793,10 +965,11 @@ impl Renderer {
         // interpolation/trail juice, and these are secondary balls that
         // only exist for a fraction of a run).
         instances.extend(curr.extra_balls.iter().take(MAX_EXTRA_BALLS).map(|ball| {
-            QuadInstance::new(
+            QuadInstance::new_textured(
                 shaken(ball.x, ball.y),
                 [ball.radius, ball.radius],
-                BALL_COLOR,
+                ball_uv,
+                WHITE_TINT,
             )
         }));
 
@@ -968,6 +1141,7 @@ impl Renderer {
                 multiview_mask: None,
             });
             pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &self.sprite_atlas_bind_group, &[]);
             pass.set_vertex_buffer(0, self.quad_vertex_buffer.slice(..));
             pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             pass.draw(0..QUAD_VERTICES.len() as u32, 0..instances.len() as u32);
@@ -1067,12 +1241,12 @@ mod tests {
     }
 
     #[test]
-    fn armored_brick_color_changes_after_its_first_hit() {
-        let fresh = brick_color(&brick(BrickKind::Armored, 2));
-        let hit = brick_color(&brick(BrickKind::Armored, 1));
-        assert_ne!(fresh, hit, "the first hit must visibly change its color");
-        assert_eq!(fresh, ARMORED_BRICK_COLOR);
-        assert_eq!(hit, ARMORED_BRICK_COLOR_HIT);
+    fn armored_brick_sprite_changes_after_its_first_hit() {
+        let fresh = brick_sprite(&brick(BrickKind::Armored, 2));
+        let hit = brick_sprite(&brick(BrickKind::Armored, 1));
+        assert_ne!(fresh, hit, "the first hit must visibly change its sprite");
+        assert_eq!(fresh, SpriteId::BrickArmoredIntact);
+        assert_eq!(hit, SpriteId::BrickArmoredHit);
     }
 
     #[test]
@@ -1131,10 +1305,10 @@ mod tests {
     }
 
     #[test]
-    fn each_brick_kind_gets_its_own_distinct_color() {
-        let normal = brick_color(&brick(BrickKind::Normal, 1));
-        let armored = brick_color(&brick(BrickKind::Armored, 2));
-        let indestructible = brick_color(&brick(BrickKind::Indestructible, 0));
+    fn each_brick_kind_gets_its_own_distinct_sprite() {
+        let normal = brick_sprite(&brick(BrickKind::Normal, 1));
+        let armored = brick_sprite(&brick(BrickKind::Armored, 2));
+        let indestructible = brick_sprite(&brick(BrickKind::Indestructible, 0));
         assert_ne!(normal, armored);
         assert_ne!(normal, indestructible);
         assert_ne!(armored, indestructible);

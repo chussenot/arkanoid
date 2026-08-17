@@ -18,3 +18,8 @@
 # LBreakoutHD levelsets fetched by scripts/fetch-levelsets.sh: GPLv3 data,
 # never committed to this MIT repo. See ATTRIBUTION for source/license.
 /levels/
+
+# Kenney puzzle pack fetched by scripts/fetch-assets.sh: CC0, but left
+# gitignored like this repo's other fetched asset script rather than
+# committed as binary blobs. See ATTRIBUTION for source/license.
+/assets/pack/

@@ -63,6 +63,25 @@ of playing a set's full level list top to bottom, it samples 10 random
 levels from it for a quicker session. Either way, completion is tracked
 per set, keyed by the same path you passed to `--levelset`.
 
+## Screenshots
+
+Every entity draws from the same `Atlas` layout (`src/assets.rs`); the only
+difference between these two runs is where its pixels came from:
+
+```bash
+cargo run --release                            # procedural placeholder (default)
+scripts/fetch-assets.sh                        # one-time: pulls a CC0 sprite pack
+cargo run --release -- --assets assets/pack    # on-disk sprite pack
+```
+
+**Procedural vs. pack side-by-side: not captured this session.** The build
+machine's display was locked (`swaylock`) for the whole session, so `grim`
+only ever captured the lock screen, not the game window — this is a real
+placeholder, not a skipped step. Once a session has an unlocked display,
+run both commands above, screenshot each window (`grim` on Wayland), and
+drop them in as `docs/screenshot-procedural.png` / `docs/screenshot-pack.png`
+side by side here.
+
 ## Fixed-timestep design
 
 The simulation runs on its own fixed 120 Hz clock (`src/game.rs`'s

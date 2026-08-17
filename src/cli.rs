@@ -7,7 +7,7 @@
 //! Hand-rolled rather than a `clap` dependency: three optional flags
 //! don't justify a new crate in a project with a fixed dependency budget.
 
-/// Parsed CLI flags. Workstream B adds `assets: Option<String>`, C adds
+/// Parsed CLI flags. Workstream A adds `levelset`, B adds `assets`, C adds
 /// `renderer` -- each its own field here, never restructuring this one.
 #[derive(Debug, Default)]
 pub struct Args {
@@ -16,31 +16,32 @@ pub struct Args {
     /// the built-in 3 levels (`levels::LEVELS`). `None` (no flag) keeps
     /// today's built-in-only behavior.
     pub levelset: Option<String>,
+    /// `--assets <dir>`: a pack directory for `assets::TextureSource::Pack`,
+    /// defaulting to `TextureSource::Procedural` when unset (see `main.rs`).
+    pub assets: Option<String>,
 }
 
-/// Parses `std::env::args()` into [`Args`]. An unrecognized flag is
-/// ignored rather than treated as an error -- there is no shared owner
-/// of "the whole command line" to validate against once three workstreams
-/// each add their own flag independently.
+/// Parses `std::env::args()` into [`Args`]. Thin wrapper around
+/// [`parse_args`] so the real parse loop is unit-testable against a
+/// literal argument list instead of only the test binary's own argv.
 pub fn parse() -> Args {
     parse_args(std::env::args().skip(1))
 }
 
 /// The actual parse loop, factored out from [`parse`] so it can be driven
 /// by an explicit list of strings in tests instead of the real process
-/// argv -- `parse()` itself stays a one-line wrapper over this.
+/// argv -- `parse()` itself stays a one-line wrapper over this. An
+/// unrecognized flag is ignored rather than treated as an error -- there
+/// is no shared owner of "the whole command line" to validate against
+/// once three workstreams each add their own flag independently.
 fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
     let mut args = Args::default();
     while let Some(flag) = it.next() {
-        // Single arm today only because sibling epics' flags live on their
-        // own branches, not this one -- multiple arms is the point of this
-        // `match` (see the module doc), so silence the lint rather than
-        // collapse to `if` and lose that shape for the next arm to land.
-        #[allow(clippy::single_match)]
         match flag.as_str() {
             "--levelset" => args.levelset = it.next(),
-            // Workstream flags get their own match arm here, e.g.:
-            //   "--assets" => args.assets = it.next(),
+            "--assets" => args.assets = it.next(),
+            // Other workstream flags get their own match arm here, e.g.:
+            //   "--renderer" => args.renderer = ...,
             _ => {}
         }
     }
@@ -57,7 +58,9 @@ mod tests {
 
     #[test]
     fn parse_of_empty_args_does_not_panic() {
-        assert_eq!(parse_of(&[]).levelset, None);
+        let args = parse_of(&[]);
+        assert_eq!(args.levelset, None);
+        assert_eq!(args.assets, None);
     }
 
     #[test]
@@ -68,11 +71,25 @@ mod tests {
 
     #[test]
     fn parse_ignores_unknown_flags() {
-        assert_eq!(parse_of(&["--bogus", "x"]).levelset, None);
+        let args = parse_of(&["--bogus", "x"]);
+        assert_eq!(args.levelset, None);
+        assert_eq!(args.assets, None);
     }
 
     #[test]
     fn parse_of_levelset_with_no_following_value_leaves_it_none() {
         assert_eq!(parse_of(&["--levelset"]).levelset, None);
+    }
+
+    #[test]
+    fn parse_reads_the_assets_flag_value() {
+        let args = parse_of(&["--assets", "some/pack/dir"]);
+        assert_eq!(args.assets.as_deref(), Some("some/pack/dir"));
+    }
+
+    #[test]
+    fn parse_ignores_unrecognized_flags_but_keeps_reading() {
+        let args = parse_of(&["--bogus", "x", "--assets", "p"]);
+        assert_eq!(args.assets.as_deref(), Some("p"));
     }
 }

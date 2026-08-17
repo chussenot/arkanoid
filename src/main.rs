@@ -1,5 +1,6 @@
 //! Window/event loop wiring only (see docs/spec.md, Architecture section).
 
+mod assets;
 mod cli;
 mod events;
 mod game;
@@ -18,6 +19,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
+use assets::Atlas;
 use game::{Game, Input};
 use render::{RenderState, Renderer};
 
@@ -50,6 +52,11 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color {
 struct App {
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
+    /// Sprite pixels this session draws with (see `assets::TextureSource`),
+    /// resolved once in `main` -- held here only until `resumed` builds the
+    /// `Renderer` that actually uploads it, since window/renderer creation
+    /// has to wait for `ApplicationHandler::resumed`.
+    atlas: Atlas,
     game: Game,
     /// Held-key state, updated by `WindowEvent::KeyboardInput` and read once
     /// per tick -- persists across frames since a key stays down across many
@@ -69,12 +76,13 @@ struct App {
     render_alpha: f32,
 }
 
-impl Default for App {
-    fn default() -> Self {
+impl App {
+    fn new(atlas: Atlas) -> Self {
         let game = Game::new();
         Self {
             window: None,
             renderer: None,
+            atlas,
             render_prev: RenderState::from(&game),
             game,
             input: Input::default(),
@@ -104,7 +112,7 @@ impl ApplicationHandler for App {
                 .expect("failed to create window"),
         );
 
-        self.renderer = Some(Renderer::new(Arc::clone(&window)));
+        self.renderer = Some(Renderer::new(Arc::clone(&window), self.atlas.clone()));
         self.window = Some(window);
         self.last_update = Instant::now();
 
@@ -248,6 +256,19 @@ fn resolve_levelset(path_arg: &str) -> Option<levelset::LevelSet> {
 
 fn main() {
     let args = cli::parse();
+
+    // Loading here is what actually exercises `--assets <dir>`: a missing
+    // or malformed pack directory warns on stderr and falls back to
+    // procedural pixels instead of panicking
+    // (assets::TextureSource::load's contract). The resulting `Atlas` rides
+    // along on `App` until `resumed` builds the `Renderer` that uploads it
+    // (see render.rs's bead b5 for the texture/UV wiring).
+    let texture_source = match args.assets {
+        Some(dir) => assets::TextureSource::Pack(std::path::PathBuf::from(dir)),
+        None => assets::TextureSource::default(),
+    };
+    let atlas = texture_source.load();
+
     let loaded_levelset = args
         .levelset
         .as_deref()
@@ -276,7 +297,7 @@ fn main() {
         });
 
     let event_loop = EventLoop::new().expect("failed to create event loop");
-    let mut app = App::default();
+    let mut app = App::new(atlas);
     // Feed a successfully-resolved `--levelset` load into `Game` before the
     // event loop starts driving frames (arkanoid-v2-a8's integration job --
     // see `Game::load_external_levels`'s doc comment). A `None` here (no
