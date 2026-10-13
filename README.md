@@ -28,6 +28,24 @@ cargo run --release -- --renderer 3d
 
 ![3D renderer](render3d.png)
 
+## Autopilot
+
+The game can play itself. With the `typesafe` feature, a TypeSafe System One
+model (through the [`judgment`](https://github.com/chussenot/judgment)
+crate) picks which part of the wall to attack at every serve and every
+paddle hit, and deterministic code flies the paddle to make that shot:
+
+```bash
+cargo run --release -- --autopilot                          # heuristic strategy, no network
+TYPESAFE_API_KEY=... cargo run --release --features typesafe -- --autopilot
+cargo run --release --features typesafe -- --autopilot-every 3   # ask every 3rd paddle hit
+```
+
+The model is consulted asynchronously and the game never waits on it. A late,
+failed, or unconfident answer falls back to the heuristic.
+[`docs/autopilot.md`](docs/autopilot.md) covers the design, the latency
+budget, and the measurements.
+
 ## Controls
 
 | Key                | Action                  |
