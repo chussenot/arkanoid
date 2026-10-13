@@ -27,7 +27,9 @@ pub const PLAYFIELD_HEIGHT: f32 = 600.0;
 
 const PADDLE_WIDTH: f32 = 100.0;
 const PADDLE_HEIGHT: f32 = 16.0;
-const PADDLE_SPEED: f32 = 520.0;
+/// `pub` for the autopilot (`src/autopilot/pilot.rs`), which plans paddle
+/// moves against the same speed the simulation applies.
+pub const PADDLE_SPEED: f32 = 520.0;
 /// Gap between the paddle's bottom edge and the playfield's bottom edge.
 const PADDLE_MARGIN_BOTTOM: f32 = 30.0;
 
@@ -58,7 +60,8 @@ const BRICK_GRID_MARGIN_TOP: f32 = 60.0;
 /// Chance that destroying a brick drops a power-up (spec: 15%).
 const POWERUP_DROP_CHANCE: f64 = 0.15;
 /// Fall speed for a dropped power-up (spec: 140 px/s).
-const POWERUP_FALL_SPEED: f32 = 140.0;
+/// `pub` for the autopilot, which times a catch against it.
+pub const POWERUP_FALL_SPEED: f32 = 140.0;
 /// Paddle width multiplier while Widen is active (spec: x1.5).
 const WIDEN_MULTIPLIER: f32 = 1.5;
 /// How long a Widen effect lasts before the paddle returns to base width
@@ -120,7 +123,9 @@ impl Paddle {
         self.x + self.width / 2.0
     }
 
-    fn top(&self) -> f32 {
+    /// `pub` for the autopilot: the line a ball's center crosses at contact
+    /// is `top() - radius`.
+    pub fn top(&self) -> f32 {
         self.y - self.height / 2.0
     }
 
@@ -346,7 +351,10 @@ fn substep_count(speed: f32, radius: f32, dt_fixed: f32) -> u32 {
 /// 0°/180° = horizontal). A hit right of paddle center sends the ball out
 /// below 90° (up-and-right); a hit left of center sends it out above 90°
 /// (up-and-left).
-fn offset_to_exit_angle_deg(offset_norm: f32) -> f32 {
+///
+/// `pub` so the autopilot inverts the exact mapping the simulation applies
+/// rather than a copy of it that could drift.
+pub fn offset_to_exit_angle_deg(offset_norm: f32) -> f32 {
     let offset_norm = offset_norm.clamp(-1.0, 1.0);
     let half_range = (EXIT_ANGLE_MAX_DEG - EXIT_ANGLE_MIN_DEG) / 2.0; // 60°, symmetric about 90°
     let angle = 90.0 - offset_norm * half_range;
@@ -690,7 +698,7 @@ impl Game {
     /// nearest face (closest-point-on-rect test). Only considered while
     /// the ball is moving downward — a ball moving up can't be hitting
     /// the paddle it just bounced off in the same tick.
-    fn resolve_paddle_collision(&self, ball: &mut Ball) {
+    fn resolve_paddle_collision(&mut self, ball: &mut Ball) {
         if ball.vy <= 0.0 {
             return;
         }
@@ -713,6 +721,7 @@ impl Game {
         // Push the ball back above the paddle so it doesn't immediately
         // re-collide next tick.
         ball.y = self.paddle.top() - ball.radius;
+        self.events.push(GameEvent::PaddleHit);
     }
 
     /// AABB-vs-circle collision against every brick, resolved against the

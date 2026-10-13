@@ -2,6 +2,14 @@
 prek = "latest"
 rust = "latest"
 
+[tasks.autopilot]
+description = "Launch the game on autopilot, strategy from TypeSafe (needs TYPESAFE_API_KEY)"
+run = "cargo run --release --features typesafe -- --autopilot"
+
+[tasks."live:autopilot"]
+description = "Play levels 1-2 headless against the real TypeSafe API (needs TYPESAFE_API_KEY)"
+run = "cargo test --features typesafe -- --ignored --nocapture live_"
+
 [tasks.build]
 description = "Build the game"
 run = "cargo build"
@@ -11,8 +19,8 @@ description = "Launch the game"
 run = "cargo run --release"
 
 [tasks.test]
-description = "Run headless unit tests"
-run = "cargo test"
+description = "Run headless unit tests, with and without the typesafe feature (no API calls)"
+run = ["cargo test", "cargo test --features typesafe"]
 
 [tasks.fmt]
 description = "Format the code"
@@ -23,8 +31,11 @@ description = "Check formatting without writing changes"
 run = "cargo fmt --check"
 
 [tasks.clippy]
-description = "Lint (warnings are errors)"
-run = "cargo clippy --all-targets -- -D warnings"
+description = "Lint (warnings are errors), with and without the typesafe feature"
+run = [
+  "cargo clippy --all-targets -- -D warnings",
+  "cargo clippy --all-targets --features typesafe -- -D warnings",
+]
 
 [tasks.ci]
 description = "Full quality gate: fmt-check, clippy, test"

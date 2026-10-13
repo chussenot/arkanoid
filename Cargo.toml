@@ -29,3 +29,29 @@ winit = "0.30.13"
 # convention wrong. Used only by render3d/ -- the classic 2D renderer has
 # no matrices to justify pulling this in for itself.
 glam = "0.33.3"
+
+# --- autopilot (src/autopilot/) ---------------------------------------------
+# Off by default so a fresh clone builds with the spec's dependency budget
+# and no network stack. `--autopilot` works without it, on the deterministic
+# lane heuristic; this feature adds the TypeSafe System One strategist.
+[features]
+typesafe = ["dep:judgment", "dep:tokio", "dep:serde_json"]
+
+[dependencies.judgment]
+# The typed System One client: questions with typed answers, every answer
+# verified against the question before it is read (an off-list lane is an
+# error, never a default), and the official SDKs' retry semantics.
+version = "0.13"
+optional = true
+
+[dependencies.tokio]
+# `judgment` is async; the autopilot runs it on one worker thread with a
+# current-thread runtime (`autopilot/advisor.rs`), never on the game loop.
+version = "1"
+features = ["rt", "time"]
+optional = true
+
+[dependencies.serde_json]
+# The state sent with each question (`judgment` takes a `serde_json::Value`).
+version = "1"
+optional = true
