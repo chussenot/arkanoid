@@ -35,6 +35,14 @@ pub struct Args {
     /// the game. Defaults to classic; an unrecognized or missing value
     /// keeps the default rather than panicking.
     pub renderer: RendererKind,
+    /// `--autopilot`: the game plays itself (`src/autopilot/`). Implied by
+    /// `--autopilot-every`.
+    pub autopilot: bool,
+    /// `--autopilot-every <N>`: consult the strategist (a TypeSafe model
+    /// with the `typesafe` feature) at every serve and every N paddle hits.
+    /// `None` keeps the default of every paddle hit; a missing or
+    /// non-numeric value is ignored like any other bad value here.
+    pub autopilot_every: Option<u32>,
 }
 
 /// Parses `std::env::args()` into [`Args`]. Thin wrapper around
@@ -64,6 +72,11 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
                 // than panic (see this function's doc comment).
                 _ => {}
             },
+            "--autopilot" => args.autopilot = true,
+            "--autopilot-every" => {
+                args.autopilot = true;
+                args.autopilot_every = it.next().and_then(|n| n.parse().ok());
+            }
             // Other workstream flags get their own match arm here.
             _ => {}
         }
@@ -149,6 +162,22 @@ mod tests {
     #[test]
     fn missing_renderer_value_keeps_the_default() {
         assert_eq!(parse_of(&["--renderer"]).renderer, RendererKind::Classic);
+    }
+
+    #[test]
+    fn autopilot_is_off_by_default_and_on_with_its_flag() {
+        assert!(!parse_of(&[]).autopilot);
+        let args = parse_of(&["--autopilot"]);
+        assert!(args.autopilot);
+        assert_eq!(args.autopilot_every, None);
+    }
+
+    #[test]
+    fn autopilot_every_implies_autopilot_and_ignores_a_bad_value() {
+        let args = parse_of(&["--autopilot-every", "3"]);
+        assert!(args.autopilot);
+        assert_eq!(args.autopilot_every, Some(3));
+        assert_eq!(parse_of(&["--autopilot-every", "x"]).autopilot_every, None);
     }
 
     #[test]

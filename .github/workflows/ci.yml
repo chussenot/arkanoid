@@ -22,3 +22,9 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: cargo test
         run: cargo test
+      # The autopilot's TypeSafe strategist (src/autopilot/advisor.rs) is
+      # behind a feature; its tests use judgment::Fake and call no API.
+      - name: cargo clippy (typesafe)
+        run: cargo clippy --all-targets --features typesafe -- -D warnings
+      - name: cargo test (typesafe)
+        run: cargo test --features typesafe

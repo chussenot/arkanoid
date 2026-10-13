@@ -37,6 +37,10 @@ pub enum PowerUpKind {
 pub enum GameEvent {
     /// A brick was destroyed (last hit on a normal or armored brick).
     BrickDestroyed,
+    /// A ball bounced off the paddle. The autopilot (`src/autopilot/`)
+    /// counts these as rallies: each one is a point where a new shot is
+    /// planned.
+    PaddleHit,
     /// A ball fell below the bottom edge. Fires once per ball, including
     /// during multiball — see `LifeLost` for the life-loss rule.
     BallLost,

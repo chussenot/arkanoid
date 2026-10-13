@@ -1,6 +1,7 @@
 //! Window/event loop wiring only (see docs/spec.md, Architecture section).
 
 mod assets;
+mod autopilot;
 mod cli;
 mod events;
 mod game;
@@ -21,6 +22,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use assets::Atlas;
+use autopilot::Autopilot;
 use events::GameEvent;
 use game::{Game, Input};
 use render::{RenderState, Renderer};
@@ -130,6 +132,9 @@ struct App {
     /// How far into the tick *after* `render_prev` the current wall-clock
     /// frame falls, in `[0, 1]`.
     render_alpha: f32,
+    /// `--autopilot`: when set, it produces each tick's `Input` in place of
+    /// the keyboard (Pause stays the player's).
+    autopilot: Option<Autopilot>,
 }
 
 impl App {
@@ -146,6 +151,7 @@ impl App {
             accumulator: 0.0,
             last_update: Instant::now(),
             render_alpha: 0.0,
+            autopilot: None,
         }
     }
 }
@@ -196,7 +202,12 @@ impl ApplicationHandler for App {
         }
 
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                if let Some(autopilot) = &self.autopilot {
+                    println!("autopilot: {}", autopilot.stats());
+                }
+                event_loop.exit();
+            }
             WindowEvent::Resized(size) => {
                 if let Some(renderer) = &mut self.renderer {
                     renderer.resize(size);
@@ -241,7 +252,17 @@ impl ApplicationHandler for App {
 
         let mut ticks = 0;
         while self.accumulator >= FIXED_DT && ticks < MAX_TICKS_PER_FRAME {
-            self.game.tick(&self.input, FIXED_DT);
+            let input = match &mut self.autopilot {
+                Some(autopilot) => Input {
+                    pause: self.input.pause,
+                    ..autopilot.input(&self.game, FIXED_DT)
+                },
+                None => self.input,
+            };
+            self.game.tick(&input, FIXED_DT);
+            if let Some(autopilot) = &mut self.autopilot {
+                autopilot.observe(&self.game);
+            }
             // render3d's destroy-tumble effect (arkanoid-v2-c3) needs this
             // tick's events before they're gone -- see
             // `AnyRenderer::ingest_tick_events`'s doc comment. No audio
@@ -321,6 +342,36 @@ fn resolve_levelset(path_arg: &str) -> Option<levelset::LevelSet> {
     }
 }
 
+/// The autopilot `--autopilot` asked for: TypeSafe-advised when built with
+/// the `typesafe` feature and a client can be configured from the
+/// environment, the deterministic heuristic otherwise (said on stderr, so a
+/// missing key never looks like a model playing).
+fn build_autopilot(consult_every: u32) -> Autopilot {
+    #[cfg(feature = "typesafe")]
+    let strategist: Option<Box<dyn autopilot::Strategist>> = {
+        use autopilot::advisor;
+        match advisor::client_from_env() {
+            Ok(client) => match advisor::Background::spawn(client, advisor::model_from_env()) {
+                Ok(background) => Some(Box::new(background)),
+                Err(error) => {
+                    eprintln!("autopilot: no advisor thread ({error}); heuristic only");
+                    None
+                }
+            },
+            Err(error) => {
+                eprintln!("autopilot: no TypeSafe client ({error}); heuristic only");
+                None
+            }
+        }
+    };
+    #[cfg(not(feature = "typesafe"))]
+    let strategist: Option<Box<dyn autopilot::Strategist>> = {
+        eprintln!("autopilot: built without the `typesafe` feature; heuristic only");
+        None
+    };
+    Autopilot::new(strategist, consult_every).with_log(true)
+}
+
 fn main() {
     let args = cli::parse();
 
@@ -374,6 +425,11 @@ fn main() {
     // flag, bad path, empty directory) leaves the built-in 3 levels active.
     if let Some(set) = loaded_levelset {
         app.game.load_external_levels(set.levels);
+    }
+    if args.autopilot {
+        let autopilot = build_autopilot(args.autopilot_every.unwrap_or(1));
+        println!("autopilot: {}", autopilot.describe());
+        app.autopilot = Some(autopilot);
     }
     event_loop
         .run_app(&mut app)
