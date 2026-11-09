@@ -51,29 +51,38 @@ budget, and the measurements.
 | Key                | Action                  |
 |---------------------|--------------------------|
 | Left / Right, A / D | Move the paddle          |
-| Space               | Launch the ball; press to release a glued ball |
+| Space               | Launch the ball; press to release a glued ball; hold to fire a laser |
 | Escape (or P)       | Pause / resume           |
 
 Keyboard only; menu and pause screens show the same key hints on-screen.
 
-## Glue and asteroids
+## Capsules and asteroids
 
-Two additions on top of the original design ([`docs/spec.md`](docs/spec.md),
-"Additions after v1"):
+A destroyed brick drops a capsule 15% of the time, any of seven with equal
+odds. Catch it with the paddle:
 
-- **Glue** (pink capsule): for 15 s, a ball that hits the paddle sticks
-  where it landed, and the paddle turns pink. Move to line up the shot,
-  then press Space. The ball leaves at the angle its landing spot gives,
-  or on its own after 3 s.
-- **Asteroids** (orange): they drift down from the top, over the bricks,
-  wobbling side to side. A ball that hits one blows it up and bounces off
-  it, which can send it somewhere you didn't plan. The explosion also
-  breaks the bricks around it (armored ones take one hit), so hitting one
-  while it crosses the wall clears a cluster. The paddle blows them up
-  harmlessly. Each is worth 100 points.
+| Capsule | Color | Effect |
+|---|---|---|
+| Widen | green | Paddle ×1.5 for 15 s (cancels Tiny) |
+| Slow | blue | Every ball slows to ×0.7, once, never below launch speed |
+| Multiball | purple | Two extra balls split off; a life is lost only when the last one drops |
+| Glue | pink | For 15 s a ball that hits the paddle sticks where it landed; line up and press Space. It leaves at the angle its landing spot gives, or on its own after 3 s |
+| Laser | red | For 15 s, hold Space to fire twin bolts from the paddle's ends; each bolt gives the first brick it meets one hit |
+| Super laser | cyan | For 15 s, hold Space to fire one wide bolt that drills through every breakable brick in its column, armored ones included, until an indestructible brick stops it |
+| Tiny | grey | The one to dodge: paddle ×0.6 for 15 s (cancels Widen) |
 
-`cargo run --release -- --classic` plays without either, as the game was
-first specified.
+The paddle takes the color of the gun or Glue it carries. Catching one
+laser replaces the other.
+
+**Asteroids** (orange) drift down from the top, over the bricks, wobbling
+side to side. A ball that hits one blows it up and bounces off it, which
+can send it somewhere you didn't plan. The explosion also breaks the
+bricks around it (armored ones take one hit), so hitting one while it
+crosses the wall clears a cluster. The paddle and laser bolts blow them up
+too. Each is worth 100 points.
+
+`cargo run --release -- --classic` plays as the game was first specified:
+Widen, Slow and Multiball only, and no asteroids.
 
 ## Thousands of levels
 

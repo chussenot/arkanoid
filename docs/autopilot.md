@@ -50,6 +50,11 @@ point and angle line up with the target, then presses Space. If another
 ball is in flight it releases at once, because the paddle is needed under
 that one.
 
+With a Laser or Super laser it holds Space the whole time the ball is in
+flight: a bolt can only help. A glued ball's release takes precedence,
+since that needs a press. It never chases a Tiny capsule, the one that
+shrinks the paddle, though it doesn't dodge one either.
+
 The model is never asked to move the paddle. Moving it is geometry the
 simulation already defines: where a ball crosses the paddle line (walls
 included), and how a hit offset maps to an exit angle. The pilot inverts
@@ -117,7 +122,9 @@ Heuristic only, 20 seeds per feature set, the three built-in levels
 | v1 (`--classic`) | 20/20 | 1 | 406 s / 480 s |
 | Glue only | 20/20 | 2 | 438 s / 600 s |
 | Asteroids only | 20/20 | 3 | 414 s / 524 s |
-| Both (default) | 20/20 | 6 | 442 s / 540 s |
+| Laser and Super laser only | 20/20 | 0 | 321 s / 601 s |
+| Tiny only | 20/20 | 2 | 413 s / 614 s |
+| Everything (default) | 20/20 | 2 | 359 s / 469 s |
 
 Before the exact forecast and stall breaking, the same benchmark lost
 27–40 lives per feature set and won 12–18 of 20.
@@ -142,9 +149,11 @@ Every test is headless and runs in CI. The `typesafe` ones use
 - `pilot.rs`: intercept prediction through walls and the ceiling, aim
   checked against the simulation's own angle mapping, steering deadband.
 - `board.rs`: lane counts, exposure behind indestructible bricks, the map.
-- `mod.rs`: the heuristic wins the three built-in levels, Glue and
-  asteroids on, on three seeds, and the whole fixture levelset; it aims and
-  releases glued balls itself rather than waiting out the hold limit. A confident model lane is used, and a model
+- `mod.rs`: the heuristic wins the three built-in levels with every
+  addition on, on three seeds, and the whole fixture levelset. It aims and
+  releases glued balls itself rather than waiting out the hold limit,
+  fires a gun, and goes for a Widen but not a Tiny. A confident model lane
+  is used, and a model
   stuck on an unreachable lane is set aside while it loops; a model below
   the bar never is; a silent model delays serves but never stops the game;
   `--autopilot-every` spaces out consultations.
