@@ -81,6 +81,17 @@ Three built-in levels as `&[&str]` grids in levels.rs, chars: `.` empty,
 level 2 introduces armored; level 3 uses indestructible bricks to shape
 corridors. Adding a level must require touching only levels.rs.
 
+**The campaign (added after v1)**: 32 more built-in levels in levels.rs
+(`CAMPAIGN`, each with a name the HUD shows), in the spirit of the 1986
+arcade game (staircases, frames, columns, walls of armored and
+indestructible bricks) and copying none of its stages. A normal game plays
+the campaign; `--classic` and the tests play v1's three above. Every
+built-in grid, v1's and the campaign's, is at most 14×8, has a destructible
+brick, and has every destructible brick reachable from the open field
+through empty cells and destructible bricks only (checked by a test: a box
+of indestructible bricks with no way in, like level 3's first version,
+fails it).
+
 ## Rendering quality bar ("modern" means)
 
 - Instanced rendering, sRGB surface, vsync on (FifoRelaxed if available).
