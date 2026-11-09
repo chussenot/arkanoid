@@ -58,7 +58,7 @@ Keyboard only; menu and pause screens show the same key hints on-screen.
 
 ## Capsules and asteroids
 
-A destroyed brick drops a capsule 15% of the time, any of seven with equal
+A destroyed brick drops a capsule 15% of the time, any of nine with equal
 odds. Catch it with the paddle:
 
 | Capsule | Color | Effect |
@@ -70,6 +70,8 @@ odds. Catch it with the paddle:
 | Laser | red | For 15 s, hold Space to fire twin bolts from the paddle's ends; each bolt gives the first brick it meets one hit |
 | Super laser | cyan | For 15 s, hold Space to fire one wide bolt that drills through every breakable brick in its column, armored ones included, until an indestructible brick stops it |
 | Tiny | grey | The one to dodge: paddle ×0.6 for 15 s (cancels Widen) |
+| Player | yellow, like the life icons | One extra life (up to 9) |
+| Break | orange | Opens a gate at the bottom of the right wall. Slide the paddle out through it to skip to the next level, +10,000. It stays open until you use it, lose a life or the level ends |
 
 The paddle takes the color of the gun or Glue it carries. Catching one
 laser replaces the other.
@@ -80,6 +82,10 @@ can send it somewhere you didn't plan. The explosion also breaks the
 bricks around it (armored ones take one hit), so hitting one while it
 crosses the wall clears a cluster. The paddle and laser bolts blow them up
 too. Each is worth 100 points.
+
+Glue, Laser, Player and Break follow the 1986 arcade game's Catch, Laser,
+Player and Break capsules (its Enlarge, Slow and Disruption are Widen,
+Slow and Multiball here); Super laser and Tiny are this game's own.
 
 `cargo run --release -- --classic` plays as the game was first specified:
 Widen, Slow and Multiball only, and no asteroids.

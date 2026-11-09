@@ -62,14 +62,14 @@ exceeds ball radius — assert this in a test, not a comment).
 paddle. 0 lives → GameOver with final score. All destructible bricks
 cleared → next level; last level cleared → Victory screen.
 
-**Power-ups (exactly these seven, nothing more)**: dropped by 15% of
-destroyed bricks, uniformly among the seven, fall at 140 px/s, caught with
+**Power-ups (exactly these nine, nothing more)**: dropped by 15% of
+destroyed bricks, uniformly among the nine, fall at 140 px/s, caught with
 the paddle:
 - Widen (paddle ×1.5 for 15 s, timers stack by refresh, not addition)
 - Slow (ball speed ×0.7 once, floor at launch speed)
 - Multiball (spawn 2 extra balls from current ball position; life is
   lost only when the LAST ball drops)
-- Glue, Laser, Super laser, Tiny (added after v1, see below)
+- Glue, Laser, Super laser, Tiny, Player, Break (added after v1, see below)
 
 **HUD**: score (top-left), lives as icons (top-right), level number
 (top-center). Menu and pause screens: title + key hints, keyboard only.
@@ -143,6 +143,16 @@ move.
 - **Tiny** (power-up, 15 s, the one that hurts): paddle ×0.6. Tiny and Widen
   cancel each other: catching one ends the other, so the paddle is only
   ever one size off.
+- **Player** (power-up, the arcade original's P): one extra life, up to 9
+  in all (the HUD's room for life icons).
+- **Break** (power-up, the arcade original's B): opens a gate in the right
+  wall, from 40 px above the paddle's center to the bottom of the field.
+  While it is open the paddle can slide out through the wall; once it is
+  all the way out (its left edge past the wall) the level is left as if
+  cleared, +10,000, with the paddle back in the middle for the next serve
+  (Victory if it was the last level). The gate stays open until it is
+  used, a life is lost or the level ends. Balls still bounce off the wall
+  there.
 - **Asteroids**: from 4 s into a serve's flight, then every 5–10 s, one
   drifts in from the top edge (at most 3 at once), over the bricks, down at
   40 px/s with a sideways drift and wobble that flip at the walls. A ball

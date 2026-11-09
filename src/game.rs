@@ -50,6 +50,9 @@ const EXIT_ANGLE_MAX_DEG: f32 = 150.0;
 const EXIT_ANGLE_DEAD_ZONE_HALF_DEG: f32 = 5.0;
 
 const STARTING_LIVES: u32 = 3;
+/// Most lives the Player power-up can bring the count to: the HUD's row of
+/// life icons has room for this many.
+pub const MAX_LIVES: u32 = 9;
 
 /// Gap between the playfield's top edge and the brick grid, so the HUD's
 /// level number (top-center, per spec) has room above the bricks.
@@ -90,6 +93,13 @@ pub const GLUE_HOLD_SECS: f32 = 3.0;
 /// only ever one size off.
 const TINY_MULTIPLIER: f32 = 0.6;
 const TINY_DURATION_SECS: f32 = 15.0;
+
+/// Points for leaving a level through the Break gate.
+const WARP_SCORE: u32 = 10_000;
+/// The Break gate's span on the right wall: from this far above the
+/// paddle's center to the bottom of the field, so the paddle meets it
+/// where it already moves.
+pub const GATE_REACH_ABOVE_PADDLE: f32 = 40.0;
 
 // -- lasers ---------------------------------------------------------------
 
@@ -163,6 +173,11 @@ pub struct Features {
     pub lasers: bool,
     /// The Tiny power-up, a bad one: the paddle shrinks.
     pub tiny: bool,
+    /// The Player power-up: an extra life.
+    pub player: bool,
+    /// The Break power-up: a gate opens in the right wall, and sliding the
+    /// paddle through it skips to the next level.
+    pub warp: bool,
 }
 
 impl Features {
@@ -171,12 +186,16 @@ impl Features {
         asteroids: true,
         lasers: true,
         tiny: true,
+        player: true,
+        warp: true,
     };
     pub const V1: Self = Self {
         glue: false,
         asteroids: false,
         lasers: false,
         tiny: false,
+        player: false,
+        warp: false,
     };
 }
 
@@ -636,6 +655,10 @@ pub struct Game {
     gun_cooldown: f32,
     /// Bolts in flight.
     pub bolts: Vec<Bolt>,
+    /// The Break gate in the right wall is open: the paddle may slide out
+    /// through it, which skips to the next level. Open until it is used, a
+    /// life is lost or the level ends.
+    pub gate_open: bool,
     /// Asteroids currently drifting.
     pub asteroids: Vec<Asteroid>,
     /// Seconds of play until the next asteroid may spawn.
@@ -717,7 +740,7 @@ impl Game {
         self.ball = Ball::attached_to(&self.paddle);
         self.extra_balls.clear();
         self.powerups.clear();
-        self.reset_asteroids();
+        self.reset_for_serve();
     }
 
     /// Bricks for whatever `self.level` currently refers to: the loaded
@@ -763,6 +786,7 @@ impl Game {
             gun: None,
             gun_cooldown: 0.0,
             bolts: Vec::new(),
+            gate_open: false,
             asteroids: Vec::new(),
             asteroid_timer: ASTEROID_FIRST_SPAWN_SECS,
             features: Features::default(),
@@ -836,6 +860,10 @@ impl Game {
         };
 
         self.move_paddle(input, dt_fixed);
+        if self.gate_open && self.paddle.left() >= PLAYFIELD_WIDTH {
+            self.warp();
+            return;
+        }
 
         if self.ball.attached {
             // Ride the paddle until launched.
@@ -954,7 +982,24 @@ impl Game {
         };
         self.paddle.x += dir * PADDLE_SPEED * dt_fixed;
         let half = self.paddle.width / 2.0;
-        self.paddle.x = self.paddle.x.clamp(half, PLAYFIELD_WIDTH - half);
+        // An open Break gate lets the paddle slide out through the right
+        // wall, all the way.
+        let right = if self.gate_open {
+            PLAYFIELD_WIDTH + half
+        } else {
+            PLAYFIELD_WIDTH - half
+        };
+        self.paddle.x = self.paddle.x.clamp(half, right);
+    }
+
+    /// The paddle has slid all the way out through the Break gate: the
+    /// level is left, with a bonus, as if it had been cleared.
+    fn warp(&mut self) {
+        self.score += WARP_SCORE;
+        self.events.push(GameEvent::Warped);
+        self.paddle.x = PLAYFIELD_WIDTH / 2.0;
+        self.extra_balls.clear();
+        self.advance_level();
     }
 
     fn launch_ball(&mut self) {
@@ -1072,6 +1117,12 @@ impl Game {
         if self.features.tiny {
             kinds.push(PowerUpKind::Tiny);
         }
+        if self.features.player {
+            kinds.push(PowerUpKind::Player);
+        }
+        if self.features.warp {
+            kinds.push(PowerUpKind::Break);
+        }
         // An `i32` range, as v1 drew it: the same draw over 0..3 keeps
         // `Features::V1` runs drop for drop identical to v1.
         let kind = kinds[self.rng.random_range(0..kinds.len() as i32) as usize];
@@ -1102,7 +1153,7 @@ impl Game {
         self.ball = Ball::attached_to(&self.paddle);
         self.extra_balls.clear();
         self.powerups.clear();
-        self.reset_asteroids();
+        self.reset_for_serve();
     }
 
     /// Spends one life. Callers only reach this once the whole fleet is
@@ -1117,7 +1168,7 @@ impl Game {
         self.ball = Ball::attached_to(&self.paddle);
         self.extra_balls.clear();
         self.powerups.clear();
-        self.reset_asteroids();
+        self.reset_for_serve();
 
         if self.lives == 0 {
             self.state = GameState::GameOver;
@@ -1165,6 +1216,12 @@ impl Game {
             PowerUpKind::Tiny => {
                 self.tiny_timer = TINY_DURATION_SECS;
                 self.widen_timer = 0.0;
+            }
+            PowerUpKind::Player => {
+                self.lives = (self.lives + 1).min(MAX_LIVES);
+            }
+            PowerUpKind::Break => {
+                self.gate_open = true;
             }
             PowerUpKind::Laser => {
                 self.gun = Some(Gun {
@@ -1311,10 +1368,12 @@ impl Game {
         }
     }
 
-    /// No asteroid on a fresh serve: a level start or a lost life clears
-    /// them and restarts the countdown to the first.
-    fn reset_asteroids(&mut self) {
+    /// A fresh serve (a level start, a lost life, a loaded set) starts
+    /// clean: no asteroid, no bolt, no open gate, and the countdown to the
+    /// first asteroid restarted.
+    fn reset_for_serve(&mut self) {
         self.stall_secs = 0.0;
+        self.gate_open = false;
         self.bolts.clear();
         self.asteroids.clear();
         self.asteroid_timer = ASTEROID_FIRST_SPAWN_SECS;
@@ -2222,10 +2281,10 @@ mod tests {
             (200..=400).contains(&spawned),
             "expected roughly 15% of 2000 destroyed bricks to drop a power-up, got {spawned}"
         );
-        // Seven kinds, evenly: about 43 each out of ~300, std dev ~6.
-        assert_eq!(kinds.len(), 7, "{kinds:?}");
+        // Nine kinds, evenly: about 33 each out of ~300, std dev ~5.5.
+        assert_eq!(kinds.len(), 9, "{kinds:?}");
         assert!(
-            kinds.values().all(|&n| (10..=90).contains(&n)),
+            kinds.values().all(|&n| (8..=70).contains(&n)),
             "{kinds:?} out of {spawned}"
         );
     }
@@ -2559,6 +2618,101 @@ mod tests {
                 assert!(!matches!(
                     powerup.kind,
                     PowerUpKind::Laser | PowerUpKind::SuperLaser | PowerUpKind::Tiny
+                ));
+            }
+        }
+    }
+
+    // -- power-ups: Player and Break -------------------------------------------
+
+    #[test]
+    fn player_gives_an_extra_life_up_to_the_cap() {
+        let mut game = playing_game();
+        game.apply_powerup(PowerUpKind::Player);
+        assert_eq!(game.lives, STARTING_LIVES + 1);
+        for _ in 0..20 {
+            game.apply_powerup(PowerUpKind::Player);
+        }
+        assert_eq!(game.lives, MAX_LIVES);
+    }
+
+    /// A playing game with its ball high up and rising, out of the way.
+    fn rallying() -> Game {
+        let mut game = playing_game().with_features(Features {
+            asteroids: false,
+            ..Features::ALL
+        });
+        game.ball.attached = false;
+        game.ball.x = 100.0;
+        game.ball.y = 300.0;
+        game.ball.vx = 0.0;
+        game.ball.vy = -1.0;
+        game
+    }
+
+    #[test]
+    fn the_paddle_stops_at_the_right_wall_while_the_gate_is_closed() {
+        let mut game = rallying();
+        for _ in 0..240 {
+            game.tick(&held(|i| i.right = true), DT);
+        }
+        assert!((game.paddle.right() - PLAYFIELD_WIDTH).abs() < 1e-3);
+        assert_eq!(game.level, 1);
+    }
+
+    #[test]
+    fn sliding_out_through_the_open_gate_skips_to_the_next_level_with_a_bonus() {
+        let mut game = rallying();
+        game.apply_powerup(PowerUpKind::Break);
+        let score = game.score;
+        for _ in 0..240 {
+            game.tick(&held(|i| i.right = true), DT);
+            if game.level == 2 {
+                break;
+            }
+            assert!(game.paddle.left() < PLAYFIELD_WIDTH, "still sliding out");
+        }
+        assert_eq!(game.level, 2);
+        assert_eq!(game.score, score + WARP_SCORE);
+        assert!(game.events.contains(&GameEvent::Warped));
+        assert!(!game.gate_open, "a new level starts with it shut");
+        assert_eq!(game.paddle.x, PLAYFIELD_WIDTH / 2.0, "back in the middle");
+        assert!(game.ball.attached && (game.ball.x - game.paddle.x).abs() < 1e-3);
+    }
+
+    #[test]
+    fn warping_out_of_the_last_level_is_victory() {
+        let mut game = rallying();
+        game.level = levels::LEVELS.len();
+        game.apply_powerup(PowerUpKind::Break);
+        for _ in 0..240 {
+            game.tick(&held(|i| i.right = true), DT);
+        }
+        assert_eq!(game.state, GameState::Victory);
+    }
+
+    #[test]
+    fn a_lost_life_shuts_the_gate() {
+        let mut game = rallying();
+        game.apply_powerup(PowerUpKind::Break);
+        game.lose_life();
+        assert!(!game.gate_open);
+    }
+
+    #[test]
+    fn without_the_player_and_warp_features_neither_ever_drops() {
+        let mut game = playing_game().with_features(Features {
+            player: false,
+            warp: false,
+            ..Features::ALL
+        });
+        for _ in 0..3000 {
+            game.powerups.clear();
+            game.maybe_drop_powerup(400.0, 300.0);
+            if let Some(powerup) = game.powerups.first() {
+                assert!(!matches!(
+                    powerup.kind,
+                    PowerUpKind::Player | PowerUpKind::Break
                 ));
             }
         }
