@@ -1,0 +1,11 @@
+X:1
+T:capsule
+C:BRYX
+M:4/4
+L:1/16
+Q:1/4=480
+K:C
+%%instrument up wave=pulse amp=70 duty=30 attack=0 decay=40 sustain=40 release=70 gate=70 fx=0
+%%effect 0 delay_steps=2 delay_feedback=25 delay_mix=22 drive=0 lowpass=10 mix=100
+V:up instrument=up
+| E G B e g b z10 |

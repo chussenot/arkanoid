@@ -190,6 +190,9 @@ pub struct Frame<'a> {
     pub capsules: &'a [(f32, f32, PowerUpKind)],
     /// The stored best score for this progression (`record.rs`).
     pub record: Record,
+    /// The sound setting, shown by the M key on the menu and pause
+    /// screens; `None` when there is no sound to set.
+    pub sound: Option<&'static str>,
 }
 
 /// The best score as the HUD shows it: `best` is `None` where no record is
@@ -280,7 +283,7 @@ pub fn layout(frame: &Frame, cue: Option<LifeCue>) -> Layout {
                 serve_prompt(&mut out, game);
             }
         }
-        state => state_screen(&mut out, game, state, frame.record),
+        state => state_screen(&mut out, game, state, frame.record, frame.sound),
     }
     out
 }
@@ -544,16 +547,16 @@ fn keycap(out: &mut Layout, label: &str, x: f32, y: f32) -> f32 {
 /// The controls, as a two-column table: drawn keys right-aligned on the
 /// field's center line, the action left of it. Keys in a group are
 /// alternatives; groups are separated by a wider gap.
-fn controls(out: &mut Layout, top: f32, pause_label: &str) {
-    key_rows(
-        out,
-        top,
-        &[
-            (&[&["←", "→"], &["A", "D"]], "Move".into()),
-            (&[&["SPACE"]], "Launch, release, fire".into()),
-            (&[&["ESC"], &["P"]], pause_label.into()),
-        ],
-    );
+fn controls(out: &mut Layout, top: f32, pause_label: &str, sound: Option<&str>) {
+    let mut rows: Vec<(&[&[&str]], String)> = vec![
+        (&[&["←", "→"], &["A", "D"]], "Move".into()),
+        (&[&["SPACE"]], "Launch, release, fire".into()),
+        (&[&["ESC"], &["P"]], pause_label.into()),
+    ];
+    if let Some(sound) = sound {
+        rows.push((&[&["M"]], sound.into()));
+    }
+    key_rows(out, top, &rows);
 }
 
 /// Rows of drawn keys and the action they do: keys right-aligned on the
@@ -661,7 +664,13 @@ fn serve_prompt(out: &mut Layout, game: &Game) {
     key_rows(out, y + 30.0, &[(&[&["SPACE"]], "Launch".into())]);
 }
 
-fn state_screen(out: &mut Layout, game: &Game, state: GameState, record: Record) {
+fn state_screen(
+    out: &mut Layout,
+    game: &Game,
+    state: GameState,
+    record: Record,
+    sound: Option<&str>,
+) {
     out.overlay.push(Quad::rect(
         0.0,
         BAND_HEIGHT,
@@ -672,7 +681,7 @@ fn state_screen(out: &mut Layout, game: &Game, state: GameState, record: Record)
     let dim = palette::TEXT_DIM;
     match state {
         GameState::Menu => {
-            slate(out, FIELD_CENTER_Y - 134.0, FIELD_CENTER_Y + 182.0);
+            slate(out, FIELD_CENTER_Y - 134.0, FIELD_CENTER_Y + 210.0);
             out.lines
                 .push(title("BRYX", size::DISPLAY, 0.28, FIELD_CENTER_Y - 118.0));
             let set = match game.level_set() {
@@ -697,19 +706,19 @@ fn state_screen(out: &mut Layout, game: &Game, state: GameState, record: Record)
                 CAPTION_TRACKING,
                 FIELD_CENTER_Y - 30.0,
             ));
-            controls(out, FIELD_CENTER_Y + 22.0, "Pause");
+            controls(out, FIELD_CENTER_Y + 22.0, "Pause", sound);
             out.lines.push(centered(
                 vec![span("PRESS SPACE TO START", palette::TEXT, true)],
                 size::NOTE,
                 CAPTION_TRACKING,
-                FIELD_CENTER_Y + 150.0,
+                FIELD_CENTER_Y + 178.0,
             ));
         }
         GameState::Paused => {
-            slate(out, FIELD_CENTER_Y - 112.0, FIELD_CENTER_Y + 96.0);
+            slate(out, FIELD_CENTER_Y - 112.0, FIELD_CENTER_Y + 130.0);
             out.lines
                 .push(title("PAUSED", size::TITLE, 0.2, FIELD_CENTER_Y - 96.0));
-            controls(out, FIELD_CENTER_Y - 10.0, "Resume");
+            controls(out, FIELD_CENTER_Y - 10.0, "Resume", sound);
         }
         GameState::GameOver | GameState::Victory => {
             let victory = state == GameState::Victory;
@@ -1094,6 +1103,7 @@ mod tests {
             autopilot: false,
             capsules: &[],
             record: Record::default(),
+            sound: None,
         }
     }
 
@@ -1260,6 +1270,20 @@ mod tests {
     }
 
     #[test]
+    fn the_sound_key_shows_only_when_there_is_sound_to_set() {
+        let game = Game::new();
+        let with = all_text(&layout(
+            &Frame {
+                sound: Some("Sound: on"),
+                ..frame(&game)
+            },
+            None,
+        ));
+        assert!(with.lines().any(|l| l == "M") && with.contains("Sound: on"));
+        assert!(!all_text(&layout(&frame(&game), None)).contains("Sound"));
+    }
+
+    #[test]
     fn menu_and_pause_show_the_controls() {
         let mut game = Game::new();
         for state in [GameState::Menu, GameState::Paused] {
@@ -1326,6 +1350,7 @@ mod tests {
                         best: Some(999_999),
                         new_best: true,
                     },
+                    sound: Some("Sound: effects only"),
                     ..frame(&game)
                 },
                 Some(LifeCue {

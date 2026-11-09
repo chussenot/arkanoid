@@ -1,0 +1,11 @@
+X:1
+T:brick
+C:BRYX
+M:4/4
+L:1/16
+Q:1/4=240
+K:C
+%%instrument pop wave=pulse amp=88 duty=22 attack=0 decay=90 sustain=0 release=90 gate=90 fx=0
+%%effect 0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=10 lowpass=12 mix=100
+V:pop instrument=pop
+| e z7 |

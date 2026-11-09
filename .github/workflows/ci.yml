@@ -16,12 +16,18 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # cpal (the `audio` feature, on by default) links ALSA on Linux.
+      - name: ALSA headers
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - name: cargo fmt --check
         run: cargo fmt --check
       - name: cargo clippy
         run: cargo clippy --all-targets -- -D warnings
       - name: cargo test
         run: cargo test
+      # The silent build: no C compiler, no ALSA, no sound.
+      - name: cargo clippy (no default features)
+        run: cargo clippy --all-targets --no-default-features -- -D warnings
       # The autopilot's TypeSafe strategist (src/autopilot/advisor.rs) is
       # behind a feature; its tests use judgment::Fake and call no API.
       - name: cargo clippy (typesafe)

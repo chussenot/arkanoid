@@ -1,0 +1,14 @@
+X:1
+T:armor
+C:BRYX
+M:4/4
+L:1/16
+Q:1/4=240
+K:C
+%%instrument tink wave=pulse amp=60 duty=10 attack=0 decay=35 sustain=0 release=50 gate=30 fx=0
+%%instrument ring wave=pulse amp=45 duty=40 attack=0 decay=140 sustain=0 release=160 gate=90 fx=0
+%%effect 0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=0 lowpass=0 mix=100
+V:tink instrument=tink
+| b' z7 |
+V:ring instrument=ring
+| ^f' z7 |

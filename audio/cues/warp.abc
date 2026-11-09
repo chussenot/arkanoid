@@ -1,0 +1,14 @@
+X:1
+T:warp
+C:BRYX
+M:4/4
+L:1/16
+Q:1/4=240
+K:C
+%%instrument rise wave=pulse amp=60 duty=20 attack=10 decay=200 sustain=70 release=200 gate=95 glide=420 vibrato=20 fx=0
+%%instrument air wave=noise amp=30 attack=120 decay=200 sustain=20 release=220 gate=90 fx=0
+%%effect 0 delay_steps=1 delay_feedback=40 delay_mix=30 drive=0 lowpass=30 mix=100
+V:rise instrument=rise
+| E, e'' z14 |
+V:air instrument=air
+| c z15 |

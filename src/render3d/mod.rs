@@ -1044,6 +1044,8 @@ pub struct Renderer3D {
     autopilot: bool,
     /// The best score the HUD shows, set by `main` (`set_record`).
     record: hud::Record,
+    /// The sound setting the HUD shows by the M key (`set_sound`).
+    sound: Option<&'static str>,
 }
 
 impl Renderer3D {
@@ -1365,6 +1367,7 @@ impl Renderer3D {
             hud,
             autopilot,
             record: hud::Record::default(),
+            sound: None,
         }
     }
 
@@ -1388,6 +1391,11 @@ impl Renderer3D {
     /// The best score to show from the next frame on (see `record.rs`).
     pub fn set_record(&mut self, record: hud::Record) {
         self.record = record;
+    }
+
+    /// The sound setting to show by the M key (`None`: no sound to set).
+    pub fn set_sound(&mut self, label: Option<&'static str>) {
+        self.sound = label;
     }
 
     /// Reconfigures the surface and depth buffer after a window resize.
@@ -1711,6 +1719,7 @@ impl Renderer3D {
                 autopilot: self.autopilot,
                 capsules: &capsules,
                 record: self.record,
+                sound: self.sound,
             },
         );
 

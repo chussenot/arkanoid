@@ -480,6 +480,8 @@ pub struct Renderer {
     autopilot: bool,
     /// The best score the HUD shows, set by `main` (`set_record`).
     record: hud::Record,
+    /// The sound setting the HUD shows by the M key (`set_sound`).
+    sound: Option<&'static str>,
     // -- juice: ball trail, brick hit-flash/destroy-ghosts, shake -- see
     // the module-level "-- juice --" comment for why this is diffed here
     // rather than read off `Game::events`.
@@ -656,6 +658,7 @@ impl Renderer {
             hud,
             autopilot,
             record: hud::Record::default(),
+            sound: None,
             ball_trail: VecDeque::new(),
             prev_bricks: Vec::new(),
             prev_level: 0,
@@ -800,6 +803,11 @@ impl Renderer {
     /// The best score to show from the next frame on (see `record.rs`).
     pub fn set_record(&mut self, record: hud::Record) {
         self.record = record;
+    }
+
+    /// The sound setting to show by the M key (`None`: no sound to set).
+    pub fn set_sound(&mut self, label: Option<&'static str>) {
+        self.sound = label;
     }
 
     pub fn render(
@@ -1022,6 +1030,7 @@ impl Renderer {
                 autopilot: self.autopilot,
                 capsules: &capsules,
                 record: self.record,
+                sound: self.sound,
             },
         );
 
