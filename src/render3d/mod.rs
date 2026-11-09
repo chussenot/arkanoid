@@ -37,7 +37,8 @@ use winit::window::Window;
 
 use crate::events::{GameEvent, PowerUpKind};
 use crate::game::{
-    Ball, Brick, Game, GunKind, Paddle, ASTEROID_RADIUS, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
+    Ball, Brick, Game, GunKind, Paddle, ASTEROID_RADIUS, GATE_REACH_ABOVE_PADDLE, PLAYFIELD_HEIGHT,
+    PLAYFIELD_WIDTH,
 };
 use crate::levels::BrickKind;
 use crate::render::RenderState;
@@ -75,7 +76,8 @@ const MAX_DESTROY_GHOSTS: usize = 20;
 /// `render.rs`'s own `TRAIL_LEN` (spec: "a 4-quad fading trail").
 const TRAIL_LEN: usize = 4;
 const MAX_CUBE_INSTANCES: usize =
-    1 /* paddle */ + MAX_BRICKS + MAX_POWERUPS + WALL_COUNT + MAX_DESTROY_GHOSTS + MAX_BOLTS;
+    1 /* paddle */ + MAX_BRICKS + MAX_POWERUPS + WALL_COUNT + MAX_DESTROY_GHOSTS + MAX_BOLTS
+        + 1 /* the Break gate */;
 /// `game.rs` keeps at most 3 asteroids; a defensive bound like the others.
 const MAX_ASTEROIDS: usize = 8;
 /// `game.rs` caps bolts in flight at 16.
@@ -111,6 +113,8 @@ const POWERUP_GLUE_COLOR: [f32; 4] = [0.95, 0.45, 0.65, 1.0];
 const POWERUP_LASER_COLOR: [f32; 4] = [0.95, 0.25, 0.20, 1.0];
 const POWERUP_SUPER_LASER_COLOR: [f32; 4] = [0.30, 0.95, 0.95, 1.0];
 const POWERUP_TINY_COLOR: [f32; 4] = [0.55, 0.55, 0.58, 1.0];
+const POWERUP_PLAYER_COLOR: [f32; 4] = BALL_COLOR;
+const POWERUP_BREAK_COLOR: [f32; 4] = [1.0, 0.55, 0.10, 1.0];
 /// The paddle while it carries a gun, tinted toward its capsule's color.
 const LASER_PADDLE_COLOR: [f32; 4] = [0.95, 0.55, 0.50, 1.0];
 const SUPER_LASER_PADDLE_COLOR: [f32; 4] = [0.60, 0.95, 0.95, 1.0];
@@ -160,6 +164,8 @@ fn powerup_color(kind: PowerUpKind) -> [f32; 4] {
         PowerUpKind::Laser => POWERUP_LASER_COLOR,
         PowerUpKind::SuperLaser => POWERUP_SUPER_LASER_COLOR,
         PowerUpKind::Tiny => POWERUP_TINY_COLOR,
+        PowerUpKind::Player => POWERUP_PLAYER_COLOR,
+        PowerUpKind::Break => POWERUP_BREAK_COLOR,
     }
 }
 
@@ -1527,6 +1533,24 @@ impl Renderer3D {
             [half_w, WALL_HEIGHT / 2.0, WALL_THICKNESS / 2.0],
             WALL_COLOR,
         ));
+        // The open Break gate: a glowing slab over the right wall, from
+        // just above the paddle to the bottom of the field.
+        if curr.gate_open {
+            let top = curr.paddle.y - GATE_REACH_ABOVE_PADDLE;
+            let (x, z) = world_xz(PLAYFIELD_WIDTH, (top + PLAYFIELD_HEIGHT) / 2.0);
+            cube_instances.push(
+                Instance3D::new(
+                    [x + WALL_THICKNESS / 2.0, WALL_HEIGHT / 2.0, z],
+                    [
+                        WALL_THICKNESS / 2.0 + 1.0,
+                        WALL_HEIGHT / 2.0 + 1.0,
+                        (PLAYFIELD_HEIGHT - top) / 2.0,
+                    ],
+                    POWERUP_BREAK_COLOR,
+                )
+                .with_emissive(BOLT_EMISSIVE),
+            );
+        }
 
         self.queue.write_buffer(
             &self.cube_instance_buffer,

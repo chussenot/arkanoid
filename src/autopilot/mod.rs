@@ -35,7 +35,8 @@ use std::time::Duration;
 
 use crate::events::{GameEvent, PowerUpKind};
 use crate::game::{
-    forecast_crossing, Ball, Forecast, Game, GameState, Input, Paddle, POWERUP_FALL_SPEED,
+    forecast_crossing, Ball, Forecast, Game, GameState, Input, Paddle, PADDLE_SPEED,
+    PLAYFIELD_WIDTH, POWERUP_FALL_SPEED,
 };
 use board::{Board, LANES};
 
@@ -57,6 +58,10 @@ const SERVE_WAIT_SECS: f32 = 1.5;
 /// that keeps naming the same unreachable lane from re-entering the loop on
 /// its very next answer.
 const LOOP_OVERRIDE_RALLIES: u32 = 4;
+
+/// Spare time the autopilot wants, beyond the slide itself, before it
+/// heads out through an open Break gate.
+const WARP_MARGIN_SECS: f32 = 0.2;
 
 /// How far ahead a forecast looks, in ticks (three seconds). A ball still
 /// up among the bricks past that gets the straight-line guess instead.
@@ -371,6 +376,17 @@ impl Autopilot {
             .min_by(|a, b| a.0.total_cmp(&b.0));
         if let Some((_, x)) = catch {
             target_x = x;
+        }
+
+        // An open Break gate skips the rest of the level: worth more than
+        // any catch, as long as the paddle is all the way through before
+        // the next ball reaches it (with a margin for the deadband).
+        if game.gate_open {
+            let through_x = PLAYFIELD_WIDTH + paddle.width / 2.0;
+            let time = (through_x - paddle.x) / PADDLE_SPEED;
+            if time + WARP_MARGIN_SECS < hit.time {
+                target_x = through_x + PADDLE_SPEED * dt;
+            }
         }
 
         (input.left, input.right) = pilot::steer(paddle.x, target_x, dt);
@@ -828,6 +844,39 @@ mod tests {
     }
 
     #[test]
+    fn the_autopilot_takes_an_open_gate_when_it_has_the_time_and_not_otherwise() {
+        let setup = |ball_y: f32, vy: f32| {
+            let mut game = Game::with_seed(4).with_features(crate::game::Features::V1);
+            game.state = GameState::Playing;
+            game.paddle.x = 300.0;
+            game.ball.attached = false;
+            (game.ball.x, game.ball.y, game.ball.vx, game.ball.vy) = (300.0, ball_y, 0.0, vy);
+            game.gate_open = true;
+            game
+        };
+
+        // A ball high up and rising: plenty of time. The autopilot drives
+        // out through the gate and the level is left.
+        let mut game = setup(300.0, -150.0);
+        let mut autopilot = Autopilot::new(None, 1);
+        for _ in 0..240 {
+            let input = autopilot.input(&game, DT);
+            game.tick(&input, DT);
+            autopilot.observe(&game);
+            game.events.clear();
+            if game.level == 2 {
+                break;
+            }
+        }
+        assert_eq!(game.level, 2, "warped");
+
+        // A ball about to reach the paddle: it stays under the ball.
+        let game = setup(500.0, 300.0);
+        let input = Autopilot::new(None, 1).input(&game, DT);
+        assert!(!input.right, "no dash for the gate with the ball arriving");
+    }
+
+    #[test]
     fn the_autopilot_starts_the_game_from_the_menu() {
         let mut game = Game::with_seed(1);
         let mut autopilot = Autopilot::new(None, 1);
@@ -878,6 +927,14 @@ mod benchmark {
                     ..Features::V1
                 },
             ),
+            (
+                "player, break",
+                Features {
+                    player: true,
+                    warp: true,
+                    ..Features::V1
+                },
+            ),
             ("all", Features::ALL),
         ];
         for (name, features) in sets {
@@ -892,10 +949,16 @@ mod benchmark {
                     let input = autopilot.input(&game, 1.0 / 120.0);
                     game.tick(&input, 1.0 / 120.0);
                     autopilot.observe(&game);
+                    // Counted from the events: Player can add lives, so
+                    // the count left says nothing about the count lost.
+                    lives_lost += game
+                        .events
+                        .iter()
+                        .filter(|e| **e == GameEvent::LifeLost)
+                        .count();
                     game.events.clear();
                     ticks += 1;
                 }
-                lives_lost += 3 - game.lives.min(3);
                 if game.state == GameState::Victory {
                     wins += 1;
                     total += ticks / 120;

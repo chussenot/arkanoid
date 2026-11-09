@@ -23,7 +23,7 @@ use crate::assets::{Atlas, SpriteId, UvRect};
 use crate::events::{GameEvent, PowerUpKind};
 use crate::game::{
     Ball, Brick, Game, GameState, GunKind, Paddle, ASTEROID_BLAST_RADIUS, ASTEROID_RADIUS,
-    PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
+    GATE_REACH_ABOVE_PADDLE, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
 };
 use crate::levels::BrickKind;
 
@@ -119,9 +119,8 @@ const WHITE_TINT: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 /// `levels.rs`'s own tests: up to 14 columns x 8 rows).
 const MAX_BRICKS: usize = 14 * 8;
 
-/// Defensive cap on how many life icons ever get drawn. `STARTING_LIVES`
-/// (private to `game.rs`) is 3 and lives never increase above their
-/// starting count in this game, but nothing here depends on that -- this
+/// Defensive cap on how many life icons ever get drawn. Lives start at 3
+/// and the Player power-up can raise them to `game::MAX_LIVES` (9); this
 /// just bounds the instance buffer.
 const MAX_LIFE_ICONS: usize = 10;
 
@@ -168,7 +167,8 @@ const MAX_QUADS: usize = 2
     + MAX_POWERUPS
     + MAX_ASTEROIDS
     + MAX_EXPLOSIONS
-    + MAX_BOLTS;
+    + MAX_BOLTS
+    + 1 /* the Break gate */;
 
 /// Flat fallback color kept only for quads that don't carry a sprite of
 /// their own (ball trail, life icons) -- the paddle and ball's own quads
@@ -183,6 +183,11 @@ const POWERUP_LASER_COLOR: [f32; 4] = [0.95, 0.25, 0.20, 1.0];
 const POWERUP_SUPER_LASER_COLOR: [f32; 4] = [0.30, 0.95, 0.95, 1.0];
 /// Grey: the one capsule worth dodging.
 const POWERUP_TINY_COLOR: [f32; 4] = [0.55, 0.55, 0.58, 1.0];
+/// The color of a life icon: the capsule that brings one more.
+const POWERUP_PLAYER_COLOR: [f32; 4] = BALL_COLOR;
+const POWERUP_BREAK_COLOR: [f32; 4] = [1.0, 0.55, 0.10, 1.0];
+/// Half the width of the Break gate drawn over the right wall's edge.
+const GATE_HALF_WIDTH: f32 = 3.0;
 /// Bolts, and the paddle while it carries the gun that fires them, take
 /// their capsule's color.
 const LASER_PADDLE_TINT: [f32; 4] = [1.0, 0.55, 0.5, 1.0];
@@ -209,6 +214,8 @@ fn powerup_color(kind: PowerUpKind) -> [f32; 4] {
         PowerUpKind::Laser => POWERUP_LASER_COLOR,
         PowerUpKind::SuperLaser => POWERUP_SUPER_LASER_COLOR,
         PowerUpKind::Tiny => POWERUP_TINY_COLOR,
+        PowerUpKind::Player => POWERUP_PLAYER_COLOR,
+        PowerUpKind::Break => POWERUP_BREAK_COLOR,
     }
 }
 
@@ -1078,6 +1085,21 @@ impl Renderer {
                 powerup_color(powerup.kind),
             )
         }));
+
+        // The open Break gate: a bar in the capsule's color down the right
+        // edge, from just above the paddle to the bottom. Not shaken: it is
+        // part of the frame, like the walls.
+        if curr.gate_open {
+            let top = curr.paddle.y - GATE_REACH_ABOVE_PADDLE;
+            instances.push(QuadInstance::new(
+                [
+                    PLAYFIELD_WIDTH - GATE_HALF_WIDTH,
+                    (top + PLAYFIELD_HEIGHT) / 2.0,
+                ],
+                [GATE_HALF_WIDTH, (PLAYFIELD_HEIGHT - top) / 2.0],
+                POWERUP_BREAK_COLOR,
+            ));
+        }
 
         // Bolts in flight, flat quads in their gun's color.
         instances.extend(curr.bolts.iter().take(MAX_BOLTS).map(|bolt| {

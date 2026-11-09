@@ -14,8 +14,8 @@
 //! finding it on the event. The only payload carried here is what a reactor
 //! cannot otherwise recover — which power-up kind spawned or was caught.
 
-/// The power-ups a brick can drop: v1's three, plus Glue, Laser, Super laser
-/// and Tiny (docs/spec.md, "Additions after v1"; off under
+/// The power-ups a brick can drop: v1's three, plus Glue, Laser, Super laser,
+/// Tiny, Player and Break (docs/spec.md, "Additions after v1"; off under
 /// `game::Features::V1`).
 ///
 /// ponytail: no code constructs these yet -- brick/power-up gameplay lands
@@ -31,6 +31,8 @@ pub enum PowerUpKind {
     Laser,
     SuperLaser,
     Tiny,
+    Player,
+    Break,
 }
 
 /// Something the simulation did this tick.
@@ -47,6 +49,9 @@ pub enum GameEvent {
     /// counts these as rallies: each one is a point where a new shot is
     /// planned.
     PaddleHit,
+    /// The paddle slid out through the open Break gate: the level is left
+    /// (`LevelCleared` follows, or `Victory` on the last one).
+    Warped,
     /// The paddle's gun fired (one Laser pair, or one Super laser bolt).
     GunFired(crate::game::GunKind),
     /// An asteroid drifted in from the top.
