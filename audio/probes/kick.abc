@@ -1,0 +1,10 @@
+X:1
+M:4/4
+L:1/16
+Q:1/4=120
+K:C
+% A triangle that starts two octaves up and sweeps down to E2: a chip kick.
+%%hold on
+%%instrument kick wave=triangle amp=100 attack=0 decay=0 sustain=100 release=1 gate=100 pitch=24 pitch_time=80 fx=0
+V:kick instrument=kick
+| E,,4 z12 |

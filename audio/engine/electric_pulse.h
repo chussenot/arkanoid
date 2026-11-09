@@ -31,8 +31,19 @@ typedef struct {
     int vibrato_rate;     /* bit 4: vibrato_rate= (millihertz) */
     int vibrato_delay_ms; /* bit 5: vibrato_delay= (ms for vibrato to fade in) */
     int accent_gain;      /* bit 6: accent= (percent added on accented steps) */
+    int pitch;            /* bit 7: pitch= (semitones a note starts off its pitch; negative rises) */
+    int pitch_time;       /* bit 8: pitch_time= (ms to sweep home) */
+    int noise;            /* bit 9: noise=white|long|metal (0|1|2) */
+    int accents_marked;   /* bit 10: accents=marked (only !>! notes accented) | beats */
     unsigned set;
 } AbcExtras;
+
+/* BRYX: a %%ramp as written, resolved to a SeqRamp when the song is built. */
+typedef struct {
+    char target[32];      /* bus0..bus3, or a voice or instrument name */
+    char param[24];
+    int from, to, start_step, end_step;
+} AbcRamp;
 
 /* Named instrument preset */
 typedef struct {
@@ -95,6 +106,12 @@ typedef struct {
     int fx_bus;           /* which FX bus to use (0-3) */
     double freqs[ABC_MAX_NOTES]; /* frequency per step (0 = rest) */
     unsigned char onset[ABC_MAX_NOTES]; /* BRYX: 1 where a written note begins */
+    double freqs2[ABC_MAX_NOTES];       /* BRYX: a chord's second and third notes (0 = none) */
+    double freqs3[ABC_MAX_NOTES];
+    unsigned char vel[ABC_MAX_NOTES];   /* BRYX: velocity per step (0 = the default 88) */
+    unsigned char acc[ABC_MAX_NOTES];   /* BRYX: 1 on a note marked !>! */
+    int cur_vel;                        /* BRYX: the last dynamic mark (0 = none yet) */
+    int pending_accent;                 /* BRYX: !>! waiting for its note */
     AbcExtras extras;     /* BRYX */
     int note_count;
 } AbcVoice;
@@ -134,6 +151,8 @@ typedef struct {
     int voice_count;
 
     int hold;             /* BRYX: %%hold on: a note sounds once for its written length */
+    AbcRamp ramps[SEQ_MAX_RAMPS]; /* BRYX: %%ramp */
+    int ramp_count;
     int master_permille;  /* BRYX: %%master <percent>: output gain; 0 = unity */
 } AbcMusic;
 

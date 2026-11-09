@@ -102,6 +102,30 @@ score, measured soloed track by track; most land within about 1.5 dB, with
 a few track-specific outliers (Fortress's hat, the soft pad). The stingers
 hold their notes and keep their loudness within about 2 dB.
 
+**Phase 2: expression.** The score now uses the fork's second round:
+- **Dynamics.** Each section has a level: the recap is the loudest, the
+  break the softest, and the bar before the recap swells beat by beat.
+  The hats' off-beats sit above their sixteenths, the kick leans on each
+  downbeat, and ghost snares sit under the recap. Melodic voices accent
+  only where marked: the lead's phrase starts and peaks.
+- **Drums.**
+  - A pitch-swept triangle kick: two octaves down to E2 in 55 ms.
+  - A clocked-noise snare that drops an octave as it sounds.
+  - A metallic hat from the short LFSR.
+- **Triads.** Pads hold whole voice-led triads. The pad amplitudes came
+  down about 4.6 dB, so three notes sit where one did.
+- **Automation.**
+  - The machine tracks' ladder filter opens across B, closes in the
+    break and reopens into the recap.
+  - The melody's echo swells in the break and is thrown at the turn.
+  - The pulse leads narrow toward the climax.
+
+Rebalanced against the phase 1 score, voice by voice, every voice lands
+within about 1.5 dB. Each track's quietest bar now sits a median 13.1 dB
+under its loudest, against 9.8 before. Every track still masters to
+-19.0 dBFS, and the in-game mix measures as before. Nine probe tests in
+`src/audio/probes.rs` check the fork's features on what it renders.
+
 **Storage: mu-law.** Linear 8-bit storage would throw the 16-bit render
 away again: in the score's quietest bars (median -28 dBFS) it leaves the
 signal 25 dB above its noise. G.711 mu-law spends the same byte
@@ -167,9 +191,9 @@ track for track ([`music.md`](music.md)).
 - **Longer forms.** Each level loops a 16-bar track of 27–36 s. A longer
   form, or a B-side per level, would cost about 0.7 MB of binary per
   track.
-- **Phase 2 of the engine.** Per-note dynamics (velocity, chosen
-  accents), drum synthesis (a pitched kick, metallic noise), chords in one
-  voice, and parameter automation (filter sweeps).
+- **Phase 3 of the engine.** Tempo ramps (Funnel's acceleration), tuplets,
+  higher limits (eight tracks are all in use; 64 bars), band-limited
+  oscillators, and a small reverb.
 - **A listening pass.** Every level and loudness figure here was measured
   in a headless environment with no speakers. Please play it on real
   speakers and headphones; the mix constants live in `mixer.rs` and

@@ -67,6 +67,58 @@ them; now `%%instrument` and `V:` set them:
 | `vibrato_delay=<ms>` | Vibrato fades in over this long after the note starts |
 | `accent=<percent>` | Gain added on accented steps (default 20) |
 
+### Phase 2: expression
+
+**Dynamics.**
+
+| Syntax | Effect |
+|---|---|
+| `!pp!`, `!p!`, `!mp!`, `!mf!`, `!f!`, `!ff!` (and `!ppp!`, `!fff!`) | Set the voice's velocity until the next mark (40, 56, 72, 88, 104 and 120; 24 and 127). Unmarked notes keep the original velocity, 88. |
+| `!>!` | Accents the next note. |
+| `accents=marked` (instrument) | Only `!>!` notes are accented. The original accents every beat (`accents=beats`, the default). |
+
+**Chords.** `[EGB]16` sounds three notes in one voice. A song that writes
+a chord gets six voices per track instead of three, so a held triad's
+release still rings under the next one. Songs without chords keep three.
+Before, `[` was skipped, so `[EGB]` played three notes in a row.
+
+**Drum synthesis.**
+
+| Key | Effect |
+|---|---|
+| `pitch=<semitones>`, `pitch_time=<ms>` | A note starts that far off its pitch and sweeps home on a square-law curve. Negative values rise. A kick is `pitch=24 pitch_time=55`. |
+| `noise=long` | 15-bit LFSR noise, stepped at sixteen times the note's frequency, as the NES does: the note sets the color. |
+| `noise=metal` | The LFSR's short loop, which rings with a pitch of its own. |
+| `noise=white` | The original, one random bit per sample. Also the default. |
+
+**Automation.** `%%ramp <target> <param> <from> <to> <start step> <end step>`:
+- Between the two steps (absolute, from the first), the parameter moves
+  linearly. After the end step it stays until another ramp moves it.
+- Bus parameters (target `bus0`..`bus3`): `ladder_cutoff`,
+  `ladder_resonance`, `lowpass`, `delay_mix`, `drive`, `mix`.
+- Voice parameter (target a voice or instrument name): `duty`, taken at
+  each note-on.
+
+One element reader (`parse_element`) serves the main loop and `|: :|`
+repeats, so a decoration, a chord or a note reads the same in both. The original would
+have read the `f` of `!f!` as the note F.
+
+Every file that uses none of these renders byte-for-byte as it did after
+phase 1: checked on all 52 cues.
+
+## Probes
+
+`audio/probes/` holds one small ABC per feature. `build.rs` renders them,
+and `src/audio/probes.rs` measures each in CI:
+- that a held note finishes its attack;
+- that `!f!` is 1.86 times `!p!`;
+- that a chord sounds its three notes and nothing else;
+- that the kick sweeps down to its note;
+- that the noise color follows the note and metal repeats;
+- that a ramp closes a filter;
+- that the keyed sidechain ducks;
+- that a quiet voice keeps its shape.
+
 `docs/design/audio.md` says why each change was made, and what it measured.
 
 ## Changing it

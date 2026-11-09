@@ -1,4 +1,5 @@
 #include "electric_pulse.h"
+#include <limits.h>
 #include "audio_dsp.h"
 #include "audio_mix.h"
 
@@ -140,12 +141,22 @@ static void fill_track_steps(SeqTrack *track, const AbcVoice *voice,
         }
 
         step->note = (int16_t)closest_midi_from_freq(voice->freqs[source_step]);
-        step->velocity = 88;
-        step->accent = (uint8_t)((steps_per_beat > 0 && (s % steps_per_beat) == 0) ? 1 : 0);
+        /* BRYX: written dynamics and chord notes. */
+        step->velocity = voice->vel[source_step] ? voice->vel[source_step] : 88;
+        if (voice->freqs2[source_step] > 0.0)
+            step->note2 = (int16_t)closest_midi_from_freq(voice->freqs2[source_step]);
+        if (voice->freqs3[source_step] > 0.0)
+            step->note3 = (int16_t)closest_midi_from_freq(voice->freqs3[source_step]);
+        if (voice->extras.accents_marked)
+            step->accent = voice->acc[source_step];
+        else
+            step->accent = (uint8_t)((steps_per_beat > 0 && (s % steps_per_beat) == 0) ? 1 : 0);
         step->fx_trigger = step->accent;
         /* BRYX: under %%hold, a step inside a written note continues it. */
         if (hold && source_step > 0 && !voice->onset[source_step] &&
-            voice->freqs[source_step - 1] == voice->freqs[source_step])
+            voice->freqs[source_step - 1] == voice->freqs[source_step] &&
+            voice->freqs2[source_step - 1] == voice->freqs2[source_step] &&
+            voice->freqs3[source_step - 1] == voice->freqs3[source_step])
             step->tie = 1;
     }
 }
@@ -246,15 +257,27 @@ static int parse_int_param(const char *text, const char *key, int fallback);
 static void parse_extras(const char *val, AbcExtras *x)
 {
     static const char *keys[] = { "detune=", "stack=", "pwm=", "pwm_rate=",
-                                  "vibrato_rate=", "vibrato_delay=", "accent=" };
+                                  "vibrato_rate=", "vibrato_delay=", "accent=",
+                                  "pitch=", "pitch_time=" };
     int *fields[] = { &x->detune_cents, &x->stack, &x->pwm_depth, &x->pwm_rate,
-                      &x->vibrato_rate, &x->vibrato_delay_ms, &x->accent_gain };
-    for (int i = 0; i < 7; i++) {
-        int value = parse_int_param(val, keys[i], -1);
-        if (value >= 0) {
+                      &x->vibrato_rate, &x->vibrato_delay_ms, &x->accent_gain,
+                      &x->pitch, &x->pitch_time };
+    const char *noise = strstr(val, "noise=");
+    const char *accents = strstr(val, "accents=");
+    for (int i = 0; i < 9; i++) {
+        int value = parse_int_param(val, keys[i], INT_MIN);
+        if (value != INT_MIN) {
             *fields[i] = value;
             x->set |= 1u << i;
         }
+    }
+    if (noise) {
+        x->noise = strncmp(noise + 6, "metal", 5) == 0 ? 2 : strncmp(noise + 6, "long", 4) == 0 ? 1 : 0;
+        x->set |= 1u << 9;
+    }
+    if (accents) {
+        x->accents_marked = strncmp(accents + 8, "marked", 6) == 0;
+        x->set |= 1u << 10;
     }
 }
 
@@ -262,10 +285,12 @@ static void parse_extras(const char *val, AbcExtras *x)
 static void merge_extras(AbcExtras *voice, const AbcExtras *inst)
 {
     int *dst[] = { &voice->detune_cents, &voice->stack, &voice->pwm_depth, &voice->pwm_rate,
-                   &voice->vibrato_rate, &voice->vibrato_delay_ms, &voice->accent_gain };
+                   &voice->vibrato_rate, &voice->vibrato_delay_ms, &voice->accent_gain,
+                   &voice->pitch, &voice->pitch_time, &voice->noise, &voice->accents_marked };
     const int *src[] = { &inst->detune_cents, &inst->stack, &inst->pwm_depth, &inst->pwm_rate,
-                         &inst->vibrato_rate, &inst->vibrato_delay_ms, &inst->accent_gain };
-    for (int i = 0; i < 7; i++) {
+                         &inst->vibrato_rate, &inst->vibrato_delay_ms, &inst->accent_gain,
+                         &inst->pitch, &inst->pitch_time, &inst->noise, &inst->accents_marked };
+    for (int i = 0; i < 11; i++) {
         if (!(voice->set & (1u << i)) && (inst->set & (1u << i))) {
             *dst[i] = *src[i];
             voice->set |= 1u << i;
@@ -730,6 +755,102 @@ static int parse_note(const char *p, const AbcHeader *h,
     return (int)(p - start);
 }
 
+/* ─── BRYX: decorations, chords and the one element reader ────── */
+
+/* Append `steps` steps of a note (up to three pitches, 0 = none) to v,
+ * with the voice's current dynamic and any pending accent. */
+static void append_steps(AbcVoice *v, double f1, double f2, double f3, int steps)
+{
+    for (int s = 0; s < steps && v->note_count < ABC_MAX_NOTES; s++) {
+        int n = v->note_count;
+        v->freqs[n] = f1;
+        v->freqs2[n] = f2;
+        v->freqs3[n] = f3;
+        v->onset[n] = (s == 0);
+        v->vel[n] = (unsigned char)v->cur_vel;
+        v->acc[n] = (unsigned char)(s == 0 && v->pending_accent && f1 > 0.0);
+        v->note_count++;
+    }
+    if (steps > 0) v->pending_accent = 0;
+}
+
+/* !pp! .. !fff! set the voice's dynamic until the next mark; !>! accents
+ * the next note. Other decorations are ignored, as before. */
+static void apply_decoration(AbcVoice *v, const char *name, int len)
+{
+    static const struct { const char *mark; int velocity; } dynamics[] = {
+        { "ppp", 24 }, { "pp", 40 }, { "p", 56 }, { "mp", 72 },
+        { "mf", 88 }, { "f", 104 }, { "ff", 120 }, { "fff", 127 },
+    };
+    for (size_t i = 0; i < sizeof(dynamics) / sizeof(dynamics[0]); i++) {
+        if ((int)strlen(dynamics[i].mark) == len && strncmp(name, dynamics[i].mark, (size_t)len) == 0) {
+            v->cur_vel = dynamics[i].velocity;
+            return;
+        }
+    }
+    if ((len == 1 && name[0] == '>') || (len == 6 && strncmp(name, "accent", 6) == 0))
+        v->pending_accent = 1;
+}
+
+/* A '[' opens a chord when a note follows, not an inline field like [V:. */
+static int is_chord_start(const char *p)
+{
+    if (*p == '^' || *p == '_' || *p == '=') return 1;
+    return note_char_to_index(*p) >= 0 && p[1] != ':';
+}
+
+/* Parse one element at p (a decoration, a chord, a note or a rest) and
+ * append it to v. Returns the characters consumed; 0 means p is not an
+ * element (the caller skips one character, as the original loop did). */
+static int parse_element(const char *p, const AbcHeader *h, AbcVoice *v)
+{
+    const char *start = p;
+
+    if (*p == '!') {
+        const char *end = strchr(p + 1, '!');
+        if (!end) return 1;
+        apply_decoration(v, p + 1, (int)(end - p - 1));
+        return (int)(end - p + 1);
+    }
+    if (*p == '[' && is_chord_start(p + 1)) {
+        double f[3] = { 0.0, 0.0, 0.0 };
+        int count = 0, steps = 1, mult = 0;
+        p++;
+        while (*p && *p != ']') {
+            double freq;
+            int st, used;
+            if (!is_chord_start(p)) { p++; continue; }
+            used = parse_note(p, h, &freq, &st);
+            if (used <= 0) { p++; continue; }
+            if (freq > 0.0 && count < 3) {
+                if (count == 0) steps = st;
+                f[count++] = freq;
+            }
+            p += used;
+        }
+        if (*p == ']') p++;
+        while (*p >= '0' && *p <= '9') mult = mult * 10 + (*p++ - '0');
+        if (mult > 0) steps *= mult;
+        if (*p == '/') {
+            int div = 0;
+            p++;
+            while (*p >= '0' && *p <= '9') div = div * 10 + (*p++ - '0');
+            steps /= div > 0 ? div : 2;
+            if (steps < 1) steps = 1;
+        }
+        append_steps(v, f[0], f[1], f[2], steps);
+        return (int)(p - start);
+    }
+    {
+        double freq;
+        int steps;
+        int consumed = parse_note(p, h, &freq, &steps);
+        if (consumed > 0)
+            append_steps(v, freq, 0.0, 0.0, steps);
+        return consumed;
+    }
+}
+
 /* ─── Public API ─────────────────────────────────────────────── */
 
 int abc_load(const char *path, AbcMusic *music)
@@ -931,6 +1052,16 @@ int abc_load(const char *path, AbcMusic *music)
             music->hold = strstr(line + 6, "on") != NULL;
             continue;
         }
+        if (strncmp(line, "%%ramp", 6) == 0) {
+            AbcRamp *r = &music->ramps[music->ramp_count];
+            if (music->ramp_count < SEQ_MAX_RAMPS &&
+                sscanf(line + 6, "%31s %23s %d %d %d %d", r->target, r->param,
+                       &r->from, &r->to, &r->start_step, &r->end_step) == 6)
+                music->ramp_count++;
+            else
+                fprintf(stderr, "Warning: ignored %%%%ramp line: %s\n", line);
+            continue;
+        }
         if (strncmp(line, "%%master", 8) == 0) {
             double pct = atof(line + 8);
             music->master_permille = pct > 0.0 ? (int)(pct * 10.0 + 0.5) : 0;
@@ -989,16 +1120,9 @@ int abc_load(const char *path, AbcMusic *music)
                     /* replay the repeated section */
                     const char *rp = repeat_buf;
                     while (*rp) {
-                        double freq;
-                        int steps;
-                        int consumed = parse_note(rp, &header, &freq, &steps);
+                        int consumed = parse_element(rp, &header, v);
                         if (consumed == 0) { rp++; continue; }
                         rp += consumed;
-                        for (int s = 0; s < steps && v->note_count < ABC_MAX_NOTES; s++) {
-                            v->freqs[v->note_count] = freq;
-                            v->onset[v->note_count] = (s == 0);
-                            v->note_count++;
-                        }
                     }
                 }
                 in_repeat = 0;
@@ -1009,9 +1133,7 @@ int abc_load(const char *path, AbcMusic *music)
             /* handle simple barline */
             if (*p == '|') { p++; continue; }
 
-            double freq;
-            int steps;
-            int consumed = parse_note(p, &header, &freq, &steps);
+            int consumed = parse_element(p, &header, v);
             if (consumed == 0) { p++; continue; }
 
             /* if in repeat section, also buffer the raw text */
@@ -1026,12 +1148,6 @@ int abc_load(const char *path, AbcMusic *music)
             }
 
             p += consumed;
-
-            for (int s = 0; s < steps && v->note_count < ABC_MAX_NOTES; s++) {
-                v->freqs[v->note_count] = freq;
-                v->onset[v->note_count] = (s == 0);
-                v->note_count++;
-            }
         }
     }
 
@@ -1185,6 +1301,9 @@ int abc_build_seq_song(const AbcMusic *music, SeqSong *song)
             if (x->set & (1u << 4)) inst->vibrato_rate = dsp_clampi(x->vibrato_rate, 1, 20000);
             if (x->set & (1u << 5)) inst->vibrato_delay_ms = dsp_clampi(x->vibrato_delay_ms, 0, 2000);
             if (x->set & (1u << 6)) inst->accent_gain = dsp_clampi(x->accent_gain, 0, 100);
+            if (x->set & (1u << 7)) inst->pitch_env_cents = dsp_clampi(x->pitch, -48, 48) * 100;
+            inst->pitch_env_ms = (x->set & (1u << 8)) ? dsp_clampi(x->pitch_time, 1, 2000) : 40;
+            if (x->set & (1u << 9)) inst->noise_clock = dsp_clampi(x->noise, 0, 2);
         }
         if (inst->waveform == DSP_WAVE_NOISE)
             inst->noise_mode = 1;
@@ -1223,6 +1342,53 @@ int abc_build_seq_song(const AbcMusic *music, SeqSong *song)
         }
     }
     song->master_permille = music->master_permille;
+    for (int t = 0; t < track_count && !song->chord_voices; t++)
+        for (int n = 0; n < music->voices[t].note_count; n++)
+            if (music->voices[t].freqs2[n] > 0.0) {
+                song->chord_voices = 1;
+                break;
+            }
+
+    /* BRYX: resolve each %%ramp to its bus or track and parameter. */
+    song->ramp_count = 0;
+    for (int i = 0; i < music->ramp_count; i++) {
+        static const struct { const char *name; SeqRampParam param; } params[] = {
+            { "ladder_cutoff", SEQ_RAMP_LADDER_CUTOFF }, { "ladder_resonance", SEQ_RAMP_LADDER_RESONANCE },
+            { "lowpass", SEQ_RAMP_LOWPASS }, { "delay_mix", SEQ_RAMP_DELAY_MIX },
+            { "drive", SEQ_RAMP_DRIVE }, { "mix", SEQ_RAMP_BUS_MIX }, { "duty", SEQ_RAMP_DUTY },
+        };
+        const AbcRamp *src = &music->ramps[i];
+        SeqRamp *dst = &song->ramps[song->ramp_count];
+        int found = 0;
+        memset(dst, 0, sizeof(*dst));
+        dst->track = dst->bus = -1;
+        for (size_t k = 0; k < sizeof(params) / sizeof(params[0]); k++) {
+            if (strcmp(src->param, params[k].name) == 0) {
+                dst->param = params[k].param;
+                found = 1;
+            }
+        }
+        if (strncmp(src->target, "bus", 3) == 0 && dst->param != SEQ_RAMP_DUTY) {
+            dst->bus = atoi(src->target + 3);
+        } else if (dst->param == SEQ_RAMP_DUTY) {
+            for (int t = 0; t < track_count; t++) {
+                if (strcmp(music->voices[t].name, src->target) == 0 ||
+                    strcmp(music->voices[t].instrument_ref, src->target) == 0) {
+                    dst->track = t;
+                    break;
+                }
+            }
+        }
+        if (!found || (dst->bus < 0 && dst->track < 0)) {
+            fprintf(stderr, "Warning: ignored ramp of %s on %s\n", src->param, src->target);
+            continue;
+        }
+        dst->from = src->from;
+        dst->to = src->to;
+        dst->start_step = src->start_step;
+        dst->end_step = src->end_step < src->start_step ? src->start_step : src->end_step;
+        song->ramp_count++;
+    }
 
     for (int t = 0; t < track_count; t++) {
         if (music->voices[t].note_count > max_steps)

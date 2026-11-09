@@ -165,6 +165,8 @@ int seq_collect_step_events(const SeqSong *song, const SeqTimeline *timeline,
         events[count].gate_percent = gate;
         events[count].duration_samples = timeline_step->samples;
         events[count].step_index = timeline_step->pattern_step;
+        events[count].note2 = step->note2;
+        events[count].note3 = step->note3;
         count++;
     }
 

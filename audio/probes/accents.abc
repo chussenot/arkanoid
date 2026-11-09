@@ -1,0 +1,10 @@
+X:1
+M:4/4
+L:1/16
+Q:1/4=120
+K:C
+% Four equal notes; only the second is marked, and accents=marked keeps the beats out of it.
+%%hold on
+%%instrument tone wave=square amp=80 attack=0 decay=0 sustain=100 release=1 gate=100 accents=marked accent=50 fx=0
+V:tone instrument=tone
+| E4 !>!E4 E4 E4 |

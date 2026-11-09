@@ -20,6 +20,13 @@ typedef struct {
     uint32_t noise_state;
     int amplitude;
     DspWaveform waveform;
+    /* BRYX: chip noise. 0 = the original white noise, one random bit per
+     * sample. 1 ("long") and 2 ("metal") step a 15-bit LFSR, as the NES
+     * does, at sixteen times the note's frequency, so the note sets the
+     * noise's color; metal's short loop rings with a pitch of its own. */
+    int noise_clock;
+    uint32_t lfsr;
+    uint32_t noise_phase;
 } DspOscillator;
 
 typedef struct {

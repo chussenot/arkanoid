@@ -481,6 +481,43 @@ def hits(pattern: str):
     return [(0 if ch == "x" else R, 1) for ch in pattern]
 
 
+# ------------------------------------------------------------ dynamics ---
+# The engine's dynamic marks, softest to loudest (velocity 40..120).
+LEVELS = ["pp", "p", "mp", "mf", "f", "ff"]
+# Each section's level: the recap is the loudest thing in the loop, the
+# break the softest. The bar before the recap swells into it, beat by beat.
+SECTION_LEVEL = {"intro": "mp", "A": "mf", "B": "mf", "break": "p", "A2": "f", "turn": "mp"}
+SWELL = ["p", "mp", "mf", "f"]
+
+
+def softer(level: str, by: int = 1) -> str:
+    return LEVELS[max(0, LEVELS.index(level) - by)]
+
+
+def louder(level: str, by: int = 1) -> str:
+    return LEVELS[min(len(LEVELS) - 1, LEVELS.index(level) + by)]
+
+
+def triad_voicings(root: int, mode: str, lo: int = 0, hi: int = 11):
+    """Every way to voice the triad on `root` within degrees lo..hi (the
+    pad's register, E3 up): three chord tones, each a different one."""
+    tones = [d for d in range(lo, hi + 1) if pc(d, mode) in chord_pcs(root, mode)]
+    out = []
+    for a in tones:
+        for b in tones:
+            for c in tones:
+                if a < b < c and len({pc(a, mode), pc(b, mode), pc(c, mode)}) == 3 and c - a <= 7:
+                    out.append((a, b, c))
+    return out
+
+
+def voice_lead(prev, options, mode):
+    """The voicing that moves least from `prev` (in semitones, summed)."""
+    if prev is None:
+        return min(options, key=lambda v: abs(sum(v) / 3 - 5))
+    return min(options, key=lambda v: (sum(abs(midi(a, mode) - midi(b, mode)) for a, b in zip(v, prev)), v))
+
+
 # ---------------------------------------------------------------- form ---
 # One form per act, all 16 bars, so every track costs the same in the
 # binary. Sections: intro (a bass, an arpeggio and a hat), A (the theme),
@@ -506,41 +543,46 @@ def act_of(level: int) -> int:
 # Amplitudes were rebalanced for the engine fork's held notes and insert
 # buses (docs/design/audio.md) so each voice keeps its level in the mix:
 # measured voice by voice, soloed, against the score as first written.
+# The pads play triads since phase 2, so they sit about 4.6 dB lower
+# than one note would: three notes, the same level.
 
 DRUM_KIT = {
-    "kick": "wave=triangle amp=67 attack=0 decay=70 sustain=0 release=40 gate=60 fx=0",
-    "snare": "wave=noise amp=22 attack=0 decay=60 sustain=0 release=70 gate=50 fx=0",
-    "hat": "wave=noise amp=10 attack=0 decay=12 sustain=0 release=14 gate=20 fx=0",
+    # A triangle that sweeps two octaves down to E2 in 55 ms: a chip kick.
+    "kick": "wave=triangle amp=67 attack=0 decay=70 sustain=0 release=40 gate=60 pitch=24 pitch_time=55 fx=0",
+    # Clocked noise whose clock falls an octave as it sounds: crack, then body.
+    "snare": "wave=noise amp=22 attack=0 decay=60 sustain=0 release=70 gate=50 noise=long pitch=12 pitch_time=40 accents=marked fx=0",
+    # The short LFSR loop: a metallic, ringing hat.
+    "hat": "wave=noise amp=10 attack=0 decay=12 sustain=0 release=14 gate=20 noise=metal accents=marked fx=0",
 }
 
 PALETTES = {
     "pulse": {
         "bass": "wave=pulse amp=46 duty=38 attack=1 decay=60 sustain=70 release=70 gate=80 fx=0",
         "arp": "wave=pulse amp=34 duty=14 attack=0 decay=30 sustain=40 release=50 gate=50 fx=2",
-        "pad": "wave=triangle amp=12 attack=120 decay=200 sustain=80 release=300 gate=98 fx=1",
-        "lead": "wave=pulse amp=30 duty=25 pwm=10 pwm_rate=900 attack=4 decay=120 sustain=70 release=180 gate=88 vibrato=6 vibrato_delay=160 fx=1",
-        "counter": "wave=triangle amp=22 attack=8 decay=120 sustain=70 release=200 gate=86 fx=1",
+        "pad": "wave=triangle amp=7 attack=120 decay=200 sustain=80 release=300 gate=98 accents=marked fx=1",
+        "lead": "wave=pulse amp=30 duty=25 pwm=10 pwm_rate=900 attack=4 decay=120 sustain=70 release=180 gate=88 vibrato=6 vibrato_delay=160 accents=marked fx=1",
+        "counter": "wave=triangle amp=22 attack=8 decay=120 sustain=70 release=200 gate=86 accents=marked fx=1",
     },
     "glass": {
         "bass": "wave=triangle amp=58 attack=1 decay=80 sustain=70 release=90 gate=84 fx=0",
         "arp": "wave=pulse amp=29 duty=8 attack=0 decay=40 sustain=30 release=90 gate=40 fx=2",
-        "pad": "wave=pulse amp=23 duty=46 stack=2 detune=7 attack=200 decay=240 sustain=84 release=420 gate=98 fx=1",
-        "lead": "wave=triangle amp=36 attack=10 decay=140 sustain=76 release=260 gate=90 vibrato=9 vibrato_delay=200 glide=14 fx=1",
-        "counter": "wave=pulse amp=15 duty=30 attack=6 decay=120 sustain=66 release=220 gate=84 fx=1",
+        "pad": "wave=pulse amp=15 duty=46 stack=2 detune=7 attack=200 decay=240 sustain=84 release=420 gate=98 accents=marked fx=1",
+        "lead": "wave=triangle amp=36 attack=10 decay=140 sustain=76 release=260 gate=90 vibrato=9 vibrato_delay=200 glide=14 accents=marked fx=1",
+        "counter": "wave=pulse amp=15 duty=30 attack=6 decay=120 sustain=66 release=220 gate=84 accents=marked fx=1",
     },
     "buzz": {
         "bass": "wave=square amp=64 attack=1 decay=50 sustain=74 release=60 gate=78 fx=3",
         "arp": "wave=pulse amp=28 duty=22 attack=0 decay=24 sustain=50 release=40 gate=46 fx=2",
-        "pad": "wave=pulse amp=25 duty=40 attack=60 decay=200 sustain=80 release=240 gate=98 fx=3",
-        "lead": "wave=square amp=24 attack=2 decay=90 sustain=74 release=140 gate=86 vibrato=5 vibrato_delay=120 fx=1",
-        "counter": "wave=pulse amp=16 duty=12 pwm=6 pwm_rate=400 attack=2 decay=100 sustain=60 release=160 gate=80 fx=1",
+        "pad": "wave=pulse amp=15 duty=40 attack=60 decay=200 sustain=80 release=240 gate=98 accents=marked fx=3",
+        "lead": "wave=square amp=24 attack=2 decay=90 sustain=74 release=140 gate=86 vibrato=5 vibrato_delay=120 accents=marked fx=1",
+        "counter": "wave=pulse amp=16 duty=12 pwm=6 pwm_rate=400 attack=2 decay=100 sustain=60 release=160 gate=80 accents=marked fx=1",
     },
     "soft": {
         "bass": "wave=pulse amp=42 duty=46 attack=2 decay=90 sustain=72 release=110 gate=86 fx=0",
         "arp": "wave=triangle amp=41 attack=0 decay=50 sustain=40 release=100 gate=50 fx=2",
-        "pad": "wave=triangle amp=6 attack=240 decay=260 sustain=86 release=500 gate=98 fx=1",
-        "lead": "wave=pulse amp=26 duty=40 pwm=8 pwm_rate=600 attack=14 decay=160 sustain=78 release=300 gate=92 vibrato=11 vibrato_delay=220 glide=10 fx=1",
-        "counter": "wave=triangle amp=20 attack=10 decay=140 sustain=70 release=260 gate=88 fx=1",
+        "pad": "wave=triangle amp=4 attack=240 decay=260 sustain=86 release=500 gate=98 accents=marked fx=1",
+        "lead": "wave=pulse amp=26 duty=40 pwm=8 pwm_rate=600 attack=14 decay=160 sustain=78 release=300 gate=92 vibrato=11 vibrato_delay=220 glide=10 accents=marked fx=1",
+        "counter": "wave=triangle amp=20 attack=10 decay=140 sustain=70 release=260 gate=88 accents=marked fx=1",
     },
 }
 
@@ -809,10 +851,23 @@ def compose(r: dict):
     a2_body = climax(a_body)
 
     parts = {k: [] for k in ("kick", "snare", "hat", "bass", "arp", "pad", "lead", "counter")}
+    # The dynamics layer: one mark per step per part (what the step would
+    # be struck at), and the accented steps of the parts that mark them.
+    dyn = {k: [] for k in parts}
+    acc = {k: set() for k in parts}
     has_counter = bool(r["counter"])
     pad_prev = None
     for section, i, n, nxt, chords in bars:
         last = i == n - 1
+        level = "mf" if section == "turn" and i == 1 else SECTION_LEVEL[section]
+        swell = last and nxt == "A2"
+        bar_dyn = [SWELL[t // 4] if swell else level for t in range(16)]
+        for part in ("bass", "arp", "pad", "lead", "counter", "kick", "snare"):
+            dyn[part] += bar_dyn
+        # Hats: the off-beat eighths at the bar's level, the rest a step under.
+        dyn["hat"] += [lv if t % 4 == 2 else softer(lv) for t, lv in enumerate(bar_dyn)]
+        # The kick leans on each bar's downbeat.
+        dyn["kick"][-16] = louder(bar_dyn[0])
         # Drums: what plays, and the fill.
         kick = snare = hat = True
         fill = None
@@ -840,6 +895,10 @@ def compose(r: dict):
             s_pat = merge(s_pat, FILLS[fill])
             if fill == "roll":
                 h_pat = h_pat[:12] + "...."
+        # A ghost note under the recap's backbeat, in the styles with room.
+        if section == "A2" and snare and r["drums"] not in LIGHT_STYLES and s_pat[10] == ".":
+            s_pat = s_pat[:10] + "x" + s_pat[11:]
+            dyn["snare"][-16 + 10] = "pp"
         parts["kick"] += hits(k_pat) if kick else [(R, 16)]
         parts["snare"] += hits(s_pat)
         parts["hat"] += hits(h_pat) if hat else [(R, 16)]
@@ -860,15 +919,11 @@ def compose(r: dict):
         arp_oct = 1 if section == "A2" and not has_counter else 0
         parts["arp"] += chordwise(chords, lambda c: arp_bar(r["arp"], c[0], arp_oct)) if arp_on else [(R, 16)]
         if section in ("B", "A2", "break", "turn"):
+            # The pad holds the whole triad, each chord voiced to move as
+            # little as it can from the last.
             for root, _, cn in chords:
-                tones = [d for d in range(0, 10) if pc(d, mode) in chord_pcs(root, mode)]
-                if pad_prev is None:
-                    pick = min(tones, key=lambda d: abs(d - (root + 2) % 7))
-                else:
-                    pick = min(tones, key=lambda d: (abs(midi(d, mode) - midi(pad_prev, mode)),
-                                                     d != (root + 2) % 7))
-                pad_prev = pick
-                parts["pad"].append((pick, cn))
+                pad_prev = voice_lead(pad_prev, triad_voicings(root, mode), mode)
+                parts["pad"].append((pad_prev, cn))
         else:
             parts["pad"].append((R, 16))
 
@@ -894,6 +949,17 @@ def compose(r: dict):
         parts["lead"] = from_steps(lead_st)
     written = parts["lead"]
     parts["lead"] = harmonize(written, chord_at, mode)
+    # Accents: the first note of each four-bar phrase, and its highest.
+    lead_st = to_steps(parts["lead"])
+    k = 0
+    for section, n in form:
+        if section in ("A", "B", "A2"):
+            span = range(16 * k, 16 * (k + n))
+            onsets = [t for t in span if lead_st[t][1] and lead_st[t][0] is not None]
+            if onsets:
+                acc["lead"].add(onsets[0])
+                acc["lead"].add(max(onsets, key=lambda t: (lead_st[t][0], -t)))
+        k += n
     moved = sum(1 for (a, _), (b, _) in zip(written, parts["lead"]) if a != b)
 
     # Bass anticipations: the next chord's note a sixteenth early.
@@ -927,7 +993,52 @@ def compose(r: dict):
             counter_line = repair_counter(counter_line, lead_st, chord_at, mode, a2_start)
     parts["counter"] = [(R, a2_start)] + (counter_line or [(R, 64)]) + [(R, total - a2_start - 64)]
 
-    return dict(recipe=r, form=form, parts=parts, chord_steps=chord_steps, total=total, moved=moved)
+    if counter_line:
+        acc["counter"].add(next(t for t in range(a2_start, total) if to_steps(parts["counter"])[t][0] is not None))
+    return dict(recipe=r, form=form, parts=parts, chord_steps=chord_steps, total=total, moved=moved,
+                dyn=dyn, acc=acc, bars=bars)
+
+
+# Base values of the parameters the ramps move (they must match FX and
+# the palettes, so every ramp returns to where the loop starts).
+BASE = {"ladder_cutoff": 34, "delay_mix": {"clean": 26, "space": 38, "machine": 22},
+        "duty": {"pulse": 25, "soft": 40}}
+
+
+def ramps(track):
+    """Automation, as %%ramp lines, placed by the form. Every ramp that
+    moves a parameter brings it back before the loop ends, so the loop's
+    seam is seamless.
+    - Machine tracks: the ladder filter opens across B, closes in the
+      break, and reopens into the recap.
+    - Every track: the melody's echo swells in the break and is thrown
+      at the turn's breath.
+    - Pulse and soft leads: the pulse narrows across the recap, toward
+      the climax, and widens again after it."""
+    r, bars = track["recipe"], track["bars"]
+    start = {}
+    for k, (section, i, n, *_rest) in enumerate(bars):
+        if i == 0:
+            start[section] = 16 * k
+    lines = []
+    if r["fx"] == "machine":
+        cut = BASE["ladder_cutoff"]
+        b = start["B"]
+        lines += [f"bus3 ladder_cutoff {cut} 62 {b} {b + 63}", f"bus3 ladder_cutoff {cut} {cut} {b + 64} {b + 64}"]
+        if "break" in start:
+            k = start["break"]
+            lines += [f"bus3 ladder_cutoff {cut} 14 {k} {k + 31}", f"bus3 ladder_cutoff 14 {cut} {k + 32} {k + 47}"]
+    mix = BASE["delay_mix"][r["fx"]]
+    if "break" in start:
+        k = start["break"]
+        lines += [f"bus1 delay_mix {mix} 60 {k} {k + 31}", f"bus1 delay_mix {mix} {mix} {k + 32} {k + 32}"]
+    if "turn" in start:
+        k = start["turn"]
+        lines += [f"bus1 delay_mix 62 62 {k} {k}", f"bus1 delay_mix {mix} {mix} {k + 16} {k + 16}"]
+    if r["palette"] in BASE["duty"]:
+        duty, k = BASE["duty"][r["palette"]], start["A2"]
+        lines += [f"lead duty {duty} {duty // 2} {k} {k + 63}", f"lead duty {duty} {duty} {k + 64} {k + 64}"]
+    return [f"%%ramp {line}" for line in lines]
 
 
 def to_abc(track) -> str:
@@ -957,31 +1068,42 @@ def to_abc(track) -> str:
         head.append(f"%%instrument {name} {pal[name]}")
     for bus in FX[r["fx"]]:
         head.append(f"%%effect {bus}")
+    head += ramps(track)
     body = []
     for name in ("kick", "snare", "hat", "bass", "arp", "pad", "lead", "counter"):
         body.append(f"V:{name} instrument={name}")
-        if name == "kick":
-            line = [(None if p is None else -1000, s) for p, s in parts[name]]
-        elif name in ("snare", "hat"):
-            line = [(None if p is None else -2000, s) for p, s in parts[name]]
-        else:
-            line = parts[name]
-        body.append(render_line(line, mode, registers.get(name, E4)))
+        line = parts[name]
+        body.append(render_line(line, mode, registers.get(name, E4), track["dyn"][name], track["acc"][name],
+                                DRUM_NOTE.get(name)))
     return "\n".join(head + body) + "\n"
 
 
-def render_line(line, mode, base):
-    out, count = [], 0
+# The drums' written notes: the kick's E2 (its pitch sweep starts two
+# octaves up); the noise clock's note sets the snare's and hat's color.
+DRUM_NOTE = {"kick": "E,,", "snare": "a", "hat": "c''"}
+
+
+def render_line(line, mode, base, dyn=None, acc=(), drum=None):
+    """A part as ABC: notes and chords (a tuple of degrees), with a dynamic
+    mark wherever the level changes at a note and !>! on accented notes."""
+    out, count, current = [], 0, None
     for p, s in line:
+        marks = ""
+        if p is not None and dyn:
+            if dyn[count] != current:
+                current = dyn[count]
+                marks += f"!{current}!"
+            if count in acc:
+                marks += "!>!"
         if p is None:
             tok = "z"
-        elif p == -1000:
-            tok = "E,,"  # the kick's thump: a low triangle E
-        elif p == -2000:
-            tok = "c"  # noise: pitch is irrelevant
+        elif drum:
+            tok = drum
+        elif isinstance(p, tuple):
+            tok = "[" + "".join(abc_pitch(midi(d, mode, base)) for d in p) + "]"
         else:
             tok = abc_pitch(midi(p, mode, base))
-        out.append(tok + (str(s) if s > 1 else ""))
+        out.append(marks + tok + (str(s) if s > 1 else ""))
         count += s
         if count % 16 == 0:
             out.append("|")  # bar lines for readability (the engine ignores them)

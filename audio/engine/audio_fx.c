@@ -301,3 +301,39 @@ void audio_fx_clip_stats_push(AudioClipStats *stats, unsigned char sample)
     }
     stats->edge_run = 0;
 }
+
+void audio_fx_bus_set_param(AudioFxBusState *state, SeqRampParam param, int value)
+{
+    if (!state || !state->enabled) return;
+    switch (param) {
+        case SEQ_RAMP_LADDER_CUTOFF:
+            if (state->ladder.enabled) {
+                state->ladder.cutoff = dsp_clampi(value, 1, 100);
+                state->ladder.alpha_q15 = dsp_clampi(160 + state->ladder.cutoff * 280, 160, 28800);
+            }
+            break;
+        case SEQ_RAMP_LADDER_RESONANCE:
+            if (state->ladder.enabled) {
+                state->ladder.resonance = dsp_clampi(value, 0, 100);
+                state->ladder.feedback_q15 = (state->ladder.resonance * 122000) / 100;
+            }
+            break;
+        case SEQ_RAMP_LOWPASS:
+            state->lowpass.amount = dsp_clampi(value, 0, 100);
+            state->lowpass.enabled = state->lowpass.amount > 0;
+            state->lowpass.alpha_q15 = dsp_clampi(24576 - state->lowpass.amount * 220, 2048, 24576);
+            break;
+        case SEQ_RAMP_DELAY_MIX:
+            if (state->delay.enabled)
+                state->delay.mix_percent = dsp_clampi(value, 0, 100);
+            break;
+        case SEQ_RAMP_DRIVE:
+            state->drive_amount = dsp_clampi(value, 0, 100);
+            break;
+        case SEQ_RAMP_BUS_MIX:
+            state->mix_percent = dsp_clampi(value, 0, 100);
+            break;
+        case SEQ_RAMP_DUTY:
+            break;
+    }
+}

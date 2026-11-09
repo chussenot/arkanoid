@@ -82,6 +82,8 @@ int audio_fx_bus_init(AudioFxBusState *state, const SeqFxBus *bus,
                       int sample_rate, int tempo_bpm, int steps_per_beat);
 void audio_fx_bus_free(AudioFxBusState *state);
 int audio_fx_bus_process(AudioFxBusState *state, int input, int trigger, int *out_sidechain_env_q15);
+/* BRYX: change one bus parameter while rendering (a %%ramp). */
+void audio_fx_bus_set_param(AudioFxBusState *state, SeqRampParam param, int value);
 
 void audio_fx_clip_stats_reset(AudioClipStats *stats);
 void audio_fx_clip_stats_push(AudioClipStats *stats, unsigned char sample);

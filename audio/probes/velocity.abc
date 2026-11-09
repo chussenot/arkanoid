@@ -1,0 +1,10 @@
+X:1
+M:4/4
+L:1/16
+Q:1/4=120
+K:C
+% Two equal notes, piano then forte.
+%%hold on
+%%instrument tone wave=square amp=100 attack=0 decay=0 sustain=100 release=1 gate=100 accents=marked fx=0
+V:tone instrument=tone
+| !p! E8 z8 | !f! E8 z8 |

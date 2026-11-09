@@ -9,32 +9,38 @@ K:C
 % mode E phrygian, progression dark, form intro(2) A(4) B(4) break(2) A2(4)
 % A=wall_hi B=wall_inv counter=wall_inv_aug
 %%hold on
-%%master 49.5
-%%instrument kick wave=triangle amp=67 attack=0 decay=70 sustain=0 release=40 gate=60 fx=0
-%%instrument snare wave=noise amp=22 attack=0 decay=60 sustain=0 release=70 gate=50 fx=0
-%%instrument hat wave=noise amp=10 attack=0 decay=12 sustain=0 release=14 gate=20 fx=0
+%%master 46.8
+%%instrument kick wave=triangle amp=67 attack=0 decay=70 sustain=0 release=40 gate=60 pitch=24 pitch_time=55 fx=0
+%%instrument snare wave=noise amp=22 attack=0 decay=60 sustain=0 release=70 gate=50 noise=long pitch=12 pitch_time=40 accents=marked fx=0
+%%instrument hat wave=noise amp=10 attack=0 decay=12 sustain=0 release=14 gate=20 noise=metal accents=marked fx=0
 %%instrument bass wave=square amp=64 attack=1 decay=50 sustain=74 release=60 gate=78 fx=3
 %%instrument arp wave=pulse amp=28 duty=22 attack=0 decay=24 sustain=50 release=40 gate=46 fx=2
-%%instrument pad wave=pulse amp=25 duty=40 attack=60 decay=200 sustain=80 release=240 gate=98 fx=3
-%%instrument lead wave=square amp=24 attack=2 decay=90 sustain=74 release=140 gate=86 vibrato=5 vibrato_delay=120 fx=1
-%%instrument counter wave=pulse amp=16 duty=12 pwm=6 pwm_rate=400 attack=2 decay=100 sustain=60 release=160 gate=80 fx=1
+%%instrument pad wave=pulse amp=15 duty=40 attack=60 decay=200 sustain=80 release=240 gate=98 accents=marked fx=3
+%%instrument lead wave=square amp=24 attack=2 decay=90 sustain=74 release=140 gate=86 vibrato=5 vibrato_delay=120 accents=marked fx=1
+%%instrument counter wave=pulse amp=16 duty=12 pwm=6 pwm_rate=400 attack=2 decay=100 sustain=60 release=160 gate=80 accents=marked fx=1
 %%effect 0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=26 lowpass=24 mix=100
 %%effect 1 delay_steps=2 delay_feedback=30 delay_mix=22 drive=12 lowpass=30 mix=80
 %%effect 2 mode=insert delay_steps=1 delay_feedback=20 delay_mix=14 drive=10 lowpass=36 sidechain=50 sidechain_release=140 sidechain_key=kick mix=100
 %%effect 3 mode=insert delay_steps=0 delay_feedback=0 delay_mix=0 drive=30 lowpass=10 ladder=70 ladder_cutoff=34 ladder_resonance=58 mix=100
+%%ramp bus3 ladder_cutoff 34 62 96 159
+%%ramp bus3 ladder_cutoff 34 34 160 160
+%%ramp bus3 ladder_cutoff 34 14 160 191
+%%ramp bus3 ladder_cutoff 14 34 192 207
+%%ramp bus1 delay_mix 22 60 160 191
+%%ramp bus1 delay_mix 22 22 192 192
 V:kick instrument=kick
-| z16 | E,, z E,, z E,, z E,, z E,, z E,, z E,, z E,, z | E,, z E,, z E,, z E,, z E,, z E,, z E,, z E,, z | E,, z E,, z E,, z E,, z E,, z E,, z E,, z E,, z | E,, z E,, z E,, z E,, z E,, z E,, z E,, z E,, z | E,, z E,, z E,, z E,, z E,, z E,, z E,, z E,, z | E,, z E,, z E,, z E,, z E,, z E,, z E,, z E,, z | E,, z E,, z E,, z E,, z E,, z E,, z E,, z E,, z | E,, z E,, z E,, z E,, z E,, z E,, z E,, z E,, z | E,, z E,, z E,, z E,, z E,, z E,, z E,, z E,, z | z16 | z16 | E,, z E,, z E,, z E,, z E,, z E,, z E,, z E,, z | E,, z E,, z E,, z E,, z E,, z E,, z E,, z E,, z | E,, z E,, z E,, z E,, z E,, z E,, z E,, z E,, z | E,, z E,, z E,, z E,, z E,, z E,, z E,, z E,, z |
+| z16 | !mf!E,, z !mp!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | z16 | z16 | !ff!E,, z !f!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !ff!E,, z !f!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !ff!E,, z !f!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !ff!E,, z !f!E,, z E,, z E,, z E,, z E,, z E,, z E,, z |
 V:snare instrument=snare
-| z z z z z z z z z z z z z z z z | z z z z z z z z z z z z z z c c | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c c z c | z z z z c z z z z z z z c c z c | z z z z z z z z z z z z z z z z | z z z z c z z z c z c z c c c c | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z c c |
+| z z z z z z z z z z z z z z z z | z z z z z z z z z z z z z z !mp!a a | z z z z !mf!a z z z z z z z a z z z | z z z z a z z z z z z z a z z z | z z z z a z z z z z z z a z z z | z z z z a z z z z z z z a z z z | z z z z a z z z z z z z a z z z | z z z z a z z z z z z z a z z z | z z z z a z z z z z z z a a z a | z z z z a z z z z z z z a a z a | z z z z z z z z z z z z z z z z | z z z z !mp!a z z z !mf!a z a z !f!a a a a | z z z z a z z z z z !pp!a z !f!a z z z | z z z z a z z z z z !pp!a z !f!a z z z | z z z z a z z z z z !pp!a z !f!a z z z | z z z z a z z z z z !pp!a z !f!a z a a |
 V:hat instrument=hat
-| c c c c c c c c c c c c c c c c | c c c c c c c c c c c c c c c c | c c c c c c c c c c c c c c c c | c c c c c c c c c c c c c c c c | c c c c c c c c c c c c c c c c | c c c c c c c c c c c c c c c c | c c c c c c c c c c c c c c c c | c c c c c c c c c c c c c c c c | c c c c c c c c c c c c c c c c | c c c c c c c c c c c c c c c c | z16 | c c c c c c c c c c c c z z z z | c c c c c c c c c c c c c c c c | c c c c c c c c c c c c c c c c | c c c c c c c c c c c c c c c c | c c c c c c c c c c c c c c c c |
+| !p!c'' c'' !mp!c'' !p!c'' c'' c'' !mp!c'' !p!c'' c'' c'' !mp!c'' !p!c'' c'' c'' !mp!c'' !p!c'' | c'' c'' !mp!c'' !p!c'' c'' c'' !mp!c'' !p!c'' c'' c'' !mp!c'' !p!c'' c'' c'' !mp!c'' !p!c'' | !mp!c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' | c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' | c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' | c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' | c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' | c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' | c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' | c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' c'' c'' !mf!c'' !mp!c'' | z16 | !pp!c'' c'' !p!c'' !pp!c'' !p!c'' c'' !mp!c'' !p!c'' !mp!c'' c'' !mf!c'' !mp!c'' z z z z | !mf!c'' c'' !f!c'' !mf!c'' c'' c'' !f!c'' !mf!c'' c'' c'' !f!c'' !mf!c'' c'' c'' !f!c'' !mf!c'' | c'' c'' !f!c'' !mf!c'' c'' c'' !f!c'' !mf!c'' c'' c'' !f!c'' !mf!c'' c'' c'' !f!c'' !mf!c'' | c'' c'' !f!c'' !mf!c'' c'' c'' !f!c'' !mf!c'' c'' c'' !f!c'' !mf!c'' c'' c'' !f!c'' !mf!c'' | c'' c'' !f!c'' !mf!c'' c'' c'' !f!c'' !mf!c'' c'' c'' !f!c'' !mf!c'' c'' c'' !f!c'' !mf!c'' |
 V:bass instrument=bass
-| E,,2 z6 E,,2 z6 | D,3 D, E,2 D,2 D,3 D, C,2 D,2 | E,,3 E,, F,,2 E,,2 E,,3 E,, D,,2 E,,2 | D,3 D, E,2 D,2 D,3 D, C,2 D,2 | E,,3 E,, F,,2 E,,2 E,,3 E,, D,,2 E,,2 | F,,3 F,, G,,2 F,,2 F,,3 F,, E,,2 F,,2 | C,3 C, D,2 C,2 C,3 C, B,,2 C,2 | F,,3 F,, G,,2 F,,2 F,,3 F,, E,,2 F,,2 | C,3 C, D,2 C,2 C,3 C, B,,2 C,2 | D,3 D, E,2 D,2 F,,3 F,, E,,2 F,,2 | E,,2 z14 | D,2 z6 D,2 z2 D,2 D,2 | E,,3 E,, F,,2 E,,2 E,,3 E,, D,,2 E,,2 | D,3 D, E,2 D,2 D,3 D, C,2 D,2 | E,,3 E,, F,,2 E,,2 E,,3 E,, D,,2 E,,2 | F,,3 F,, G,,2 F,,2 F,,3 F,, E,,2 F,,2 |
+| !mp!E,,2 z6 E,,2 z6 | D,3 D, E,2 D,2 D,3 D, C,2 D,2 | !mf!E,,3 E,, F,,2 E,,2 E,,3 E,, D,,2 E,,2 | D,3 D, E,2 D,2 D,3 D, C,2 D,2 | E,,3 E,, F,,2 E,,2 E,,3 E,, D,,2 E,,2 | F,,3 F,, G,,2 F,,2 F,,3 F,, E,,2 F,,2 | C,3 C, D,2 C,2 C,3 C, B,,2 C,2 | F,,3 F,, G,,2 F,,2 F,,3 F,, E,,2 F,,2 | C,3 C, D,2 C,2 C,3 C, B,,2 C,2 | D,3 D, E,2 D,2 F,,3 F,, E,,2 F,,2 | !p!E,,2 z14 | D,2 z6 !mf!D,2 z2 !f!D,2 D,2 | E,,3 E,, F,,2 E,,2 E,,3 E,, D,,2 E,,2 | D,3 D, E,2 D,2 D,3 D, C,2 D,2 | E,,3 E,, F,,2 E,,2 E,,3 E,, D,,2 E,,2 | F,,3 F,, G,,2 F,,2 F,,3 F,, E,,2 F,,2 |
 V:arp instrument=arp
-| E e B e E e B e E e B e E e B e | d d' a d' d d' a d' d d' a d' d d' a d' | E e B e E e B e E e B e E e B e | d d' a d' d d' a d' d d' a d' d d' a d' | E e B e E e B e E e B e E e B e | F f c f F f c f F f c f F f c f | c c' g c' c c' g c' c c' g c' c c' g c' | F f c f F f c f F f c f F f c f | c c' g c' c c' g c' c c' g c' c c' g c' | d d' a d' d d' a d' F f c f F f c f | z16 | z16 | E e B e E e B e E e B e E e B e | d d' a d' d d' a d' d d' a d' d d' a d' | E e B e E e B e E e B e E e B e | F f c f F f c f F f c f F f c f |
+| !mp!E e B e E e B e E e B e E e B e | d d' a d' d d' a d' d d' a d' d d' a d' | !mf!E e B e E e B e E e B e E e B e | d d' a d' d d' a d' d d' a d' d d' a d' | E e B e E e B e E e B e E e B e | F f c f F f c f F f c f F f c f | c c' g c' c c' g c' c c' g c' c c' g c' | F f c f F f c f F f c f F f c f | c c' g c' c c' g c' c c' g c' c c' g c' | d d' a d' d d' a d' F f c f F f c f | z16 | z16 | !f!E e B e E e B e E e B e E e B e | d d' a d' d d' a d' d d' a d' d d' a d' | E e B e E e B e E e B e E e B e | F f c f F f c f F f c f F f c f |
 V:pad instrument=pad
-| z16 | z16 | z16 | z16 | z16 | z16 | E,16 | F,16 | E,16 | F,8 F,8 | E,16 | F,16 | E,16 | F,16 | E,16 | F,16 |
+| z16 | z16 | z16 | z16 | z16 | z16 | !mf![G,CE]16 | [A,CF]16 | [G,CE]16 | [A,DF]8 [A,CF]8 | !p![G,B,E]16 | [F,A,D]16 | !f![E,G,B,]16 | [F,A,D]16 | [E,G,B,]16 | [F,A,C]16 |
 V:lead instrument=lead
-| e4 z12 | z16 | b3 b c'2 b2 b3 b a2 b2 | c'3 c' d'2 c'2 c'3 c' b2 c'2 | d'3 d' e'2 d'2 d'3 d' c'2 d'2 | f'3 e' f'2 e'2 a2 g2 f4 | e3 e d2 e2 e3 e f2 e2 | c3 d c2 d2 c3 d e2 d2 | c3 c B2 c2 c3 c d2 c2 | A3 B A2 B2 c2 e2 f4 | b6 b2 c'4 b4 | z16 | b3 b c'2 b2 b3 b a2 b2 | c'3 c' d'2 c'2 c'3 c' b2 c'2 | d'3 d' e'2 d'2 d'3 d' c'2 d'2 | f'3 e' f'2 e'2 a2 g2 f4 |
+| !mp!e4 z12 | z16 | !mf!!>!b3 b c'2 b2 b3 b a2 b2 | c'3 c' d'2 c'2 c'3 c' b2 c'2 | d'3 d' e'2 d'2 d'3 d' c'2 d'2 | !>!f'3 e' f'2 e'2 a2 g2 f4 | !>!e3 e d2 e2 e3 e !>!f2 e2 | c3 d c2 d2 c3 d e2 d2 | c3 c B2 c2 c3 c d2 c2 | A3 B A2 B2 c2 e2 f4 | !p!b6 b2 c'4 b4 | z16 | !f!!>!b3 b c'2 b2 b3 b a2 b2 | c'3 c' d'2 c'2 c'3 c' b2 c'2 | d'3 d' e'2 d'2 d'3 d' c'2 d'2 | !>!f'3 e' f'2 e'2 a2 g2 f4 |
 V:counter instrument=counter
-| z192 | e6 e2 e4 e4 | d6 e2 f4 d4 | e6 e2 e4 e4 | f6 d2 f2 f6 | z |
+| z192 | !f!!>!e6 e2 e4 e4 | d6 e2 f4 d4 | e6 e2 e4 e4 | f6 d2 f2 f6 | z |

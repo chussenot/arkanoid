@@ -32,6 +32,7 @@ void dsp_osc_init(DspOscillator *osc, DspWaveform waveform, int amplitude)
     osc->amplitude = amplitude;
     osc->pulse_width = 0x80000000u;
     osc->noise_state = 0x6d2b79f5u;
+    osc->lfsr = 1u;
 }
 
 void dsp_osc_set_frequency(DspOscillator *osc, double freq_hz, int sample_rate)
@@ -72,6 +73,20 @@ int dsp_osc_next(DspOscillator *osc)
             break;
         }
         case DSP_WAVE_NOISE:
+            if (osc->noise_clock > 0) {
+                /* BRYX: clocked LFSR noise. */
+                uint64_t acc = (uint64_t)osc->noise_phase + (uint64_t)osc->increment * 16u;
+                uint32_t steps = (uint32_t)(acc >> 32);
+                int tap = osc->noise_clock == 2 ? 6 : 1;
+                osc->noise_phase = (uint32_t)acc;
+                if (steps > 32u) steps = 32u;
+                while (steps--) {
+                    uint32_t feedback = (osc->lfsr ^ (osc->lfsr >> tap)) & 1u;
+                    osc->lfsr = (osc->lfsr >> 1) | (feedback << 14);
+                }
+                sample = (osc->lfsr & 1u) ? -osc->amplitude : osc->amplitude;
+                break;
+            }
             osc->noise_state ^= osc->noise_state << 13;
             osc->noise_state ^= osc->noise_state >> 17;
             osc->noise_state ^= osc->noise_state << 5;
