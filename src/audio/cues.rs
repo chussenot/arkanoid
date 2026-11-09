@@ -1,13 +1,17 @@
-//! The cue bank: every sound BRYX can make, decoded from the PCM `build.rs`
-//! rendered from `audio/cues/*.abc` with the Electric Pulse engine.
-
-use std::sync::Arc;
+//! The cue bank: every sound BRYX can make, as the PCM `build.rs` rendered
+//! from `audio/cues/*.abc` with the Electric Pulse engine. The bytes stay
+//! where the binary put them: unsigned 8-bit mono, read and converted one
+//! sample at a time by the mixer, so 33 music tracks cost no memory beyond
+//! the binary itself.
 
 /// The rate `build.rs` renders cues at (its `SAMPLE_RATE`).
 pub const CUE_SAMPLE_RATE: f32 = 22_050.0;
 
-/// One sound, by name. A variant's `file` must match an `audio/cues/*.abc`
-/// file stem; `every_cue_was_rendered` holds the two together.
+/// Level tracks in the score (`audio/compose.py`), one per campaign level.
+pub const LEVEL_TRACKS: u8 = 32;
+
+/// One sound. Every variant but `Level` names an `audio/cues/*.abc` file
+/// (`file`); `Level(n)` is `music_NN.abc`, the track for level `n`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Cue {
     // Effects
@@ -33,14 +37,14 @@ pub enum Cue {
     Victory,
     // Music loops
     MusicMenu,
-    MusicAct1,
-    MusicAct2,
-    MusicAct3,
-    MusicAct4,
+    /// The track for level 1..=[`LEVEL_TRACKS`].
+    Level(u8),
 }
 
 impl Cue {
-    pub const ALL: [Cue; 24] = [
+    /// Every cue that is not a level track.
+    #[cfg(test)]
+    pub const NAMED: [Cue; 20] = [
         Cue::Paddle,
         Cue::Brick,
         Cue::Armor,
@@ -61,14 +65,11 @@ impl Cue {
         Cue::GameOver,
         Cue::Victory,
         Cue::MusicMenu,
-        Cue::MusicAct1,
-        Cue::MusicAct2,
-        Cue::MusicAct3,
-        Cue::MusicAct4,
     ];
 
-    pub fn file(self) -> &'static str {
-        match self {
+    /// The cue's file stem; `None` for a level track (see [`pcm`]).
+    pub fn file(self) -> Option<&'static str> {
+        Some(match self {
             Cue::Paddle => "paddle",
             Cue::Brick => "brick",
             Cue::Armor => "armor",
@@ -89,20 +90,14 @@ impl Cue {
             Cue::GameOver => "game_over",
             Cue::Victory => "victory",
             Cue::MusicMenu => "music_menu",
-            Cue::MusicAct1 => "music_act1",
-            Cue::MusicAct2 => "music_act2",
-            Cue::MusicAct3 => "music_act3",
-            Cue::MusicAct4 => "music_act4",
-        }
+            Cue::Level(_) => return None,
+        })
     }
 
-    /// Music loops play whole, start to end and round again; everything
-    /// else is trimmed of the silence the engine renders after it.
+    /// Music loops play whole, start to end and round again.
+    #[cfg(test)]
     pub fn is_music(self) -> bool {
-        matches!(
-            self,
-            Cue::MusicMenu | Cue::MusicAct1 | Cue::MusicAct2 | Cue::MusicAct3 | Cue::MusicAct4
-        )
+        matches!(self, Cue::MusicMenu | Cue::Level(_))
     }
 }
 
@@ -111,16 +106,23 @@ mod rendered {
     include!(concat!(env!("OUT_DIR"), "/cues.rs"));
 }
 
-/// The embedded PCM for `cue`: unsigned 8-bit mono at
-/// [`CUE_SAMPLE_RATE`]. Empty without the `audio` feature.
-fn raw(cue: Cue) -> &'static [u8] {
+/// The embedded PCM for `cue`: unsigned 8-bit mono at [`CUE_SAMPLE_RATE`],
+/// effects already trimmed of trailing silence by `build.rs`. Empty
+/// without the `audio` feature, or for a level past the score.
+pub fn pcm(cue: Cue) -> &'static [u8] {
     #[cfg(feature = "audio")]
     {
-        rendered::CUES
-            .iter()
-            .find(|(name, _)| *name == cue.file())
-            .map(|(_, pcm)| *pcm)
-            .unwrap_or(&[])
+        match cue {
+            Cue::Level(n) => rendered::LEVEL_MUSIC
+                .get(usize::from(n).wrapping_sub(1))
+                .copied()
+                .unwrap_or(&[]),
+            named => rendered::CUES
+                .iter()
+                .find(|(name, _)| Some(*name) == named.file())
+                .map(|(_, pcm)| *pcm)
+                .unwrap_or(&[]),
+        }
     }
     #[cfg(not(feature = "audio"))]
     {
@@ -129,37 +131,10 @@ fn raw(cue: Cue) -> &'static [u8] {
     }
 }
 
-/// The engine's unsigned 8-bit samples (centered at 128) as `-1.0..1.0`,
-/// trailing near-silence trimmed for effects so a voice frees itself as
-/// soon as its sound ends.
-pub fn decode(cue: Cue, pcm: &[u8]) -> Arc<[f32]> {
-    let mut end = pcm.len();
-    if !cue.is_music() {
-        while end > 0 && pcm[end - 1].abs_diff(128) <= 1 {
-            end -= 1;
-        }
-    }
-    pcm[..end]
-        .iter()
-        .map(|&b| (f32::from(b) - 128.0) / 128.0)
-        .collect()
-}
-
-/// Every cue, decoded once, indexed by `Cue as usize`.
-pub struct Bank {
-    samples: Vec<Arc<[f32]>>,
-}
-
-impl Bank {
-    pub fn load() -> Self {
-        Self {
-            samples: Cue::ALL.iter().map(|&c| decode(c, raw(c))).collect(),
-        }
-    }
-
-    pub fn get(&self, cue: Cue) -> Arc<[f32]> {
-        Arc::clone(&self.samples[cue as usize])
-    }
+/// One of the engine's samples (unsigned, centered at 128) as `-1.0..1.0`.
+#[inline]
+pub fn sample(byte: u8) -> f32 {
+    (f32::from(byte) - 128.0) / 128.0
 }
 
 #[cfg(test)]
@@ -167,52 +142,55 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cue_all_is_in_declaration_order() {
-        for (i, cue) in Cue::ALL.iter().enumerate() {
-            assert_eq!(*cue as usize, i, "{cue:?}");
-        }
+    fn samples_are_centered() {
+        assert_eq!(sample(128), 0.0);
+        assert_eq!(sample(0), -1.0);
+        assert!(sample(255) > 0.99);
     }
 
-    #[test]
-    fn decoding_centers_and_trims_effects_but_not_music() {
-        let pcm = [128u8, 255, 0, 128, 129, 128];
-        let fx = decode(Cue::Brick, &pcm);
-        assert_eq!(fx.len(), 3, "trailing silence trimmed");
-        assert_eq!(fx[0], 0.0);
-        assert!(fx[1] > 0.99 && fx[2] == -1.0);
-        assert_eq!(decode(Cue::MusicAct1, &pcm).len(), pcm.len());
+    #[cfg(feature = "audio")]
+    fn every_cue() -> impl Iterator<Item = Cue> {
+        Cue::NAMED
+            .into_iter()
+            .chain((1..=LEVEL_TRACKS).map(Cue::Level))
     }
 
     #[cfg(feature = "audio")]
     #[test]
-    fn every_cue_was_rendered() {
-        for cue in Cue::ALL {
-            let pcm = raw(cue);
-            assert!(
-                !pcm.is_empty(),
-                "{} has no audio/cues/{0}.abc render",
-                cue.file()
-            );
-            assert!(
-                pcm.iter().any(|b| b.abs_diff(128) > 8),
-                "{} rendered silent",
-                cue.file()
-            );
+    fn every_cue_was_rendered_and_is_audible() {
+        for cue in every_cue() {
+            let pcm = pcm(cue);
+            assert!(!pcm.is_empty(), "{cue:?} has no render");
+            assert!(pcm.iter().any(|b| b.abs_diff(128) > 8), "{cue:?} is silent");
         }
-        assert_eq!(rendered::CUES.len(), Cue::ALL.len(), "an .abc no Cue plays");
+        assert_eq!(rendered::LEVEL_MUSIC.len(), usize::from(LEVEL_TRACKS));
+        assert!(pcm(Cue::Level(0)).is_empty() && pcm(Cue::Level(33)).is_empty());
     }
 
     #[cfg(feature = "audio")]
     #[test]
-    fn effects_stay_short_and_music_loops_are_long() {
-        let bank = Bank::load();
-        for cue in Cue::ALL {
-            let secs = bank.get(cue).len() as f32 / CUE_SAMPLE_RATE;
+    fn effects_are_trimmed_short_and_music_loops_are_long() {
+        for cue in every_cue() {
+            let pcm = pcm(cue);
+            let secs = pcm.len() as f32 / CUE_SAMPLE_RATE;
             if cue.is_music() {
-                assert!(secs > 8.0, "{cue:?}: {secs:.2}s loop");
+                assert!(secs > 20.0, "{cue:?}: {secs:.1}s");
             } else {
-                assert!(secs < 8.0, "{cue:?}: {secs:.2}s");
+                assert!(secs < 8.0, "{cue:?}: {secs:.1}s");
+                assert!(pcm.last().unwrap().abs_diff(128) > 1, "{cue:?} not trimmed");
             }
+        }
+    }
+
+    /// The score is mastered (`audio/compose.py`): no level track clips,
+    /// so no level is ever louder than the limiter expects.
+    #[cfg(feature = "audio")]
+    #[test]
+    fn no_music_track_clips() {
+        for n in 1..=LEVEL_TRACKS {
+            let pcm = pcm(Cue::Level(n));
+            let hot = pcm.iter().filter(|&&b| b == 0 || b == 255).count();
+            assert_eq!(hot, 0, "level {n} clips");
         }
     }
 }

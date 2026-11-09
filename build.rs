@@ -68,8 +68,36 @@ fn render_cues() {
             .status()
             .expect("run the cue renderer");
         assert!(status.success(), "rendering {} failed", cue.display());
+        // Effects and stingers lose the silence the engine renders after
+        // them, so a voice frees itself the moment its sound ends. Music
+        // loops keep their exact length: the loop point depends on it.
+        if !name.starts_with("music_") {
+            let mut bytes = std::fs::read(&pcm).expect("read rendered cue");
+            while bytes.last().is_some_and(|b| b.abs_diff(128) <= 1) {
+                bytes.pop();
+            }
+            std::fs::write(&pcm, bytes).expect("write trimmed cue");
+        }
         table.push_str(&format!(
             "    ({name:?}, include_bytes!({:?})),\n",
+            pcm.display().to_string()
+        ));
+    }
+    table.push_str("];\n");
+
+    // The level tracks, music_01..music_NN, in order: what the game picks
+    // from by level number, without a name lookup in the audio thread.
+    let mut levels: Vec<String> = cues
+        .iter()
+        .filter_map(|c| c.file_stem()?.to_str().map(str::to_owned))
+        .filter(|n| n.starts_with("music_") && n[6..].chars().all(|c| c.is_ascii_digit()))
+        .collect();
+    levels.sort();
+    table.push_str("pub const LEVEL_MUSIC: &[&[u8]] = &[\n");
+    for name in &levels {
+        let pcm = out_dir.join(format!("{name}.u8"));
+        table.push_str(&format!(
+            "    include_bytes!({:?}),\n",
             pcm.display().to_string()
         ));
     }

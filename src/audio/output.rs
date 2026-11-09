@@ -7,7 +7,6 @@ use std::sync::mpsc::{Receiver, Sender};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample};
 
-use super::cues::Bank;
 use super::mixer::{Command, Mixer};
 
 pub struct Output {
@@ -28,7 +27,7 @@ impl Output {
         let supported = device.default_output_config().map_err(|e| e.to_string())?;
         let config = supported.config();
         let (commands, inbox) = std::sync::mpsc::channel();
-        let mixer = Mixer::new(Bank::load(), config.sample_rate);
+        let mixer = Mixer::new(config.sample_rate);
         let channels = usize::from(config.channels);
         let stream = match supported.sample_format() {
             SampleFormat::F32 => build::<f32>(&device, &config, mixer, inbox, channels),
