@@ -176,4 +176,8 @@ Hz without ever changing gameplay physics, which only ever see fixed
 
 BRYX is MIT-licensed: see [`LICENSE`](LICENSE). Optional third-party data
 the fetch scripts download keeps its own license and is never committed;
-[`ATTRIBUTION`](ATTRIBUTION) credits it.
+[`ATTRIBUTION`](ATTRIBUTION) credits it. The one committed third-party
+component is the [Impeccable](https://github.com/pbakaus/impeccable) design
+skill for coding agents in `.claude/skills/impeccable/`, Apache-2.0, with its
+`LICENSE` and `NOTICE.md` alongside; it is a development tool, not part of
+the game.

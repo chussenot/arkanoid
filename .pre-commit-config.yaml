@@ -1,4 +1,8 @@
 # See https://prek.j178.dev for more information.
+# Vendored third-party content is kept byte-for-byte as upstream ships it:
+# the Impeccable skill (Apache-2.0) has files over the 500 KB limit and its
+# own whitespace conventions.
+exclude: ^\.claude/skills/impeccable/
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
