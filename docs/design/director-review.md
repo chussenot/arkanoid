@@ -178,4 +178,52 @@ score from many attempts.
 2. Does Continue at full lives make the last act too forgiving?
 3. Is Tiny (1 in 9 drops) more frustrating than interesting?
 
-<!-- RESULTS -->
+## Results
+
+Measured on the same probe (heuristic autopilot, 6 seeds, whole
+campaign), before this round and after D1 and D2 together:
+
+| Measure | Before | After |
+|---|---|---|
+| Campaign time, sum of per-level averages | 3,643 s (60.7 min) | **2,389 s (39.8 min)** |
+| Slowest level ÷ median level | 13× (Baffles 841 s) | **2.6×** (Fortress 171 s) |
+| Bridges (L16): clear / last 10% | 723 s / 381 s | **76 s / 11 s** |
+| Baffles (L27): clear / last 10% | 841 s / 225 s | **145 s / 51 s** |
+| Lattice (L13): clear / last 10% | 166 s / 44 s | **110 s / 24 s** |
+| Seeds won | 6/6 | 6/6 |
+
+The committed 10-seed benchmark (`benchmark_campaign`) agrees: average win
+3,614 s → **2,362 s**, longest 4,733 s → **2,662 s**, all 10 won.
+
+Notes on D1 and D2:
+- **D1 levels.** The gameplay engineer reshaped Bridges into a viaduct (two
+  decks over indestructible piers) and moved Baffles' plates below the
+  brick rows, as staggered deflectors with straight lanes through them.
+  They also opened Lattice's outer rows. The rule they found: *no
+  breakable brick may sit between two indestructible bricks in the same
+  column*; such bricks were always the last 10%. It is worth adding to
+  `levels.rs`'s tests if new levels keep tripping it.
+- **D2 changed where the time goes.** With the cap below 700 px/s until
+  level 30, the ball no longer spends minutes at top speed, but slower
+  balls make the remaining sealed pockets (Fortress, Baffles' tail) a
+  little longer to finish. Both are now 2–3× a typical level, down from
+  13×. They are on the watch list for the human playtest, not worth
+  another change without one.
+- **v1 untouched.** `--classic` benchmark numbers are identical to before,
+  and the pinned replay hash passes.
+
+Verification:
+- 426 tests pass by default and 432 with `typesafe`; there are new tests
+  for the speed ramp, checkpoints, Continue/New game/Play again, Break's
+  payout, the record file, the serve prompt and the end-screen keys.
+- Clippy is clean on Rust 1.97 and 1.99 (CI's).
+- Screenshots of the new screens in both renderers are in
+  `docs/design/director-round.png`; `docs/campaign.png` is regenerated from
+  the current build.
+
+### Still open
+
+- Fortress (L12): 171 s, last 10% 33 s. Same boxed-pocket pattern; the
+  first candidate if playtests agree.
+- Audio, the next investment (see "Next").
+- A human playtest against the three open questions above.
