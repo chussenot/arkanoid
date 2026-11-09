@@ -14,7 +14,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BIN="${REPO_ROOT}/target/release/arkanoid"
+BIN="${REPO_ROOT}/target/release/bryx"
 OUT="${1:-${REPO_ROOT}/docs/levelsets-mosaic.png}"
 shift || true
 

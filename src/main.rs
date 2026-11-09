@@ -165,7 +165,7 @@ impl ApplicationHandler for App {
         }
 
         let attributes = Window::default_attributes()
-            .with_title("Arkanoid")
+            .with_title("BRYX")
             .with_inner_size(LogicalSize::new(LOGICAL_WIDTH, LOGICAL_HEIGHT))
             .with_resizable(true);
         let window = Arc::new(
