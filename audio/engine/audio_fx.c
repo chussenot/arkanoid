@@ -4,9 +4,14 @@
 #include <string.h>
 
 #define FX_Q15_ONE 32767
-#define FX_BUFFER_CLAMP 32767
-#define FX_DRIVE_SOFT_CLIP 192
-#define FX_DRIVE_HARD_CLIP 2047
+/* BRYX: levels below are in 8-bit output steps shifted by DSP_FRAC_BITS,
+ * the engine's internal scale, so every knee and clip sits exactly where
+ * it did; products that can outgrow 32 bits are taken in 64. */
+#define FX_BUFFER_CLAMP (32767 << DSP_FRAC_BITS)
+#define FX_DRIVE_SOFT_CLIP (192 << DSP_FRAC_BITS)
+#define FX_DRIVE_HARD_CLIP (2047 << DSP_FRAC_BITS)
+#define FX_DRIVE_KNEE (256 << DSP_FRAC_BITS)
+#define FX_LADDER_KNEE (384 << DSP_FRAC_BITS)
 
 static int clamp_sample(int value, int limit)
 {
@@ -65,9 +70,9 @@ int audio_fx_delay_process(AudioDelay *delay, int input)
         return input;
 
     delayed = delay->buffer[delay->write_index];
-    dry = (input * (100 - delay->mix_percent)) / 100;
-    wet = (delayed * delay->mix_percent) / 100;
-    fb = input + (delayed * delay->feedback_percent) / 100;
+    dry = (int)(((int64_t)input * (100 - delay->mix_percent)) / 100);
+    wet = (int)(((int64_t)delayed * delay->mix_percent) / 100);
+    fb = (int)(input + ((int64_t)delayed * delay->feedback_percent) / 100);
     delay->buffer[delay->write_index] = clamp_sample(fb, FX_BUFFER_CLAMP);
     delay->write_index++;
     if (delay->write_index >= delay->buffer_len)
@@ -88,7 +93,7 @@ int audio_fx_apply_drive(int input, int drive_amount)
         return clamp_sample(input, FX_DRIVE_HARD_CLIP);
 
     gain = 100 + drive_amount * 3;
-    x = (input * gain) / 100;
+    x = (int)(((int64_t)input * gain) / 100);
     if (x < 0) {
         sign = -1;
         x = -x;
@@ -96,7 +101,8 @@ int audio_fx_apply_drive(int input, int drive_amount)
     a = x;
     if (a <= FX_DRIVE_SOFT_CLIP) return sign * a;
 
-    clipped = FX_DRIVE_SOFT_CLIP + ((a - FX_DRIVE_SOFT_CLIP) * 256) / ((a - FX_DRIVE_SOFT_CLIP) + 256);
+    clipped = FX_DRIVE_SOFT_CLIP + (int)(((int64_t)(a - FX_DRIVE_SOFT_CLIP) * FX_DRIVE_KNEE)
+                                        / ((a - FX_DRIVE_SOFT_CLIP) + FX_DRIVE_KNEE));
     return clamp_sample(sign * clipped, FX_DRIVE_HARD_CLIP);
 }
 
@@ -115,7 +121,7 @@ void audio_fx_lowpass_init(AudioLowpass *lp, int amount)
 int audio_fx_lowpass_process(AudioLowpass *lp, int input)
 {
     if (!lp || !lp->enabled) return input;
-    lp->state += ((input - lp->state) * lp->alpha_q15) / FX_Q15_ONE;
+    lp->state += (int)(((int64_t)(input - lp->state) * lp->alpha_q15) / FX_Q15_ONE);
     return lp->state;
 }
 
@@ -151,8 +157,8 @@ static int moog_soft_clip(int x)
     if (x < 0) { sign = -1; x = -x; }
     a = x;
     if (a <= FX_DRIVE_SOFT_CLIP) return sign * a;
-    clipped = FX_DRIVE_SOFT_CLIP + ((a - FX_DRIVE_SOFT_CLIP) * 384)
-              / ((a - FX_DRIVE_SOFT_CLIP) + 384);
+    clipped = FX_DRIVE_SOFT_CLIP + (int)(((int64_t)(a - FX_DRIVE_SOFT_CLIP) * FX_LADDER_KNEE)
+                                        / ((a - FX_DRIVE_SOFT_CLIP) + FX_LADDER_KNEE));
     return clamp_sample(sign * clipped, FX_BUFFER_CLAMP);
 }
 
@@ -165,22 +171,22 @@ int audio_fx_moog_ladder_process(AudioMoogLadder *m, int input)
 
     /* Feedback path: subtract a soft-clipped resonant tap from the input
      * before the ladder. Without saturation, high-Q would blow up Q15. */
-    driven = input - ((m->stage[3] * m->feedback_q15) >> 15);
+    driven = input - (int)(((int64_t)m->stage[3] * m->feedback_q15) >> 15);
     driven = moog_soft_clip(driven);
 
     /* Four cascaded one-pole lowpass stages. */
-    m->stage[0] += (m->alpha_q15 * (driven      - m->stage[0])) >> 15;
-    m->stage[1] += (m->alpha_q15 * (m->stage[0] - m->stage[1])) >> 15;
-    m->stage[2] += (m->alpha_q15 * (m->stage[1] - m->stage[2])) >> 15;
-    m->stage[3] += (m->alpha_q15 * (m->stage[2] - m->stage[3])) >> 15;
+    m->stage[0] += (int)(((int64_t)m->alpha_q15 * (driven      - m->stage[0])) >> 15);
+    m->stage[1] += (int)(((int64_t)m->alpha_q15 * (m->stage[0] - m->stage[1])) >> 15);
+    m->stage[2] += (int)(((int64_t)m->alpha_q15 * (m->stage[1] - m->stage[2])) >> 15);
+    m->stage[3] += (int)(((int64_t)m->alpha_q15 * (m->stage[2] - m->stage[3])) >> 15);
 
     m->stage[0] = clamp_sample(m->stage[0], FX_BUFFER_CLAMP);
     m->stage[1] = clamp_sample(m->stage[1], FX_BUFFER_CLAMP);
     m->stage[2] = clamp_sample(m->stage[2], FX_BUFFER_CLAMP);
     m->stage[3] = clamp_sample(m->stage[3], FX_BUFFER_CLAMP);
 
-    wet = (m->stage[3] * m->amount) / 100;
-    dry = (input * (100 - m->amount)) / 100;
+    wet = (int)(((int64_t)m->stage[3] * m->amount) / 100);
+    dry = (int)(((int64_t)input * (100 - m->amount)) / 100);
     return dry + wet;
 }
 
@@ -221,7 +227,7 @@ int audio_fx_sidechain_process(AudioSidechain *sc, int input, int trigger, int *
             sc->env_q15 = target;
     }
 
-    input = (input * sc->env_q15) / FX_Q15_ONE;
+    input = (int)(((int64_t)input * sc->env_q15) / FX_Q15_ONE);
     sc->env_q15 += sc->release_step_q15;
     if (sc->env_q15 > FX_Q15_ONE)
         sc->env_q15 = FX_Q15_ONE;
@@ -272,7 +278,7 @@ int audio_fx_bus_process(AudioFxBusState *state, int input, int trigger, int *ou
     sample = audio_fx_moog_ladder_process(&state->ladder, sample);
     sample = audio_fx_delay_process(&state->delay, sample);
     sample = audio_fx_sidechain_process(&state->sidechain, sample, trigger, &env_q15);
-    sample = (sample * state->mix_percent) / 100;
+    sample = (int)(((int64_t)sample * state->mix_percent) / 100);
 
     if (out_sidechain_env_q15) *out_sidechain_env_q15 = env_q15;
     return sample;

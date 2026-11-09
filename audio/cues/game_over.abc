@@ -6,6 +6,8 @@ L:1/16
 Q:1/4=112
 K:C
 % Ascent backwards and slowed, over a Phrygian F in the bass, sinking to a low E.
+%%hold on
+%%master 143.4
 %%instrument lead wave=triangle amp=35 attack=20 decay=200 sustain=70 release=500 gate=92 vibrato=10 fx=1
 %%instrument pad wave=pulse amp=17 duty=44 attack=200 decay=300 sustain=70 release=700 gate=96 fx=1
 %%instrument bass wave=triangle amp=34 attack=10 decay=300 sustain=70 release=600 gate=95 fx=0

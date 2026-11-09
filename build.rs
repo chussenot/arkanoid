@@ -1,11 +1,12 @@
-//! Renders BRYX's sound cues at build time with the vendored Electric Pulse
-//! engine (`audio/engine/`, see its PROVENANCE.md).
+//! Renders BRYX's sound cues at build time with BRYX's fork of the Electric
+//! Pulse engine (`audio/engine/`, see its PROVENANCE.md).
 //!
 //! Only with the `audio` feature (on by default):
 //! 1. compile `audio/render.c` and the engine into a small host tool in
 //!    `OUT_DIR`;
-//! 2. render every `audio/cues/*.abc` to `OUT_DIR/<name>.u8` (unsigned 8-bit
-//!    mono at [`SAMPLE_RATE`]);
+//! 2. render every `audio/cues/*.abc` to signed 16-bit mono at
+//!    [`SAMPLE_RATE`], trim effects of trailing silence, and encode it to
+//!    `OUT_DIR/<name>.ulaw`, 8-bit mu-law (`src/audio/mulaw.rs`);
 //! 3. write `OUT_DIR/cues.rs`, a table of `(name, include_bytes!(...))` that
 //!    `src/audio/cues.rs` includes.
 //!
@@ -19,8 +20,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Matches `src/audio/cues.rs`'s `CUE_SAMPLE_RATE`. 22,050 Hz is the
-/// engine's native rate: its 8-bit voice is the sound of the thing, and it
-/// keeps the embedded audio near 2 MB.
+/// engine's native rate: its chip voice is the sound of the thing, and it
+/// keeps the embedded audio to one byte a sample at half CD rate.
 #[cfg(feature = "audio")]
 const SAMPLE_RATE: u32 = 22_050;
 
@@ -35,6 +36,9 @@ const ENGINE_SOURCES: [&str; 7] = [
     "audio_song_builtin.c",
 ];
 
+#[cfg(feature = "audio")]
+include!("src/audio/mulaw.rs");
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     #[cfg(feature = "audio")]
@@ -45,6 +49,7 @@ fn main() {
 fn render_cues() {
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     println!("cargo:rerun-if-changed=audio");
+    println!("cargo:rerun-if-changed=src/audio/mulaw.rs");
 
     let tool = compile_renderer(&out_dir);
     let mut cues: Vec<PathBuf> = std::fs::read_dir("audio/cues")
@@ -60,24 +65,33 @@ fn render_cues() {
     );
     for cue in &cues {
         let name = cue.file_stem().unwrap().to_str().unwrap().to_owned();
-        let pcm = out_dir.join(format!("{name}.u8"));
+        let wide = out_dir.join(format!("{name}.s16"));
+        let pcm = out_dir.join(format!("{name}.ulaw"));
         let status = Command::new(&tool)
             .arg(cue)
-            .arg(&pcm)
+            .arg(&wide)
             .arg(SAMPLE_RATE.to_string())
             .status()
             .expect("run the cue renderer");
         assert!(status.success(), "rendering {} failed", cue.display());
+        let mut samples: Vec<i16> = std::fs::read(&wide)
+            .expect("read rendered cue")
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&b| i16::from_le_bytes(b))
+            .collect();
         // Effects and stingers lose the silence the engine renders after
-        // them, so a voice frees itself the moment its sound ends. Music
-        // loops keep their exact length: the loop point depends on it.
+        // them (anything under one 8-bit step), so a voice frees itself the
+        // moment its sound ends. Music loops keep their exact length: the
+        // loop point depends on it.
         if !name.starts_with("music_") {
-            let mut bytes = std::fs::read(&pcm).expect("read rendered cue");
-            while bytes.last().is_some_and(|b| b.abs_diff(128) <= 1) {
-                bytes.pop();
+            while samples.last().is_some_and(|s| s.unsigned_abs() <= 256) {
+                samples.pop();
             }
-            std::fs::write(&pcm, bytes).expect("write trimmed cue");
         }
+        let bytes: Vec<u8> = samples.into_iter().map(mulaw_encode).collect();
+        std::fs::write(&pcm, bytes).expect("write encoded cue");
         table.push_str(&format!(
             "    ({name:?}, include_bytes!({:?})),\n",
             pcm.display().to_string()
@@ -95,7 +109,7 @@ fn render_cues() {
     levels.sort();
     table.push_str("pub const LEVEL_MUSIC: &[&[u8]] = &[\n");
     for name in &levels {
-        let pcm = out_dir.join(format!("{name}.u8"));
+        let pcm = out_dir.join(format!("{name}.ulaw"));
         table.push_str(&format!(
             "    include_bytes!({:?}),\n",
             pcm.display().to_string()

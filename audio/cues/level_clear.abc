@@ -6,6 +6,8 @@ L:1/16
 Q:1/4=160
 K:C
 % Spark bounding up, then the E minor triad climbing to a held high E.
+%%hold on
+%%master 114.8
 %%instrument brass wave=pulse amp=27 duty=28 attack=6 decay=120 sustain=70 release=280 gate=88 vibrato=6 fx=0
 %%instrument harm wave=pulse amp=18 duty=40 attack=6 decay=120 sustain=60 release=280 gate=88 fx=0
 %%instrument bass wave=triangle amp=30 attack=2 decay=160 sustain=60 release=280 gate=90 fx=0

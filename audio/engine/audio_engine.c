@@ -119,3 +119,23 @@ void audio_engine_free_buffer(unsigned char *buffer)
 {
     free(buffer);
 }
+
+int16_t *audio_engine_render_abc_file_s16(const char *path, int sample_rate, int *out_len)
+{
+    AbcMusic music;
+    SeqSong song;
+
+    if (out_len) *out_len = 0;
+    if (!path || !out_len || sample_rate <= 0)
+        return NULL;
+    if (abc_load(path, &music) != 0)
+        return NULL;
+    if (abc_build_seq_song(&music, &song) != 0)
+        return NULL;
+    return audio_mix_render_song_s16(&song, sample_rate, out_len);
+}
+
+void audio_engine_free_s16(int16_t *buffer)
+{
+    free(buffer);
+}

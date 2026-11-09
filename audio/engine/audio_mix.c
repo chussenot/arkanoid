@@ -2,6 +2,7 @@
 #include "audio_dsp.h"
 #include "audio_fx.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -23,6 +24,8 @@ typedef struct {
     int pwm_rate;
     int vibrato_depth;
     int vibrato_rate;
+    int vibrato_ramp;     /* BRYX: samples over which vibrato fades in; 0 = at once */
+    int age;              /* BRYX: samples since the note-on */
     int sample_rate;
     DspWaveform waveform;
     DspOscillator oscs[MIX_MAX_STACKED_OSC];
@@ -131,6 +134,8 @@ static void voice_set_frequency(MixVoiceState *voice, int sample_rate)
     int vib = (voice->vibrato_depth > 0 && voice->vibrato_rate > 0)
         ? (dsp_tri_lfo_q15(&voice->vibrato_phase, voice->vibrato_rate, sample_rate) * voice->vibrato_depth) / 32767
         : 0;
+    if (voice->vibrato_ramp > 0 && voice->age < voice->vibrato_ramp)
+        vib = (int)(((int64_t)vib * voice->age) / voice->vibrato_ramp);
     double base = dsp_freq_with_cents(voice->current_freq, vib);
 
     if (voice->osc_count == 1) {
@@ -164,6 +169,7 @@ static void voice_init(MixVoiceState *voice, const SeqInstrument *instrument,
     voice->pwm_rate = instrument->pwm_rate;
     voice->vibrato_depth = dsp_clampi(instrument->vibrato_depth_cents, 0, 120);
     voice->vibrato_rate = instrument->vibrato_rate;
+    voice->vibrato_ramp = dsp_samples_from_ms(sample_rate, instrument->vibrato_delay_ms);
     voice->sample_rate = sample_rate;
     voice->waveform = sanitize_waveform(instrument->waveform, instrument->noise_mode);
     voice->osc_count = (instrument->stacked_voices > 1) ? 2 : 1;
@@ -172,7 +178,10 @@ static void voice_init(MixVoiceState *voice, const SeqInstrument *instrument,
     if (voice->osc_count > MIX_MAX_STACKED_OSC) voice->osc_count = MIX_MAX_STACKED_OSC;
 
     for (int i = 0; i < voice->osc_count; i++) {
-        int amp = (voice->osc_count == 1) ? amplitude : amplitude / 2;
+        /* BRYX: the oscillator runs at the engine's internal scale; halving
+         * for a stacked pair happens there, so an odd amplitude keeps its
+         * last half step. */
+        int amp = (voice->osc_count == 1) ? (amplitude << DSP_FRAC_BITS) : ((amplitude << DSP_FRAC_BITS) / 2);
         dsp_osc_init(&voice->oscs[i], voice->waveform, amp);
         if (voice->waveform == DSP_WAVE_PULSE)
             dsp_osc_set_pulse_width_percent(&voice->oscs[i], pulse);
@@ -194,6 +203,7 @@ static int voice_next(MixVoiceState *voice)
     int mixed = 0;
 
     if (!voice->active) return 0;
+    voice->age++;
     if (voice->glide_remaining > 0) {
         voice->current_freq += voice->glide_step;
         voice->glide_remaining--;
@@ -221,24 +231,29 @@ static int voice_next(MixVoiceState *voice)
     return (mixed * env_q15) / 32767;
 }
 
-unsigned char *audio_mix_render_timeline(const SeqSong *song, const SeqTimeline *timeline,
-                                         int sample_rate, int *out_len)
+/* BRYX: the render core. Writes signed 16-bit samples: the engine's
+ * internal scale (8-bit steps shifted by DSP_FRAC_BITS) is exactly 16-bit
+ * full scale, so nothing is lost until the caller chooses a format. */
+int16_t *audio_mix_render_timeline_s16(const SeqSong *song, const SeqTimeline *timeline,
+                                       int sample_rate, int *out_len)
 {
-    unsigned char *buf;
+    int16_t *buf;
     MixTrackState tracks[SEQ_MAX_TRACKS];
     AudioFxBusState fx_states[SEQ_MAX_FX_BUSES];
     int fx_bus_levels[SEQ_MAX_FX_BUSES];
     int fx_bus_trigger[SEQ_MAX_FX_BUSES];
+    int key_struck[SEQ_MAX_FX_BUSES];
+    int master_permille;
     int base = 0;
 
     if (!song || !timeline || !out_len || timeline->total_steps <= 0 || timeline->total_samples <= 0)
         return NULL;
 
-    buf = malloc((size_t)timeline->total_samples);
+    buf = malloc((size_t)timeline->total_samples * sizeof(int16_t));
     if (!buf) return NULL;
-    memset(buf, 128, (size_t)timeline->total_samples);
     memset(tracks, 0, sizeof(tracks));
     memset(fx_states, 0, sizeof(fx_states));
+    master_permille = song->master_permille > 0 ? song->master_permille : 1000;
 
     for (int bus_index = 0; bus_index < song->fx_bus_count && bus_index < SEQ_MAX_FX_BUSES; bus_index++) {
         SeqFxBus cfg = normalize_fx_bus(&song->fx_buses[bus_index]);
@@ -257,13 +272,16 @@ unsigned char *audio_mix_render_timeline(const SeqSong *song, const SeqTimeline 
         const SeqPattern *pattern = &song->patterns[timeline_step->pattern_index];
         int samples_this_step = timeline_step->samples;
 
+        memset(key_struck, 0, sizeof(key_struck));
         for (int e = 0; e < event_count; e++) {
             const SeqNoteEvent *event = &events[e];
             const SeqTrack *track = &pattern->tracks[event->track_index];
             const SeqStep *step = &track->steps[event->step_index];
             const SeqInstrument *instrument = &song->instruments[event->instrument_index];
             int amp = track_amplitude(song, track, step, event->step_index);
-            int gate_samples = (event->duration_samples * event->gate_percent) / 100;
+            /* BRYX: a held note's gate spans every step tied to it. */
+            int held = seq_held_samples(song, timeline, absolute_step, event->track_index);
+            int gate_samples = (int)(((int64_t)held * event->gate_percent) / 100);
             double target_freq = midi_note_to_freq(event->note);
             MixTrackState *track_state = &tracks[event->track_index];
             MixVoiceState *voice = pick_voice_slot(track_state);
@@ -272,12 +290,16 @@ unsigned char *audio_mix_render_timeline(const SeqSong *song, const SeqTimeline 
                        track_state->last_freq, gate_samples, event->instrument_index,
                        event->note, event->fx_trigger, event->accent);
             track_state->last_freq = target_freq;
+            for (int b = 0; b < song->fx_bus_count; b++)
+                if (song->fx_buses[b].sidechain_key == event->track_index + 1)
+                    key_struck[b] = 1;
         }
 
         for (int i = 0; i < samples_this_step; i++) {
             int pre_fx_sum = 0;
             int fx_return_sum = 0;
             int master_sidechain_env_q15 = 32767;
+            int64_t out;
             memset(fx_bus_levels, 0, sizeof(fx_bus_levels));
             memset(fx_bus_trigger, 0, sizeof(fx_bus_trigger));
 
@@ -285,10 +307,14 @@ unsigned char *audio_mix_render_timeline(const SeqSong *song, const SeqTimeline 
                 for (int v = 0; v < MIX_VOICES_PER_TRACK; v++) {
                     MixVoiceState *voice = &tracks[track_index].voices[v];
                     int sample;
+                    int on_bus;
                     if (!voice->active) continue;
                     sample = voice_next(voice);
-                    pre_fx_sum += sample;
-                    if (voice->fx_bus >= 0 && voice->fx_bus < song->fx_bus_count) {
+                    on_bus = voice->fx_bus >= 0 && voice->fx_bus < song->fx_bus_count;
+                    /* BRYX: an insert bus takes its voices' dry signal. */
+                    if (!on_bus || !song->fx_buses[voice->fx_bus].insert)
+                        pre_fx_sum += sample;
+                    if (on_bus) {
                         int trig = voice->fx_trigger > 0 ? voice->fx_trigger : 0;
                         if (voice->accent > 0 && trig < 1) trig = 1;
                         fx_bus_levels[voice->fx_bus] += sample;
@@ -300,13 +326,20 @@ unsigned char *audio_mix_render_timeline(const SeqSong *song, const SeqTimeline 
 
             for (int bus_index = 0; bus_index < song->fx_bus_count; bus_index++) {
                 int sc_env = 32767;
+                int keyed = song->fx_buses[bus_index].sidechain_key > 0;
+                /* BRYX: a keyed sidechain fires once, on its key's note-on. */
+                int trigger = keyed ? (i == 0 && key_struck[bus_index]) : fx_bus_trigger[bus_index];
                 fx_return_sum += audio_fx_bus_process(&fx_states[bus_index], fx_bus_levels[bus_index],
-                                                      fx_bus_trigger[bus_index], &sc_env);
-                if (sc_env < master_sidechain_env_q15)
+                                                      trigger, &sc_env);
+                if (!keyed && sc_env < master_sidechain_env_q15)
                     master_sidechain_env_q15 = sc_env;
             }
 
-            buf[base + i] = (unsigned char)dsp_clamp_u8(128 + ((pre_fx_sum + fx_return_sum) * master_sidechain_env_q15) / 32767);
+            out = ((int64_t)(pre_fx_sum + fx_return_sum) * master_sidechain_env_q15) / 32767;
+            out = (out * master_permille) / 1000;
+            if (out > 32767) out = 32767;
+            if (out < -32768) out = -32768;
+            buf[base + i] = (int16_t)out;
         }
         base += samples_this_step;
     }
@@ -315,6 +348,45 @@ unsigned char *audio_mix_render_timeline(const SeqSong *song, const SeqTimeline 
         audio_fx_bus_free(&fx_states[i]);
     *out_len = timeline->total_samples;
     return buf;
+}
+
+/* The original 8-bit output, now quantized once from the 16-bit mix with
+ * triangular dither (a fixed-seed generator, so renders stay
+ * deterministic) instead of at every voice and every multiply. */
+unsigned char *audio_mix_render_timeline(const SeqSong *song, const SeqTimeline *timeline,
+                                         int sample_rate, int *out_len)
+{
+    int len = 0;
+    int16_t *wide = audio_mix_render_timeline_s16(song, timeline, sample_rate, &len);
+    unsigned char *buf;
+    uint32_t rng = 0x9e3779b9u;
+
+    if (!wide) return NULL;
+    buf = malloc((size_t)len);
+    if (!buf) {
+        free(wide);
+        return NULL;
+    }
+    for (int i = 0; i < len; i++) {
+        int d;
+        rng = rng * 1664525u + 1013904223u;
+        d = (int)((rng >> 24) & 0xff);
+        rng = rng * 1664525u + 1013904223u;
+        d -= (int)((rng >> 24) & 0xff);
+        buf[i] = (unsigned char)dsp_clamp_u8(128 + (int)floor(((double)wide[i] + d) / 256.0 + 0.5));
+    }
+    free(wide);
+    *out_len = len;
+    return buf;
+}
+
+int16_t *audio_mix_render_song_s16(const SeqSong *song, int sample_rate, int *out_len)
+{
+    SeqTimeline timeline;
+
+    if (seq_compile_timeline(song, sample_rate, &timeline) != 0)
+        return NULL;
+    return audio_mix_render_timeline_s16(song, &timeline, sample_rate, out_len);
 }
 
 unsigned char *audio_mix_render_song(const SeqSong *song, int sample_rate, int *out_len)

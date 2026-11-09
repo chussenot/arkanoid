@@ -20,6 +20,20 @@
 #define ABC_MAX_FX_BUSES   4
 #define SAMPLE_RATE_ABC    22050
 
+/* BRYX: instrument parameters the mixer always had but ABC could not
+ * reach, plus a vibrato fade-in. `set` has bit i on when field i was
+ * written, so a voice can tell "not given" from zero. */
+typedef struct {
+    int detune_cents;     /* bit 0: detune= (spread of a stacked pair, cents) */
+    int stack;            /* bit 1: stack= (2 = two detuned oscillators) */
+    int pwm_depth;        /* bit 2: pwm= (pulse-width sweep depth, duty percent) */
+    int pwm_rate;         /* bit 3: pwm_rate= (millihertz) */
+    int vibrato_rate;     /* bit 4: vibrato_rate= (millihertz) */
+    int vibrato_delay_ms; /* bit 5: vibrato_delay= (ms for vibrato to fade in) */
+    int accent_gain;      /* bit 6: accent= (percent added on accented steps) */
+    unsigned set;
+} AbcExtras;
+
 /* Named instrument preset */
 typedef struct {
     char name[32];        /* instrument name */
@@ -35,6 +49,7 @@ typedef struct {
     int vibrato_cents;
     int glide_ms;
     int fx_bus;          /* which FX bus (0-3) */
+    AbcExtras extras;    /* BRYX */
 } AbcInstrument;
 
 /* Pattern definition */
@@ -58,6 +73,8 @@ typedef struct {
     int ladder_amount;   /* moog ladder wet mix 0-100; 0 = disabled */
     int ladder_cutoff;   /* 1-100 (percent of Nyquist) */
     int ladder_resonance;/* 0-100 */
+    int insert;          /* BRYX: mode=insert */
+    char sidechain_key[32]; /* BRYX: sidechain_key=<voice or instrument name> */
 } AbcFxBus;
 
 typedef struct {
@@ -77,6 +94,8 @@ typedef struct {
     int glide_ms;
     int fx_bus;           /* which FX bus to use (0-3) */
     double freqs[ABC_MAX_NOTES]; /* frequency per step (0 = rest) */
+    unsigned char onset[ABC_MAX_NOTES]; /* BRYX: 1 where a written note begins */
+    AbcExtras extras;     /* BRYX */
     int note_count;
 } AbcVoice;
 
@@ -113,6 +132,9 @@ typedef struct {
 
     AbcVoice voices[ABC_MAX_VOICES];
     int voice_count;
+
+    int hold;             /* BRYX: %%hold on: a note sounds once for its written length */
+    int master_permille;  /* BRYX: %%master <percent>: output gain; 0 = unity */
 } AbcMusic;
 
 int abc_load(const char *path, AbcMusic *music);

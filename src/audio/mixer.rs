@@ -83,7 +83,7 @@ pub fn pan_gains(pan: f32) -> (f32, f32) {
     (angle.cos(), angle.sin())
 }
 
-/// Linear interpolation into `data` (the engine's 8-bit samples, read in
+/// Linear interpolation into `data` (the embedded mu-law bytes, read in
 /// place) at fractional position `pos`. Past the end is silence.
 fn sample_at(data: &[u8], pos: f64) -> f32 {
     let i = pos as usize;
@@ -273,8 +273,9 @@ mod tests {
 
     #[test]
     fn interpolation_reads_between_samples() {
-        let data = [128u8, 255];
-        assert!((sample_at(&data, 0.5) - 127.0 / 256.0).abs() < 1e-6);
+        let data = [0xFFu8, 0x80]; // mu-law silence, then full scale
+        assert!(sample(0x80) > 0.97);
+        assert!((sample_at(&data, 0.5) - sample(0x80) / 2.0).abs() < 1e-6);
         assert_eq!(sample_at(&data, 5.0), 0.0, "past the end is silence");
     }
 
