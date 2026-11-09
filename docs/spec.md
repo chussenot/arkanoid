@@ -66,7 +66,10 @@ cleared → next level; last level cleared → Victory screen.
 
 **Power-ups (exactly these nine, nothing more)**: dropped by 15% of
 destroyed bricks, uniformly among the nine, fall at 140 px/s, caught with
-the paddle:
+the paddle. A loaded levelset's level whose author placed bonuses drops
+exactly those instead: each marked brick drops its own (mapped in
+`docs/levelset-format.md`), every time, and unmarked bricks drop nothing;
+a power-up the game has switched off (`--classic`) drops nothing:
 - Widen (paddle ×1.5 for 15 s, timers stack by refresh, not addition)
 - Slow (ball speed ×0.7 once, floor at launch speed)
 - Multiball (spawn 2 extra balls from current ball position; life is

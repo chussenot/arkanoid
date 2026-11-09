@@ -8,7 +8,7 @@ use rand::{RngExt, SeedableRng};
 
 use crate::events::{GameEvent, PowerUpKind};
 use crate::levels::{self, BrickKind};
-use crate::levelset::{ExternalBrickSpawn, ExternalLevel, GRID_WIDTH};
+use crate::levelset::{AuthoredDrop, ExternalBrickSpawn, ExternalLevel, GRID_WIDTH};
 
 /// Player input for one fixed tick. Minimal for now; later milestones
 /// (pause menu navigation, etc.) may extend this.
@@ -505,12 +505,33 @@ fn build_bricks(built_in: BuiltInLevels, level_index: usize) -> Vec<Brick> {
 /// `levelset::GRID_WIDTH` (14) columns wide per docs/levelset-format.md --
 /// unlike the built-in levels, which can vary -- so centering doesn't need
 /// to inspect the spawns themselves.
-fn build_external_bricks(spawns: &[ExternalBrickSpawn]) -> Vec<Brick> {
+fn build_external_bricks(spawns: &[ExternalBrickSpawn]) -> (Vec<Brick>, Vec<AuthoredSpot>) {
     let offset_x = (PLAYFIELD_WIDTH - GRID_WIDTH as f32 * levels::BRICK_WIDTH) / 2.0;
-    spawns
+    let mut drops = Vec::new();
+    let bricks = spawns
         .iter()
-        .map(|spawn| brick_from_spawn(spawn.x, spawn.y, spawn.kind, offset_x))
-        .collect()
+        .map(|spawn| {
+            let brick = brick_from_spawn(spawn.x, spawn.y, spawn.kind, offset_x);
+            if let Some(drop) = spawn.powerup {
+                drops.push(AuthoredSpot {
+                    x: brick.x,
+                    y: brick.y,
+                    drop,
+                });
+            }
+            brick
+        })
+        .collect();
+    (bricks, drops)
+}
+
+/// A brick a loaded level's author gave a bonus: what it drops, keyed by
+/// the brick's center (a level's bricks never share one).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct AuthoredSpot {
+    x: f32,
+    y: f32,
+    drop: AuthoredDrop,
 }
 
 /// True if `ball` (a circle) overlaps `brick` (an AABB) — closest-point-
@@ -679,6 +700,14 @@ pub struct Game {
     /// mode -- either way this field doesn't care how its order was
     /// chosen, only that it plays them in the order given.
     external_levels: Option<Vec<ExternalLevel>>,
+    /// The current level's authored drops, when it is a loaded level whose
+    /// author placed bonuses: then each of those bricks drops exactly its
+    /// own, and no other brick rolls the random drop. Empty otherwise, and
+    /// every brick rolls (`maybe_drop_powerup`).
+    authored_drops: Vec<AuthoredSpot>,
+    /// Whether the current level is authored that way. It stays true as the
+    /// table empties: the bricks without a bonus never roll one.
+    authored_level: bool,
     /// Power-ups currently falling, not yet caught or missed.
     pub powerups: Vec<PowerUp>,
     /// Seconds left on an active Widen effect; 0 means inactive (paddle at
@@ -754,7 +783,7 @@ impl Game {
     pub fn with_campaign(mut self) -> Self {
         self.built_in = BuiltInLevels::Campaign;
         self.level = 1;
-        self.bricks = self.current_level_bricks();
+        self.load_level_bricks();
         self.ball = Ball::attached_to(&self.paddle);
         self
     }
@@ -808,7 +837,7 @@ impl Game {
         }
         self.external_levels = Some(levels);
         self.level = 1;
-        self.bricks = self.current_level_bricks();
+        self.load_level_bricks();
         self.ball = Ball::attached_to(&self.paddle);
         self.extra_balls.clear();
         self.powerups.clear();
@@ -817,12 +846,16 @@ impl Game {
 
     /// Bricks for whatever `self.level` currently refers to: the loaded
     /// external set if `load_external_levels` switched to one, else the
-    /// built-in `levels::LEVELS` (unchanged default path).
-    fn current_level_bricks(&self) -> Vec<Brick> {
-        match &self.external_levels {
+    /// built-in `levels::LEVELS` (unchanged default path). A loaded level
+    /// also brings the bonuses its author placed (`authored_drops`).
+    fn load_level_bricks(&mut self) {
+        let (bricks, drops) = match &self.external_levels {
             Some(levels) => build_external_bricks(&levels[self.level - 1].bricks),
-            None => build_bricks(self.built_in, self.level - 1),
-        }
+            None => (build_bricks(self.built_in, self.level - 1), Vec::new()),
+        };
+        self.bricks = bricks;
+        self.authored_level = !drops.is_empty();
+        self.authored_drops = drops;
     }
 
     /// Number of levels in whatever progression is currently active --
@@ -882,7 +915,7 @@ impl Game {
         self.gun = None;
         self.gun_cooldown = 0.0;
         self.stall_nudges = 0;
-        self.bricks = self.current_level_bricks();
+        self.load_level_bricks();
         self.reset_for_serve();
         self.state = GameState::Playing;
     }
@@ -901,6 +934,8 @@ impl Game {
             score: 0,
             level: 1,
             external_levels: None,
+            authored_drops: Vec::new(),
+            authored_level: false,
             powerups: Vec::new(),
             widen_timer: 0.0,
             pause_was_held: false,
@@ -1248,12 +1283,61 @@ impl Game {
         self.maybe_drop_powerup(brick.x, brick.y);
     }
 
-    /// Spec: 15% of destroyed bricks drop one of the three power-ups,
-    /// uniformly at random, falling from where the brick was.
+    /// Spec: 15% of destroyed bricks drop one of the enabled power-ups,
+    /// uniformly at random, falling from where the brick was. On a loaded
+    /// level whose author placed bonuses, the brick drops exactly its own
+    /// (if the game has that power-up enabled), and nothing else drops.
     fn maybe_drop_powerup(&mut self, x: f32, y: f32) {
+        if self.authored_level {
+            self.drop_authored(x, y);
+            return;
+        }
         if !self.rng.random_bool(POWERUP_DROP_CHANCE) {
             return;
         }
+        let kinds = self.enabled_powerups();
+        // An `i32` range, as v1 drew it: the same draw over 0..3 keeps
+        // `Features::V1` runs drop for drop identical to v1.
+        let kind = kinds[self.rng.random_range(0..kinds.len() as i32) as usize];
+        self.spawn_powerup(x, y, kind);
+    }
+
+    /// A loaded level's authored bonus, if the brick at (`x`, `y`) has one.
+    /// `?` and the joker draw their power-up now; a power-up the game has
+    /// switched off (`--classic`) drops nothing.
+    fn drop_authored(&mut self, x: f32, y: f32) {
+        let Some(at) = self
+            .authored_drops
+            .iter()
+            .position(|spot| spot.x == x && spot.y == y)
+        else {
+            return;
+        };
+        let drop = self.authored_drops.swap_remove(at).drop;
+        let enabled = self.enabled_powerups();
+        let kind = match drop {
+            AuthoredDrop::Kind(kind) => enabled.contains(&kind).then_some(kind),
+            AuthoredDrop::Random => Some(enabled[self.rng.random_range(0..enabled.len())]),
+            AuthoredDrop::RandomHelpful => {
+                let helpful: Vec<_> = enabled
+                    .into_iter()
+                    .filter(|&k| k != PowerUpKind::Tiny)
+                    .collect();
+                Some(helpful[self.rng.random_range(0..helpful.len())])
+            }
+        };
+        if let Some(kind) = kind {
+            self.spawn_powerup(x, y, kind);
+        }
+    }
+
+    fn spawn_powerup(&mut self, x: f32, y: f32, kind: PowerUpKind) {
+        self.powerups.push(PowerUp { x, y, kind });
+        self.events.push(GameEvent::PowerUpSpawned(kind));
+    }
+
+    /// The power-ups this game can drop, in the order v1 drew them.
+    fn enabled_powerups(&self) -> Vec<PowerUpKind> {
         let mut kinds = vec![
             PowerUpKind::Widen,
             PowerUpKind::Slow,
@@ -1274,11 +1358,7 @@ impl Game {
         if self.features.warp {
             kinds.push(PowerUpKind::Break);
         }
-        // An `i32` range, as v1 drew it: the same draw over 0..3 keeps
-        // `Features::V1` runs drop for drop identical to v1.
-        let kind = kinds[self.rng.random_range(0..kinds.len() as i32) as usize];
-        self.powerups.push(PowerUp { x, y, kind });
-        self.events.push(GameEvent::PowerUpSpawned(kind));
+        kinds
     }
 
     fn destructible_bricks_remaining(&self) -> usize {
@@ -1300,7 +1380,7 @@ impl Game {
         }
 
         self.level += 1;
-        self.bricks = self.current_level_bricks();
+        self.load_level_bricks();
         self.ball = Ball::attached_to(&self.paddle);
         self.extra_balls.clear();
         self.powerups.clear();
@@ -2257,6 +2337,102 @@ mod tests {
                 powerup: None,
             }],
         }
+    }
+
+    /// A loaded level of `n` bricks in a row, each with `drop`, plus one
+    /// brick with none.
+    fn authored_level(n: usize, drop: AuthoredDrop) -> ExternalLevel {
+        let mut level = external_level("Authored", 0.0, BrickKind::Normal);
+        level.bricks.clear();
+        for i in 0..=n {
+            level.bricks.push(ExternalBrickSpawn {
+                x: (i % 14) as f32 * 52.0,
+                y: (i / 14) as f32 * 22.0,
+                kind: BrickKind::Normal,
+                powerup: (i < n).then_some(drop),
+            });
+        }
+        level
+    }
+
+    fn drop_from_every_brick(game: &mut Game) -> Vec<PowerUpKind> {
+        for brick in game.bricks.clone() {
+            game.maybe_drop_powerup(brick.x, brick.y);
+        }
+        game.powerups.iter().map(|p| p.kind).collect()
+    }
+
+    #[test]
+    fn a_loaded_levels_authored_bonus_drops_and_its_other_bricks_never_do() {
+        let mut game = playing_game();
+        game.load_external_levels(vec![authored_level(
+            1,
+            AuthoredDrop::Kind(PowerUpKind::Glue),
+        )]);
+        let (marked, plain) = (game.bricks[0], game.bricks[1]);
+        for _ in 0..200 {
+            game.maybe_drop_powerup(plain.x, plain.y);
+        }
+        assert!(
+            game.powerups.is_empty(),
+            "no random roll on an authored level"
+        );
+        game.maybe_drop_powerup(marked.x, marked.y);
+        game.maybe_drop_powerup(marked.x, marked.y);
+        let kinds: Vec<_> = game.powerups.iter().map(|p| p.kind).collect();
+        assert_eq!(kinds, vec![PowerUpKind::Glue], "every time, and once");
+        game.maybe_drop_powerup(plain.x, plain.y);
+        assert_eq!(
+            game.powerups.len(),
+            1,
+            "still none once the bonuses are spent"
+        );
+    }
+
+    #[test]
+    fn random_and_joker_bonuses_draw_when_the_brick_breaks() {
+        let mut game = playing_game();
+        game.load_external_levels(vec![authored_level(60, AuthoredDrop::Random)]);
+        let random = drop_from_every_brick(&mut game);
+        assert_eq!(random.len(), 60);
+        assert!(
+            random.contains(&PowerUpKind::Tiny),
+            "any power-up: {random:?}"
+        );
+
+        let mut game = playing_game();
+        game.load_external_levels(vec![authored_level(60, AuthoredDrop::RandomHelpful)]);
+        let joker = drop_from_every_brick(&mut game);
+        assert_eq!(joker.len(), 60);
+        assert!(!joker.contains(&PowerUpKind::Tiny), "the joker only helps");
+        let distinct: std::collections::HashSet<_> = joker.iter().collect();
+        assert!(distinct.len() > 3, "{joker:?}");
+    }
+
+    #[test]
+    fn an_authored_power_up_the_game_has_switched_off_drops_nothing() {
+        let mut game = playing_game().with_features(Features::V1);
+        game.load_external_levels(vec![authored_level(
+            3,
+            AuthoredDrop::Kind(PowerUpKind::Laser),
+        )]);
+        assert!(
+            drop_from_every_brick(&mut game).is_empty(),
+            "no lasers in --classic"
+        );
+    }
+
+    #[test]
+    fn a_loaded_level_without_authored_bonuses_rolls_the_usual_drop() {
+        let mut game = playing_game();
+        let mut level = external_level("Plain", 0.0, BrickKind::Normal);
+        level.bricks[0].powerup = None;
+        game.load_external_levels(vec![level]);
+        let brick = game.bricks[0];
+        for _ in 0..200 {
+            game.maybe_drop_powerup(brick.x, brick.y);
+        }
+        assert!(!game.powerups.is_empty(), "15% over 200 tries");
     }
 
     #[test]

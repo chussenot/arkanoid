@@ -10,19 +10,22 @@
 //! arkanoid-v2-a3 -- that directory is gitignored, nothing under it ships
 //! in this repo).
 //!
-//! Mapping policy (per this bead's acceptance criteria): our own
-//! `BrickKind`/`PowerUpKind` have far fewer distinctions than LBreakoutHD's
-//! 26 brick chars / 29 bonus chars, so this is a many-to-few, lossy
-//! mapping -- normal-tier bricks collapse to `Normal`, every multi-hit or
-//! regenerating brick collapses to `Armored` (always 2 hits in our
-//! engine), walls and energy-ball-only bricks collapse to `Indestructible`
-//! ("silver", per docs/spec.md). Only the 3 bonus chars whose semantics
-//! actually match one of our exactly-3 power-ups map to one; every other
-//! recognized bonus char, and any character outside either documented
-//! table, degrades to "no drop" -- but unlike upstream (which silently
-//! falls through on unrecognized bonus chars), every such cell pushes a
-//! `source:line: message` warning onto the returned `LevelSet`, satisfying
-//! "warn with file:line, never panic or silently misrender".
+//! Mapping policy: our own `BrickKind`/`PowerUpKind` have far fewer
+//! distinctions than LBreakoutHD's 26 brick chars / 29 bonus chars, so
+//! this is a many-to-few, lossy mapping -- normal-tier bricks collapse to
+//! `Normal`, every multi-hit or regenerating brick collapses to `Armored`
+//! (always 2 hits in our engine), walls and energy-ball-only bricks
+//! collapse to `Indestructible` ("silver", per docs/spec.md).
+//!
+//! Bonus chars map to the nine power-ups wherever an extra has a real
+//! equivalent ([`bonus_cell`]), and `?`/`j` become a power-up drawn when
+//! the brick breaks ([`AuthoredDrop`]). The game drops exactly what a
+//! level's author placed (`Game::load_external_levels`). Extras with no
+//! equivalent (score bonuses, goldshower, the maluses, the wall, the
+//! magnets, the timer) drop nothing, and each file reports them once, as
+//! one summary line of counts, rather than a warning per cell. A
+//! character outside either documented table is corrupt data: it still
+//! warns with `source:line`, never panics, never silently misrenders.
 //!
 //! Wired into `main.rs` via `mod levelset;` and `--levelset <path>`
 //! (arkanoid-v2-a4), which today only reads `LevelSet.{levels,warnings}`
@@ -31,12 +34,12 @@
 //! `Game::load_external_levels`, and [`random10`] below picks the
 //! RANDOM10 menu mode's subset -- but `main.rs` itself doesn't call
 //! either yet (feeding a real `--levelset` load into `Game` is
-//! arkanoid-v2-a8's integration job). `ExternalBrickSpawn.powerup` (no
-//! gameplay hook yet) and `ExternalLevel.author`/`.name` (no HUD yet)
-//! are still read only by this module's own tests, hence the module-wide
-//! `#[allow(dead_code)]` still standing.
+//! arkanoid-v2-a8's integration job). `ExternalLevel.author`/`.name` (no
+//! HUD yet) are still read only by this module's own tests, hence the
+//! module-wide `#[allow(dead_code)]` still standing.
 #![allow(dead_code)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -52,15 +55,28 @@ use crate::levels::{BrickKind, BRICK_HEIGHT, BRICK_WIDTH};
 pub const GRID_WIDTH: usize = 14;
 pub const GRID_HEIGHT: usize = 18;
 
+/// What a level's author placed in a brick's bonus cell, as BRYX drops it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthoredDrop {
+    /// This power-up, every time the brick breaks.
+    Kind(PowerUpKind),
+    /// `?`, LBreakout's random extra: any power-up the game has enabled,
+    /// drawn when the brick breaks.
+    Random,
+    /// `j`, LBreakout's joker (an extra that only helps): a power-up drawn
+    /// when the brick breaks, never Tiny.
+    RandomHelpful,
+}
+
 /// One brick to spawn, in the same grid-local-pixel convention as
-/// `levels::BrickSpawn`, plus the power-up (if any) the bonus grid pairs
-/// with this cell.
+/// `levels::BrickSpawn`, plus the drop (if any) the bonus grid pairs with
+/// this cell.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExternalBrickSpawn {
     pub x: f32,
     pub y: f32,
     pub kind: BrickKind,
-    pub powerup: Option<PowerUpKind>,
+    pub powerup: Option<AuthoredDrop>,
 }
 
 /// One parsed `Level:` block.
@@ -123,25 +139,54 @@ fn brick_cell(ch: char) -> BrickCell {
 enum BonusCell {
     /// `.` -- designated empty, never warns.
     Empty,
-    /// Semantics match one of our exactly-3 power-ups.
-    Mapped(PowerUpKind),
-    /// A real upstream bonus/malus char (score bonus, extra life, malus
-    /// effects, ...) that has no equivalent in our 3-power-up set --
-    /// degrades to "no drop", but (unlike upstream's silent fallthrough)
-    /// still warns.
-    Recognized,
+    /// An extra BRYX drops (a power-up, or one drawn when the brick breaks).
+    Mapped(AuthoredDrop),
+    /// A real upstream extra with no BRYX equivalent, named as the file
+    /// summary reports it. Drops nothing.
+    NoEquivalent(&'static str),
     /// Not in the documented 29-character table -- warns, maps to no drop.
     Unsupported,
 }
 
+/// One bonus-grid character (docs/levelset-format.md's table) as BRYX
+/// reads it. The mapping keeps an extra's *effect* where BRYX has one:
+/// a sticky paddle is Glue, a weapon is Laser, metal (piercing) ball is
+/// Super laser, an explosive ball (it clears an area) is Laser, the
+/// shortened paddle is Tiny, an extra life is Player.
 fn bonus_cell(ch: char) -> BonusCell {
+    use AuthoredDrop::{Kind, Random, RandomHelpful};
+    let mapped = |drop| BonusCell::Mapped(drop);
     match ch {
         '.' => BonusCell::Empty,
-        '+' => BonusCell::Mapped(PowerUpKind::Widen), // lengthen paddle
-        '<' => BonusCell::Mapped(PowerUpKind::Slow),  // slow ball
-        'b' => BonusCell::Mapped(PowerUpKind::Multiball), // extra ball
-        '0' | '1' | '2' | '3' | '4' | '5' | 'g' | '-' | 'l' | 's' | 'm' | 'w' | 'f' | 'p' | '?'
-        | '>' | 'j' | 'd' | 'c' | '~' | '!' | '&' | '*' | '}' | '{' | 'W' => BonusCell::Recognized,
+        '+' => mapped(Kind(PowerUpKind::Widen)), // lengthen paddle
+        '<' => mapped(Kind(PowerUpKind::Slow)),  // slow ball
+        'b' => mapped(Kind(PowerUpKind::Multiball)), // extra ball
+        's' => mapped(Kind(PowerUpKind::Glue)),  // slime: the paddle catches the ball
+        'p' => mapped(Kind(PowerUpKind::Laser)), // weapon: the paddle shoots
+        '*' => mapped(Kind(PowerUpKind::Laser)), // explosive ball: clears an area
+        'm' => mapped(Kind(PowerUpKind::SuperLaser)), // metal ball: pierces bricks
+        '-' => mapped(Kind(PowerUpKind::Tiny)),  // shorten paddle
+        'l' => mapped(Kind(PowerUpKind::Player)), // extra life
+        '?' => mapped(Random),
+        'j' => mapped(RandomHelpful), // joker
+        '0' => BonusCell::NoEquivalent("+200 score"),
+        '1' => BonusCell::NoEquivalent("+500 score"),
+        '2' => BonusCell::NoEquivalent("+1000 score"),
+        '3' => BonusCell::NoEquivalent("+2000 score"),
+        '4' => BonusCell::NoEquivalent("+5000 score"),
+        '5' => BonusCell::NoEquivalent("+10000 score"),
+        'g' => BonusCell::NoEquivalent("goldshower"),
+        'w' => BonusCell::NoEquivalent("wall"),
+        'f' => BonusCell::NoEquivalent("frozen paddle"),
+        '>' => BonusCell::NoEquivalent("fast ball"),
+        'd' => BonusCell::NoEquivalent("darkness"),
+        'c' => BonusCell::NoEquivalent("chaos"),
+        '~' => BonusCell::NoEquivalent("ghost paddle"),
+        '!' => BonusCell::NoEquivalent("disable"),
+        '&' => BonusCell::NoEquivalent("add time"),
+        '}' => BonusCell::NoEquivalent("bonus magnet"),
+        '{' => BonusCell::NoEquivalent("malus magnet"),
+        'W' => BonusCell::NoEquivalent("weak ball"),
         _ => BonusCell::Unsupported,
     }
 }
@@ -162,10 +207,37 @@ pub fn parse_levelset(source: &str, content: &str) -> LevelSet {
 
     let mut levels = Vec::new();
     let mut warnings = Vec::new();
-    while let Some(level) = parse_one_level(source, &lines, &mut i, &mut warnings) {
+    let mut no_equivalent = BTreeMap::new();
+    while let Some(level) =
+        parse_one_level(source, &lines, &mut i, &mut warnings, &mut no_equivalent)
+    {
         levels.push(level);
     }
+    if let Some(summary) = no_equivalent_summary(source, &no_equivalent) {
+        warnings.push(summary);
+    }
     LevelSet { levels, warnings }
+}
+
+/// One line for the whole file: the extras its authors placed on bricks
+/// that BRYX has no power-up for, most frequent first. Upstream extras
+/// like these are normal data, not errors, so they are reported once
+/// rather than cell by cell.
+fn no_equivalent_summary(source: &str, counts: &BTreeMap<&'static str, usize>) -> Option<String> {
+    if counts.is_empty() {
+        return None;
+    }
+    let total: usize = counts.values().sum();
+    let mut by_count: Vec<_> = counts.iter().collect();
+    by_count.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+    let list: Vec<String> = by_count
+        .iter()
+        .map(|(name, n)| format!("{name} x{n}"))
+        .collect();
+    Some(format!(
+        "{source}: {total} bonus extra(s) have no BRYX power-up and drop nothing: {}",
+        list.join(", ")
+    ))
 }
 
 /// Parses one `Level:` block starting at `*i`, advancing `*i` past it.
@@ -178,6 +250,7 @@ fn parse_one_level(
     lines: &[&str],
     i: &mut usize,
     warnings: &mut Vec<String>,
+    no_equivalent: &mut BTreeMap<&'static str, usize>,
 ) -> Option<ExternalLevel> {
     if !lines.get(*i)?.starts_with("Level:") {
         return None;
@@ -198,20 +271,27 @@ fn parse_one_level(
         return None;
     }
     *i += 1;
-    let bonus_grid = read_grid(source, lines, i, warnings, "bonus", bonus_cell_to_powerup)?;
+    let bonus_grid = read_grid(source, lines, i, warnings, "bonus", bonus_cell_checked)?;
 
     let mut bricks = Vec::new();
     for row in 0..GRID_HEIGHT {
         for col in 0..GRID_WIDTH {
+            // A bonus char over an empty brick cell never triggers
+            // (docs/levelset-format.md), so only cells with a brick count.
             if let Some(kind) = brick_grid[row][col] {
+                let powerup = match bonus_grid[row][col] {
+                    Some(BonusCell::Mapped(drop)) => Some(drop),
+                    Some(BonusCell::NoEquivalent(name)) => {
+                        *no_equivalent.entry(name).or_insert(0) += 1;
+                        None
+                    }
+                    _ => None,
+                };
                 bricks.push(ExternalBrickSpawn {
                     x: col as f32 * BRICK_WIDTH,
                     y: row as f32 * BRICK_HEIGHT,
                     kind,
-                    // A bonus char over an empty brick cell never triggers
-                    // (docs/levelset-format.md) -- moot here since we only
-                    // reach this branch when the brick cell is occupied.
-                    powerup: bonus_grid[row][col],
+                    powerup,
                 });
             }
         }
@@ -264,19 +344,30 @@ fn brick_cell_to_kind(ch: char) -> (Option<BrickKind>, Option<&'static str>) {
     }
 }
 
-fn bonus_cell_to_powerup(ch: char) -> (Option<PowerUpKind>, Option<&'static str>) {
+/// A bonus cell, warning only on a character outside the documented table
+/// (extras with no equivalent go into the file's summary instead).
+fn bonus_cell_checked(ch: char) -> (Option<BonusCell>, Option<&'static str>) {
     match bonus_cell(ch) {
-        BonusCell::Empty => (None, None),
-        BonusCell::Mapped(k) => (Some(k), None),
-        BonusCell::Recognized => (None, Some("has no matching power-up -> no drop")),
         BonusCell::Unsupported => (None, Some("is unsupported -> no drop")),
+        cell => (Some(cell), None),
     }
 }
 
 /// Reads and parses one `.lbl`-style file from disk.
 pub fn load_file(path: &Path) -> io::Result<LevelSet> {
-    let content = fs::read_to_string(path)?;
+    let content = decode(fs::read(path)?);
     Ok(parse_levelset(&path.display().to_string(), &content))
+}
+
+/// A levelset's text: UTF-8 when it is, otherwise Latin-1, the encoding
+/// LBreakout's older sets were saved in (a level named "Pel\xe9"). Every
+/// byte is a Latin-1 character, so no file is ever refused for its
+/// encoding; the grids themselves are ASCII either way.
+fn decode(bytes: Vec<u8>) -> String {
+    match String::from_utf8(bytes) {
+        Ok(text) => text,
+        Err(err) => err.into_bytes().into_iter().map(char::from).collect(),
+    }
 }
 
 /// Scans `dir` (non-recursive) for `.lbl` files and loads each one,
@@ -423,15 +514,31 @@ mod tests {
 
     #[test]
     fn bonus_table_matches_documented_categories() {
+        use AuthoredDrop::{Kind, Random, RandomHelpful};
         assert_eq!(bonus_cell('.'), BonusCell::Empty);
-        assert_eq!(bonus_cell('+'), BonusCell::Mapped(PowerUpKind::Widen));
-        assert_eq!(bonus_cell('<'), BonusCell::Mapped(PowerUpKind::Slow));
-        assert_eq!(bonus_cell('b'), BonusCell::Mapped(PowerUpKind::Multiball));
-        for ch in [
-            '0', '1', '2', '3', '4', '5', 'g', '-', 'l', 's', 'm', 'w', 'f', 'p', '?', '>', 'j',
-            'd', 'c', '~', '!', '&', '*', '}', '{', 'W',
+        for (ch, drop) in [
+            ('+', Kind(PowerUpKind::Widen)),
+            ('<', Kind(PowerUpKind::Slow)),
+            ('b', Kind(PowerUpKind::Multiball)),
+            ('s', Kind(PowerUpKind::Glue)),
+            ('p', Kind(PowerUpKind::Laser)),
+            ('*', Kind(PowerUpKind::Laser)),
+            ('m', Kind(PowerUpKind::SuperLaser)),
+            ('-', Kind(PowerUpKind::Tiny)),
+            ('l', Kind(PowerUpKind::Player)),
+            ('?', Random),
+            ('j', RandomHelpful),
         ] {
-            assert_eq!(bonus_cell(ch), BonusCell::Recognized, "char {ch:?}");
+            assert_eq!(bonus_cell(ch), BonusCell::Mapped(drop), "char {ch:?}");
+        }
+        for ch in [
+            '0', '1', '2', '3', '4', '5', 'g', 'w', 'f', '>', 'd', 'c', '~', '!', '&', '}', '{',
+            'W',
+        ] {
+            assert!(
+                matches!(bonus_cell(ch), BonusCell::NoEquivalent(_)),
+                "char {ch:?}"
+            );
         }
         assert_eq!(bonus_cell('_'), BonusCell::Unsupported);
     }
@@ -441,9 +548,15 @@ mod tests {
         // '+' grows the paddle in Bonus but is entirely unsupported in
         // Bricks; 'b' is a 2-hit armored brick but an extra-ball bonus.
         assert_eq!(brick_cell('+'), BrickCell::Unsupported);
-        assert_eq!(bonus_cell('+'), BonusCell::Mapped(PowerUpKind::Widen));
+        assert_eq!(
+            bonus_cell('+'),
+            BonusCell::Mapped(AuthoredDrop::Kind(PowerUpKind::Widen))
+        );
         assert_eq!(brick_cell('b'), BrickCell::Kind(BrickKind::Armored));
-        assert_eq!(bonus_cell('b'), BonusCell::Mapped(PowerUpKind::Multiball));
+        assert_eq!(
+            bonus_cell('b'),
+            BonusCell::Mapped(AuthoredDrop::Kind(PowerUpKind::Multiball))
+        );
     }
 
     #[test]
@@ -461,7 +574,7 @@ mod tests {
                 x: 0.0,
                 y: 0.0,
                 kind: BrickKind::Normal,
-                powerup: Some(PowerUpKind::Widen),
+                powerup: Some(AuthoredDrop::Kind(PowerUpKind::Widen)),
             }
         );
         assert_eq!(
@@ -502,13 +615,17 @@ mod tests {
     }
 
     #[test]
-    fn recognized_but_unmapped_bonus_char_warns_and_drops_to_no_powerup() {
+    fn extras_with_no_equivalent_drop_nothing_and_are_summed_once_per_file() {
         let mut content = one_level_fixture();
-        content = content.replacen('+', "0", 1); // '0' = +200 score, unmapped.
-        let set = parse_levelset("bad.lbl", &content);
+        content = content.replacen('+', "0", 1); // '0' = +200 score, no equivalent.
+        let content = content.clone() + &content; // two levels, one '0' on a brick each
+        let set = parse_levelset("set.lbl", &content);
         assert_eq!(set.levels[0].bricks[0].powerup, None);
-        assert_eq!(set.warnings.len(), 1);
-        assert!(set.warnings[0].contains("no matching power-up"));
+        assert_eq!(set.warnings.len(), 1, "{:?}", set.warnings);
+        assert_eq!(
+            set.warnings[0],
+            "set.lbl: 2 bonus extra(s) have no BRYX power-up and drop nothing: +200 score x2"
+        );
     }
 
     #[test]
@@ -519,6 +636,22 @@ mod tests {
         assert_eq!(set.levels[0].bricks[0].powerup, None);
         assert_eq!(set.warnings.len(), 1);
         assert!(set.warnings[0].contains("unsupported"));
+    }
+
+    #[test]
+    fn a_latin1_levelset_still_loads_with_its_names() {
+        assert_eq!(decode(b"Pel\xe9".to_vec()), "Pel\u{e9}");
+        assert_eq!(
+            decode("Pel\u{e9}".as_bytes().to_vec()),
+            "Pel\u{e9}",
+            "UTF-8 stays UTF-8"
+        );
+        let mut bytes = one_level_fixture().into_bytes();
+        let at = bytes.windows(9).position(|w| w == b"Level One").unwrap();
+        bytes.splice(at..at + 9, b"Niv\xe9au".iter().copied());
+        let set = parse_levelset("latin1.lbl", &decode(bytes));
+        assert_eq!(set.levels.len(), 1);
+        assert_eq!(set.levels[0].name, "Niv\u{e9}au");
     }
 
     #[test]
@@ -671,18 +804,27 @@ mod tests {
                 .unwrap_or_else(|| panic!("no spawn at col {col} row {row}"))
         };
 
-        // The three "Mapped" bonus chars sit over Bricks row 0's three
-        // Indestructible chars -- proves both that the mapping is correct
-        // and that Bricks/Bonus are read from two independent tables (`b`
-        // means Armored in one and Multiball in the other).
+        // Bonus row 0 sits over Bricks row 0 -- proves both that the
+        // mapping is correct and that Bricks/Bonus are read from two
+        // independent tables (`b` means Armored in one and Multiball in
+        // the other).
+        use AuthoredDrop::{Kind, Random, RandomHelpful};
         assert_eq!(at(0, 0).kind, BrickKind::Indestructible); // 'E'
-        assert_eq!(at(0, 0).powerup, Some(PowerUpKind::Widen)); // '+'
+        assert_eq!(at(0, 0).powerup, Some(Kind(PowerUpKind::Widen))); // '+'
         assert_eq!(at(1, 0).kind, BrickKind::Indestructible); // '#'
-        assert_eq!(at(1, 0).powerup, Some(PowerUpKind::Slow)); // '<'
+        assert_eq!(at(1, 0).powerup, Some(Kind(PowerUpKind::Slow))); // '<'
         assert_eq!(at(2, 0).kind, BrickKind::Indestructible); // '@'
-        assert_eq!(at(2, 0).powerup, Some(PowerUpKind::Multiball)); // 'b' (Bonus)
+        assert_eq!(at(2, 0).powerup, Some(Kind(PowerUpKind::Multiball))); // 'b' (Bonus)
         assert_eq!(at(3, 0).kind, BrickKind::Armored); // 'b' (Bricks)
-        assert_eq!(at(3, 0).powerup, None, "'0' is Recognized, not Mapped");
+        assert_eq!(at(3, 0).powerup, None, "'0' (+200 score) has no equivalent");
+        assert_eq!(at(10, 0).powerup, Some(Kind(PowerUpKind::Tiny))); // '-'
+        assert_eq!(at(11, 0).powerup, Some(Kind(PowerUpKind::Player))); // 'l'
+        assert_eq!(at(12, 0).powerup, Some(Kind(PowerUpKind::Glue))); // 's'
+        assert_eq!(at(13, 0).powerup, Some(Kind(PowerUpKind::SuperLaser))); // 'm'
+        assert_eq!(at(2, 1).powerup, Some(Kind(PowerUpKind::Laser))); // 'p'
+        assert_eq!(at(3, 1).powerup, Some(Random)); // '?'
+        assert_eq!(at(5, 1).powerup, Some(RandomHelpful)); // 'j'
+        assert_eq!(at(11, 1).powerup, Some(Kind(PowerUpKind::Laser))); // '*'
         assert_eq!(at(6, 1).kind, BrickKind::Normal, "'F' is an alias of 'f'");
 
         // Exactly the 26 documented non-empty brick chars produced a spawn
@@ -705,10 +847,11 @@ mod tests {
 
         assert_eq!(count("brick char 'Q'"), 1, "the one unsupported brick char");
         assert_eq!(count("bonus char '_'"), 1, "the one unsupported bonus char");
-        // The 26 documented-but-unmapped Bonus chars ('0'..'W') each warn
-        // once with this reason.
-        assert_eq!(count("no matching power-up"), 26);
-        assert_eq!(set.warnings.len(), 28, "nothing else should ever warn");
+        // The documented extras with no equivalent, over a brick, are one
+        // summary line: 0-5 and g on row 0, w f > d c ~ ! & on row 1 (the
+        // '}' '{' and 'W' cells have no brick under them, so never count).
+        assert_eq!(count("15 bonus extra(s) have no BRYX power-up"), 1);
+        assert_eq!(set.warnings.len(), 3, "nothing else should ever warn");
     }
 
     #[test]

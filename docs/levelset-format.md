@@ -114,6 +114,18 @@ This grid is parallel to the brick grid: same 14×18 shape, one line of
 brick at the *same* `[x][y]` in the brick grid is destroyed (a bonus char
 over an empty brick cell is simply never triggered).
 
+**How BRYX uses it.** The last column says what each extra drops in BRYX
+(`levelset::bonus_cell`). On a level with at least one mapped extra, each
+marked brick drops its own, every time, and no other brick drops anything;
+a level with none rolls BRYX's usual 15% drop. Extras with no BRYX
+equivalent (score bonuses, goldshower, the wall, the maluses, the
+magnets, the timer) drop nothing, and each file reports them once, as one
+summary line of counts. Across the 136 fetched sets, mapped extras land
+on 16.5% of breakable bricks, close to BRYX's own 15%.
+
+Files are read as UTF-8, or as Latin-1 when they aren't UTF-8: two
+fetched sets (`Fantaisie`, `Nations`) name their levels in Latin-1.
+
 **Important divergence from the brick grid**: the real engine does *not*
 warn on an unrecognized extras char — the lookup loop (`bricks.c` ~line
 752) just falls through with no match and no `printf`, leaving the cell's
@@ -124,38 +136,38 @@ acceptance criteria, treat any bonus char outside the table the same way
 as an unsupported brick char — warn, then map to "no power-up" — rather
 than reproducing the original engine's silent fallthrough.
 
-| char | extra | category |
-|---|---|---|
-| `.` | none | designated empty, never warns |
-| `0` | +200 score | bonus |
-| `1` | +500 score | bonus |
-| `2` | +1000 score | bonus |
-| `3` | +2000 score | bonus |
-| `4` | +5000 score | bonus |
-| `5` | +10000 score | bonus |
-| `g` | goldshower | bonus |
-| `-` | shorten paddle | malus |
-| `+` | lengthen (widen) paddle | bonus |
-| `l` | extra life | bonus |
-| `s` | slime paddle (catches ball) | bonus |
-| `m` | metal ball | bonus |
-| `b` | extra ball (multiball) | bonus |
-| `w` | protective wall | bonus |
-| `f` | frozen paddle | malus |
-| `p` | weapon (paddle can shoot) | bonus |
-| `?` | random extra | either |
-| `>` | fast ball | malus |
-| `<` | slow ball | bonus |
-| `j` | joker | bonus |
-| `d` | darkness | malus |
-| `c` | chaos (erratic paddle/ball behavior) | malus |
-| `~` | ghost paddle | malus |
-| `!` | disable (paddle input disabled) | malus |
-| `&` | add time (bonus-level timer) | bonus |
-| `*` | explosive ball | bonus |
-| `}` | bonus magnet | bonus |
-| `{` | malus magnet | malus |
-| `W` | weak ball | malus |
+| char | extra | category | BRYX drops |
+|---|---|---|---|
+| `.` | none | designated empty, never warns | — |
+| `0` | +200 score | bonus | nothing (score) |
+| `1` | +500 score | bonus | nothing (score) |
+| `2` | +1000 score | bonus | nothing (score) |
+| `3` | +2000 score | bonus | nothing (score) |
+| `4` | +5000 score | bonus | nothing (score) |
+| `5` | +10000 score | bonus | nothing (score) |
+| `g` | goldshower | bonus | nothing (score) |
+| `-` | shorten paddle | malus | Tiny |
+| `+` | lengthen (widen) paddle | bonus | Widen |
+| `l` | extra life | bonus | Player |
+| `s` | slime paddle (catches ball) | bonus | Glue |
+| `m` | metal ball | bonus | Super laser (both pierce) |
+| `b` | extra ball (multiball) | bonus | Multiball |
+| `w` | protective wall | bonus | nothing |
+| `f` | frozen paddle | malus | nothing |
+| `p` | weapon (paddle can shoot) | bonus | Laser |
+| `?` | random extra | either | any enabled power-up, drawn when the brick breaks |
+| `>` | fast ball | malus | nothing |
+| `<` | slow ball | bonus | Slow |
+| `j` | joker | bonus | a helpful power-up (never Tiny), drawn when the brick breaks |
+| `d` | darkness | malus | nothing |
+| `c` | chaos (erratic paddle/ball behavior) | malus | nothing |
+| `~` | ghost paddle | malus | nothing |
+| `!` | disable (paddle input disabled) | malus | nothing |
+| `&` | add time (bonus-level timer) | bonus | nothing |
+| `*` | explosive ball | bonus | Laser (it clears an area) |
+| `}` | bonus magnet | bonus | nothing |
+| `{` | malus magnet | malus | nothing |
+| `W` | weak ball | malus | nothing |
 
 Note the char sets for the two grids overlap (`+`, `-`, `<`, `>`, `*`,
 `!`, `b`, `f` etc. mean completely different things depending on which
