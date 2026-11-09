@@ -226,6 +226,15 @@ impl Director {
                     out.push(Command::MusicLevel(1.0));
                     self.combo = 0;
                 }
+                // Q, from the pause or an end screen, back to the menu: the
+                // same clean cut, and the pause's dimming lifted for the
+                // menu's own music.
+                (_, GameState::Menu) => {
+                    out.push(Command::CutHeld);
+                    out.push(play(Cue::Select, 0.5, PLAYFIELD_WIDTH / 2.0));
+                    out.push(Command::MusicLevel(1.0));
+                    self.combo = 0;
+                }
                 _ => {}
             }
             if matches!(
@@ -450,6 +459,20 @@ mod tests {
             .collect();
         assert_eq!(gains.len(), 2, "one ball blast, one asteroid: {out:?}");
         assert!(gains[0] < gains[1], "the ball's is the quieter");
+    }
+
+    #[test]
+    fn leaving_for_the_menu_cuts_the_stinger_and_lifts_the_pause_dimming() {
+        for from in [GameState::Paused, GameState::GameOver, GameState::Victory] {
+            let (mut director, mut game) = playing();
+            game.state = from;
+            director.observe(&game, &[]);
+            game.state = GameState::Menu;
+            let out = director.observe(&game, &[]);
+            assert!(out.contains(&Command::CutHeld), "{from:?}: {out:?}");
+            assert!(out.contains(&Command::MusicLevel(1.0)), "{from:?}");
+            assert_eq!(music(&out), Some(Some(Cue::MusicMenu)), "{from:?}");
+        }
     }
 
     #[test]

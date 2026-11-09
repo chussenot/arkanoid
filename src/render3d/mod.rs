@@ -36,8 +36,8 @@ use winit::window::Window;
 use crate::assets::{Atlas, SpriteId, UvRect, CAPSULE_SIZE};
 use crate::events::{GameEvent, PowerUpKind};
 use crate::game::{
-    Ball, Brick, Game, GunKind, Paddle, ASTEROID_RADIUS, GATE_REACH_ABOVE_PADDLE, PLAYFIELD_HEIGHT,
-    PLAYFIELD_WIDTH,
+    Ball, Brick, Game, GameState, GunKind, Paddle, ASTEROID_RADIUS, GATE_REACH_ABOVE_PADDLE,
+    PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
 };
 use crate::hud::{self, Hud, BAND_HEIGHT};
 use crate::levels::BrickKind;
@@ -1048,6 +1048,8 @@ pub struct Renderer3D {
     record: hud::Record,
     /// The sound setting the HUD shows by the M key (`set_sound`).
     sound: Option<&'static str>,
+    /// The menu's mode picker, as `main.rs` last set it.
+    menu: hud::MenuView,
 }
 
 impl Renderer3D {
@@ -1370,6 +1372,7 @@ impl Renderer3D {
             autopilot,
             record: hud::Record::default(),
             sound: None,
+            menu: hud::MenuView::default(),
         }
     }
 
@@ -1396,6 +1399,13 @@ impl Renderer3D {
     }
 
     /// The sound setting to show by the M key (`None`: no sound to set).
+    /// The menu's mode picker, drawn on the Menu screen.
+    pub fn set_menu(&mut self, view: &hud::MenuView) {
+        if self.menu != *view {
+            self.menu = view.clone();
+        }
+    }
+
     pub fn set_sound(&mut self, label: Option<&'static str>) {
         self.sound = label;
     }
@@ -1473,7 +1483,8 @@ impl Renderer3D {
         // diff below would misread every leftover brick as "just hit" --
         // skip it for this one frame instead (see `render.rs`'s own
         // `level_changed` handling for the same reasoning).
-        let level_changed = curr.level != self.prev_level;
+        // On the menu the game is swapped for the picked mode's: no diff.
+        let level_changed = curr.level != self.prev_level || curr.state == GameState::Menu;
         self.prev_level = curr.level;
         let hit_flash = if level_changed {
             Vec::new()
@@ -1719,6 +1730,8 @@ impl Renderer3D {
                 capsules: &capsules,
                 record: self.record,
                 sound: self.sound,
+                // Unset (no rows) draws the game's own mode alone.
+                menu: (!self.menu.rows.is_empty()).then_some(&self.menu),
             },
         );
 

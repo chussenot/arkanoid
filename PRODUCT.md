@@ -45,17 +45,22 @@ identity.
   a fixed 800×600 logical playfield that is scaled and letterboxed, never
   stretched.
 - Keyboard only: arrows or A/D to move, Space to launch, release a glued
-  ball or fire a laser, Escape or P to pause.
-- Flags change the session: `--renderer 3d`, `--classic` (v1 rules and
-  levels), `--levelset <path>` (community LBreakoutHD levelsets, fetched
-  separately), `--assets <dir>` (an optional CC0 sprite pack), `--autopilot`.
+  ball or fire a laser, Escape or P to pause. On the menu, ↑/↓ choose the
+  mode and ←/→ the levelset; Q returns there from the pause and end
+  screens.
+- The menu picks what to play: the campaign, Classic (v1 rules and levels),
+  one of the community LBreakoutHD levelsets fetched into `levels/`, or a
+  Shuffle of ten levels from all of them.
+- Flags change the session: `--renderer 3d`, `--classic` and
+  `--levelset <path>` (preselect the menu's choice), `--assets <dir>` (an
+  optional CC0 sprite pack), `--autopilot`.
 - Fully offline. The only network use is the optional autopilot model, and
   only when built with `--features typesafe` and given an API key.
 
 ## Capabilities and Constraints
 
-- States: Menu → Playing ⇄ Paused → GameOver / Victory, an explicit state
-  machine.
+- States: Menu → Playing ⇄ Paused → GameOver / Victory, and back to the
+  Menu, an explicit state machine.
 - Content: a 32-level named campaign (default), v1's three levels
   (`--classic`), or loaded levelsets. Bricks are normal, armored (two hits)
   or indestructible.
