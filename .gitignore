@@ -26,3 +26,6 @@
 
 # Agent worktrees (Claude Code `isolation: worktree`): local checkouts, never content.
 /.claude/worktrees/
+
+# Python bytecode (audio/compose.py is run, never imported, by the build).
+__pycache__/

@@ -6,7 +6,8 @@ L:1/16
 Q:1/4=108
 K:C
 % The warm one: Ascent slowed to a sigh over a swung half-time beat.
-% mode E dorian, progression lift, A=ascent_aug B=spark counter=spark_lo
+% mode E dorian, progression lift, form A(4) B(4) break(2) A2(4) turn(2)
+% A=ascent_aug B=spark counter=spark
 %%swing 60
 %%instrument kick wave=triangle amp=54 attack=0 decay=70 sustain=0 release=40 gate=60 fx=0
 %%instrument snare wave=noise amp=18 attack=0 decay=60 sustain=0 release=70 gate=50 fx=0
@@ -21,18 +22,18 @@ K:C
 %%effect 2 delay_steps=4 delay_feedback=40 delay_mix=34 drive=0 lowpass=50 sidechain=40 sidechain_release=220 mix=76
 %%effect 3 delay_steps=6 delay_feedback=30 delay_mix=30 drive=0 lowpass=60 mix=70
 V:kick instrument=kick
-| E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | z16 | E,, z z z z z z z E,, z z z z z z z |
+| E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | z16 | z16 | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | z16 | E,, z z z z z z z E,, z z z z z z z |
 V:snare instrument=snare
-| z16 | z16 | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z c z z z c z c z c c c c | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z c z z z c z c z c c c c | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z c z z z c z c z c c c c | z z z z z z z z c z z z z z z z | z z z z c z z z c z c z c c c c |
+| z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z c z c | z z z z z z z z c z z z z c z c | z z z z z z z z z z z z z z z z | z z z z z z z z c z z z z c z c | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z c c |
 V:hat instrument=hat
-| c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z |
+| c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | z16 | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z |
 V:bass instrument=bass
-| E,,6 E,,2 B,,4 E,4 | A,,6 A,,2 E,4 A,4 | E,,6 E,,2 B,,4 E,4 | A,,6 A,,2 E,4 A,4 | E,,6 E,,2 B,,4 E,4 | A,,6 A,,2 E,4 A,4 | E,,6 E,,2 B,,4 E,4 | A,,6 A,,2 E,4 A,4 | E,,6 E,,2 B,,4 E,4 | A,,6 A,,2 E,4 A,4 | E,,6 E,,2 B,,4 E,4 | A,,6 A,,2 E,4 A,4 | E,,6 E,,2 B,,4 E,4 | A,,6 A,,2 E,4 A,4 | E,,6 E,,2 B,,4 E,4 | A,,6 A,,2 E,4 A,4 |
+| E,,6 E,,2 B,,4 E,4 | A,,6 A,,2 E,4 A,4 | E,,6 E,,2 B,,4 E,4 | A,,6 A,,2 A,4 D4 | A,,4 E,4 A,4 E,2 ^C,2 | G,,4 D,4 G,4 D,2 B,,2 | A,,4 E,4 A,4 E,2 ^C,2 | D,4 A,4 D4 A,2 ^F,2 | E,,2 z14 | A,,2 z6 A,,2 z2 A,,2 A,,2 | E,,6 E,,2 B,,4 E,4 | A,,6 A,,2 E,4 A,4 | E,,6 E,,2 B,,4 E,4 | A,,6 A,,2 A,4 D4 | z16 | A,,6 A,,2 A,4 D4 |
 V:arp instrument=arp
-| E2 B2 e2 B2 E2 B2 e2 B2 | A2 e2 a2 e2 A2 e2 a2 e2 | E2 B2 e2 B2 E2 B2 e2 B2 | A2 e2 a2 e2 A2 e2 a2 e2 | E2 B2 e2 B2 E2 B2 e2 B2 | A2 e2 a2 e2 A2 e2 a2 e2 | e2 b2 e'2 b2 e2 b2 e'2 b2 | a2 e'2 a'2 e'2 a2 e'2 a'2 e'2 | e2 b2 e'2 b2 e2 b2 e'2 b2 | a2 e'2 a'2 e'2 a2 e'2 a'2 e'2 | e2 b2 e'2 b2 e2 b2 e'2 b2 | a2 e'2 a'2 e'2 a2 e'2 a'2 e'2 | e2 b2 e'2 b2 e2 b2 e'2 b2 | a2 e'2 a'2 e'2 a2 e'2 a'2 e'2 | E2 B2 e2 B2 E2 B2 e2 B2 | z16 |
+| E2 B2 e2 B2 E2 B2 e2 B2 | A2 e2 a2 e2 A2 e2 a2 e2 | E2 B2 e2 B2 E2 B2 e2 B2 | A2 e2 a2 e2 d2 a2 d'2 a2 | A2 e2 a2 e2 A2 e2 a2 e2 | G2 d2 g2 d2 G2 d2 g2 d2 | A2 e2 a2 e2 A2 e2 a2 e2 | d2 a2 d'2 a2 d2 a2 d'2 a2 | z16 | z16 | E2 B2 e2 B2 E2 B2 e2 B2 | A2 e2 a2 e2 A2 e2 a2 e2 | E2 B2 e2 B2 E2 B2 e2 B2 | A2 e2 a2 e2 d2 a2 d'2 a2 | z16 | A2 e2 a2 e2 d2 a2 d'2 a2 |
 V:pad instrument=pad
-| z16 | z16 | z16 | z16 | z16 | z16 | G,16 | ^C16 | G,16 | ^C16 | G,16 | ^C16 | G,16 | ^C16 | G,16 | ^C16 |
+| z16 | z16 | z16 | z16 | ^C16 | D16 | ^C16 | D16 | E16 | E16 | E16 | E16 | E16 | E8 D8 | E16 | E8 D8 |
 V:lead instrument=lead
-| z16 | z16 | E4 B4 e8 | d4 B4 A4 B4 | G4 A4 B8 | d4 e4 g8 | B z d e z g2 z a g e z d2 z2 | B z d e z g2 z a g e z d2 z2 | B z d e z g2 z a g e z d2 z2 | B z d e z g2 z a g e z d2 z2 | E4 B4 e8 | d4 B4 A4 B4 | G4 A4 B8 | d4 e4 g8 | E4 B4 e8 | E4 z12 |
+| E4 B4 e8 | ^c4 B4 A4 B4 | G4 A4 B8 | d4 e4 A2 G2 ^F4 | B z d e z g2 z a g e z d2 z2 | d z ^f g z b2 z ^c' b g z ^f2 z2 | e z a b z d'2 z e z a b z d'2 z | A z d e z g2 z g2 ^f6 | E8 B8 | z16 | E4 B4 e8 | e4 d4 ^c4 ^c4 | G4 A4 B8 | d4 e4 A2 G2 ^F4 | E4 B4 z8 | z8 A2 G2 ^F4 |
 V:counter instrument=counter
-| z16 | z16 | z16 | z16 | z16 | z16 | z16 | z16 | z16 | z16 | B,, z D, E, z G,2 z A, G, E, z D,2 z2 | B,, z D, E, z G,2 z A, G, E, z D,2 z2 | B,, z D, E, z G,2 z A, G, E, z D,2 z2 | B,, z D, E, z G,2 z A, G, E, z D,2 z2 | z16 | z16 |
+| z160 | B, z D E z G2 z G G E z D2 z2 | E z ^F G z B2 z ^c B G z ^F2 z2 | G z G G z d2 z G z A B z B2 z | A, z D E z G2 z ^F2 ^F6 | z32 |
