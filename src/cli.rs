@@ -24,9 +24,9 @@ pub enum RendererKind {
 #[derive(Debug, Default)]
 pub struct Args {
     /// `--levelset <path>`: a single `.lbl` file, or a directory of them
-    /// (see `levelset::load_dir`), to load instead of relying solely on
-    /// the built-in 3 levels (`levels::LEVELS`). `None` (no flag) keeps
-    /// today's built-in-only behavior.
+    /// (see `levelset::load_dir`), to load instead of the built-in levels
+    /// (the campaign, or v1's three under `--classic`). `None` (no flag)
+    /// keeps the built-in ones.
     pub levelset: Option<String>,
     /// `--assets <dir>`: a pack directory for `assets::TextureSource::Pack`,
     /// defaulting to `TextureSource::Procedural` when unset (see `main.rs`).

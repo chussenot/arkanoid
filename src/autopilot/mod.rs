@@ -894,6 +894,53 @@ mod benchmark {
     use super::*;
     use crate::game::Features;
 
+    /// The 32-level campaign, every addition on: how often the autopilot
+    /// wins it, and where it falls when it does not.
+    #[test]
+    #[ignore = "a benchmark: about a minute in release"]
+    fn benchmark_campaign() {
+        let (mut wins, mut lives_lost, mut total, mut longest) = (0, 0, 0, 0);
+        let seeds = 1..=10;
+        for seed in seeds.clone() {
+            let mut game = Game::with_seed(seed).with_campaign();
+            game.state = GameState::Playing;
+            let mut autopilot = Autopilot::new(None, 1);
+            let mut ticks = 0u32;
+            while ticks < 120 * 60 * 90
+                && !matches!(game.state, GameState::Victory | GameState::GameOver)
+            {
+                let input = autopilot.input(&game, 1.0 / 120.0);
+                game.tick(&input, 1.0 / 120.0);
+                autopilot.observe(&game);
+                lives_lost += game
+                    .events
+                    .iter()
+                    .filter(|e| **e == GameEvent::LifeLost)
+                    .count();
+                game.events.clear();
+                ticks += 1;
+            }
+            if game.state == GameState::Victory {
+                wins += 1;
+                total += ticks / 120;
+                longest = longest.max(ticks / 120);
+            } else {
+                println!(
+                    "  seed {seed}: {:?} at level {} ({:?}), {} bricks left",
+                    game.state,
+                    game.level,
+                    game.level_name(),
+                    game.bricks.len()
+                );
+            }
+        }
+        let mean = total.checked_div(wins).unwrap_or(0);
+        println!(
+            "campaign: {wins}/{} won, {lives_lost} lives lost, won in {mean} s on average, {longest} s at most",
+            seeds.count()
+        );
+    }
+
     #[test]
     #[ignore = "a benchmark: about thirty seconds in release"]
     fn benchmark_feature_sets() {

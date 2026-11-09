@@ -1175,7 +1175,10 @@ impl Renderer {
         // if profiling ever shows text shaping actually costing a frame.
         let surface_width = self.config.width as f32;
         let score_text = format!("Score: {}", curr.score);
-        let level_text = format!("Level {}", curr.level);
+        let level_text = match curr.level_name() {
+            Some(name) => format!("Level {}: {name}", curr.level),
+            None => format!("Level {}", curr.level),
+        };
         let score_buffer = make_line_buffer(
             &mut self.font_system,
             &score_text,

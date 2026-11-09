@@ -452,11 +452,36 @@ fn brick_from_spawn(x: f32, y: f32, kind: BrickKind, offset_x: f32) -> Brick {
     }
 }
 
-/// Builds the brick layout for `levels::LEVELS[level_index]`, centering
+/// Which built-in levels a game plays when no levelset is loaded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuiltInLevels {
+    /// v1's three (`levels::LEVELS`): what the tests play, and `--classic`.
+    V1,
+    /// The 32-level campaign (`levels::CAMPAIGN`): a normal game.
+    Campaign,
+}
+
+impl BuiltInLevels {
+    fn grid(self, index: usize) -> &'static [&'static str] {
+        match self {
+            Self::V1 => levels::LEVELS[index],
+            Self::Campaign => levels::CAMPAIGN[index].1,
+        }
+    }
+
+    fn len(self) -> usize {
+        match self {
+            Self::V1 => levels::LEVELS.len(),
+            Self::Campaign => levels::CAMPAIGN.len(),
+        }
+    }
+}
+
+/// Builds the brick layout for built-in level `level_index`, centering
 /// the grid horizontally in the 800-wide playfield (levels can vary in
 /// column count) and offsetting it down by `BRICK_GRID_MARGIN_TOP`.
-fn build_bricks(level_index: usize) -> Vec<Brick> {
-    let grid = levels::LEVELS[level_index];
+fn build_bricks(built_in: BuiltInLevels, level_index: usize) -> Vec<Brick> {
+    let grid = built_in.grid(level_index);
     let cols = grid.first().map_or(0, |row| row.chars().count());
     let offset_x = (PLAYFIELD_WIDTH - cols as f32 * levels::BRICK_WIDTH) / 2.0;
 
@@ -665,6 +690,8 @@ pub struct Game {
     asteroid_timer: f32,
     /// Which post-v1 additions are on.
     pub features: Features,
+    /// The built-in levels played when no levelset is loaded.
+    built_in: BuiltInLevels,
     /// Seconds of flight since the last progress (see `STALL_SECS`).
     stall_secs: f32,
     /// Stall nudges so far; its parity alternates their direction.
@@ -693,6 +720,24 @@ impl Game {
             StdRng::from_rng(&mut rand::rng()),
             StdRng::from_rng(&mut rand::rng()),
         )
+    }
+
+    /// Plays the 32-level campaign instead of v1's three, from its first
+    /// level. A loaded levelset (`load_external_levels`) still takes over.
+    pub fn with_campaign(mut self) -> Self {
+        self.built_in = BuiltInLevels::Campaign;
+        self.level = 1;
+        self.bricks = self.current_level_bricks();
+        self.ball = Ball::attached_to(&self.paddle);
+        self
+    }
+
+    /// The current level's name, for the HUD: campaign levels have one.
+    pub fn level_name(&self) -> Option<&'static str> {
+        match (&self.external_levels, self.built_in) {
+            (None, BuiltInLevels::Campaign) => Some(levels::CAMPAIGN[self.level - 1].0),
+            _ => None,
+        }
     }
 
     /// Plays with only `features` of the post-v1 additions.
@@ -749,7 +794,7 @@ impl Game {
     fn current_level_bricks(&self) -> Vec<Brick> {
         match &self.external_levels {
             Some(levels) => build_external_bricks(&levels[self.level - 1].bricks),
-            None => build_bricks(self.level - 1),
+            None => build_bricks(self.built_in, self.level - 1),
         }
     }
 
@@ -759,7 +804,7 @@ impl Game {
     fn level_count(&self) -> usize {
         match &self.external_levels {
             Some(levels) => levels.len(),
-            None => levels::LEVELS.len(),
+            None => self.built_in.len(),
         }
     }
 
@@ -773,7 +818,7 @@ impl Game {
             extra_balls: Vec::new(),
             lives: STARTING_LIVES,
             state: GameState::Menu,
-            bricks: build_bricks(0),
+            bricks: build_bricks(BuiltInLevels::V1, 0),
             score: 0,
             level: 1,
             external_levels: None,
@@ -790,6 +835,7 @@ impl Game {
             asteroids: Vec::new(),
             asteroid_timer: ASTEROID_FIRST_SPAWN_SECS,
             features: Features::default(),
+            built_in: BuiltInLevels::V1,
             stall_secs: 0.0,
             stall_nudges: 0,
             rng,
@@ -2716,6 +2762,55 @@ mod tests {
                 ));
             }
         }
+    }
+
+    // -- built-in levels: v1's three and the campaign ---------------------------
+
+    #[test]
+    fn a_game_plays_v1_s_three_levels_unless_told_to_play_the_campaign() {
+        let game = Game::with_seed(1);
+        assert_eq!(game.level_count(), levels::LEVELS.len());
+        assert_eq!(game.level_name(), None);
+        assert_eq!(
+            game.bricks.len(),
+            levels::parse_level(levels::LEVEL_1).len()
+        );
+    }
+
+    #[test]
+    fn the_campaign_starts_at_its_first_level_and_runs_its_32() {
+        let mut game = Game::with_seed(1).with_campaign();
+        assert_eq!(game.level, 1);
+        assert_eq!(game.level_count(), 32);
+        assert_eq!(game.level_name(), Some(levels::CAMPAIGN[0].0));
+        assert_eq!(
+            game.bricks.len(),
+            levels::parse_level(levels::CAMPAIGN[0].1).len()
+        );
+
+        game.state = GameState::Playing;
+        game.advance_level();
+        assert_eq!(game.level, 2);
+        assert_eq!(game.level_name(), Some(levels::CAMPAIGN[1].0));
+        assert_eq!(
+            game.bricks.len(),
+            levels::parse_level(levels::CAMPAIGN[1].1).len()
+        );
+
+        game.level = 32;
+        game.advance_level();
+        assert_eq!(game.state, GameState::Victory, "past the 32nd: Victory");
+    }
+
+    #[test]
+    fn a_loaded_levelset_takes_over_from_the_campaign() {
+        let set = crate::levelset::load_file(std::path::Path::new("tests/fixtures/homemade.lbl"))
+            .expect("fixture");
+        let count = set.levels.len();
+        let mut game = Game::with_seed(1).with_campaign();
+        game.load_external_levels(set.levels);
+        assert_eq!(game.level_count(), count);
+        assert_eq!(game.level_name(), None);
     }
 
     // -- asteroids ----------------------------------------------------------

@@ -91,6 +91,376 @@ pub const LEVEL_3: &[&str] = &[
 /// All built-in levels, in play order.
 pub const LEVELS: &[&[&str]] = &[LEVEL_1, LEVEL_2, LEVEL_3];
 
+// -- the campaign -------------------------------------------------------------
+//
+// What a normal game plays: 32 levels in the spirit of the 1986 arcade game
+// (staircases, frames, columns, walls of armored and indestructible bricks),
+// designed for this game and copying none of its stages (see ATTRIBUTION:
+// this repo never reproduces those layouts). `LEVELS` above stays v1's three:
+// the tests play them, and so does `--classic`.
+
+/// The campaign, in play order, each with its name.
+pub const CAMPAIGN: &[(&str, &[&str])] = &[
+    (
+        "Warm-up",
+        &[
+            "..............",
+            ".111111111111.",
+            ".111111111111.",
+            ".111111111111.",
+        ],
+    ),
+    (
+        "Cascade",
+        &[
+            "..........1111",
+            ".........11112",
+            "........11112.",
+            ".......11112..",
+            "......11112...",
+            ".....11112....",
+            "....11112.....",
+            "...11112......",
+        ],
+    ),
+    (
+        "Checkers",
+        &[
+            "1.1.1.1.1.1.1.",
+            ".1.1.1.1.1.1.1",
+            "2.2.2.2.2.2.2.",
+            ".2.2.2.2.2.2.2",
+            "1.1.1.1.1.1.1.",
+            ".1.1.1.1.1.1.1",
+        ],
+    ),
+    (
+        "Twin towers",
+        &[
+            ".1111....1111.",
+            ".1221....1221.",
+            ".1221....1221.",
+            ".1221....1221.",
+            ".1221....1221.",
+            ".1111....1111.",
+        ],
+    ),
+    (
+        "Arrow",
+        &[
+            "......11......",
+            "......11......",
+            "......11......",
+            "......11......",
+            "..1...11...1..",
+            "...1..11..1...",
+            "....1.11.1....",
+            ".....1111.....",
+        ],
+    ),
+    (
+        "Capped columns",
+        &[
+            "X.X.X.X.X.X.X.",
+            "1.1.1.1.1.1.1.",
+            "1.1.1.1.1.1.1.",
+            "2.2.2.2.2.2.2.",
+            "1.1.1.1.1.1.1.",
+            "1.1.1.1.1.1.1.",
+        ],
+    ),
+    (
+        "Diamond",
+        &[
+            "......22......",
+            ".....2112.....",
+            "....211112....",
+            "...21111112...",
+            "...21111112...",
+            "....211112....",
+            ".....2112.....",
+            "......22......",
+        ],
+    ),
+    (
+        "Scatter",
+        &[
+            "1...2...1...2.",
+            "..1...2...1...",
+            "2...1...2...1.",
+            "..2...1...2...",
+            "1...2...1...2.",
+            "..1...2...1...",
+        ],
+    ),
+    (
+        "Picture frame",
+        &[
+            "X111111111111X",
+            "1............1",
+            "1.2222222222.1",
+            "1.2111111112.1",
+            "1.2222222222.1",
+            "1............1",
+            "X111111111111X",
+        ],
+    ),
+    (
+        "Heart",
+        &[
+            "..111....111..",
+            ".11111..11111.",
+            "11111111111111",
+            "11111111111111",
+            ".111111111111.",
+            "..1111111111..",
+            "....111111....",
+            "......11......",
+        ],
+    ),
+    (
+        "Double W",
+        &[
+            "2............2",
+            "12..........21",
+            ".12...22...21.",
+            "..12.2112.21..",
+            "...121..121...",
+            "....1....1....",
+        ],
+    ),
+    (
+        "Fortress",
+        &[
+            "XXXXX....XXXXX",
+            "X111X....X111X",
+            "X121X....X121X",
+            "X111X....X111X",
+            "X.X.X....X.X.X",
+        ],
+    ),
+    (
+        "Lattice",
+        &[
+            "1X1X1X1X1X1X1X",
+            "11111111111111",
+            "X1X1X1X1X1X1X1",
+            "11111111111111",
+            "1X1X1X1X1X1X1X",
+        ],
+    ),
+    (
+        "Wave",
+        &[
+            "1....11....1..",
+            "11..1111..11..",
+            "111111111111..",
+            ".111111111111.",
+            "..11..1111..11",
+            "..1....11....1",
+        ],
+    ),
+    (
+        "Rocket",
+        &[
+            "......22......",
+            ".....2112.....",
+            ".....1111.....",
+            ".....1111.....",
+            "....111111....",
+            "...11.11.11...",
+            "..1...11...1..",
+        ],
+    ),
+    (
+        "Bridges",
+        &[
+            "11111111111111",
+            "XXXX..XX..XXXX",
+            "22222222222222",
+            "XX..XXXXXX..XX",
+            "11111111111111",
+        ],
+    ),
+    (
+        "Spiral",
+        &[
+            "11111111111111",
+            "1............1",
+            "1.1111111111.1",
+            "1.1........1.1",
+            "1.1.111111.1.1",
+            "1.1.1......1.1",
+            "1.1.11111111.1",
+            "1.1..........1",
+        ],
+    ),
+    (
+        "Pillars",
+        &[
+            "22.22.22.22.22",
+            "11.11.11.11.11",
+            "11.11.11.11.11",
+            "11.11.11.11.11",
+            "XX.XX.XX.XX.XX",
+        ],
+    ),
+    (
+        "Crown",
+        &[
+            "1..1..11..1..1",
+            "11.11.11.11.11",
+            "11111111111111",
+            "12121212121212",
+            "11111111111111",
+        ],
+    ),
+    (
+        "Hourglass",
+        &[
+            "11111111111111",
+            ".111111111111.",
+            "..1111111111..",
+            "....222222....",
+            "....222222....",
+            "..1111111111..",
+            ".111111111111.",
+            "11111111111111",
+        ],
+    ),
+    (
+        "Shield",
+        &[
+            "..2222222222..",
+            ".211111111112.",
+            ".211111111112.",
+            "..2111111112..",
+            "...21111112...",
+            "XXXX.2112.XXXX",
+        ],
+    ),
+    (
+        "Armored frame",
+        &[
+            "22222222222222",
+            "2............2",
+            "2.1111111111.2",
+            "2.1111111111.2",
+            "2............2",
+            "22222222222222",
+        ],
+    ),
+    (
+        "Rain",
+        &[
+            "1.1.1.1.1.1.1.",
+            "1...1...1...1.",
+            "..1...1...1...",
+            ".1.1.1.1.1.1.1",
+            "2...2...2...2.",
+            "..2...2...2...",
+        ],
+    ),
+    (
+        "Funnel",
+        &[
+            "22222222222222",
+            ".111111111111.",
+            "..1111111111..",
+            "...11111111...",
+            "....111111....",
+            ".....1111.....",
+            "......11......",
+        ],
+    ),
+    (
+        "Two rooms",
+        &[
+            "XXXXXXXXXXXXXX",
+            "X11111XX11111X",
+            "X12221XX12221X",
+            "X11111XX11111X",
+            "X.....XX.....X",
+        ],
+    ),
+    (
+        "Ring",
+        &[
+            "....111111....",
+            "..11......11..",
+            ".1..222222..1.",
+            ".1..2....2..1.",
+            ".1..222222..1.",
+            "..11......11..",
+            "....111111....",
+        ],
+    ),
+    (
+        "Baffles",
+        &[
+            "11111111111111",
+            "XXXXXXXXXXX.XX",
+            "11111111111111",
+            "XX.XXXXXXXXXXX",
+            "22222222222222",
+        ],
+    ),
+    (
+        "Chevron",
+        &[
+            "2............2",
+            "12..........21",
+            ".12........21.",
+            "..12......21..",
+            "...12....21...",
+            "....12..21....",
+            ".....1221.....",
+        ],
+    ),
+    (
+        "Split wall",
+        &[
+            "11111XXXX11111",
+            "11111....11111",
+            "22222....22222",
+            "11111....11111",
+            "11111XXXX11111",
+        ],
+    ),
+    (
+        "Bulwark",
+        &[
+            "22222222222222",
+            "21111111111112",
+            "21111111111112",
+            "21111111111112",
+            "21111111111112",
+            "22222222222222",
+        ],
+    ),
+    (
+        "Minefield",
+        &[
+            "1.2.1.X.1.2.1.",
+            ".X.1.2.1.2.1.X",
+            "2.1.X.1.2.1.2.",
+            ".1.2.1.X.1.2.1",
+            "X.2.1.2.1.X.1.",
+        ],
+    ),
+    (
+        "Vault",
+        &[
+            "XXXXXXXXXXXXXX",
+            "X212121212121X",
+            "X121212121212X",
+            "X212121212121X",
+            "X121212121212X",
+            "X............X",
+        ],
+    ),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,9 +553,75 @@ mod tests {
         );
     }
 
+    /// Every built-in grid: v1's three and the campaign.
+    fn all_grids() -> impl Iterator<Item = &'static [&'static str]> {
+        LEVELS
+            .iter()
+            .copied()
+            .chain(CAMPAIGN.iter().map(|(_, grid)| *grid))
+    }
+
+    #[test]
+    fn every_built_in_level_can_be_cleared() {
+        // A ball can reach a brick if a path of cells leads to it from the
+        // open field around the grid, through empty cells and through
+        // destructible bricks (they break), never through an indestructible
+        // one, moving between edge-sharing cells (two indestructible bricks
+        // touching at a corner leave no gap a ball fits through). Level 3's
+        // first, closed box failed exactly this.
+        for (index, grid) in all_grids().enumerate() {
+            let rows = grid.len();
+            let cols = grid[0].chars().count();
+            let cells: Vec<Vec<char>> = grid.iter().map(|r| r.chars().collect()).collect();
+            // A ring of open field around the grid: indices shifted by one.
+            let open = |r: usize, c: usize| {
+                r == 0 || c == 0 || r > rows || c > cols || cells[r - 1][c - 1] != 'X'
+            };
+            let mut seen = vec![vec![false; cols + 2]; rows + 2];
+            let mut stack: Vec<(usize, usize)> = vec![(0, 0)];
+            seen[0][0] = true;
+            while let Some((r, c)) = stack.pop() {
+                let neighbours = [
+                    (r.wrapping_sub(1), c),
+                    (r + 1, c),
+                    (r, c.wrapping_sub(1)),
+                    (r, c + 1),
+                ];
+                for (nr, nc) in neighbours {
+                    if nr <= rows + 1 && nc <= cols + 1 && !seen[nr][nc] && open(nr, nc) {
+                        seen[nr][nc] = true;
+                        stack.push((nr, nc));
+                    }
+                }
+            }
+            for (r, row) in cells.iter().enumerate() {
+                for (c, &cell) in row.iter().enumerate() {
+                    assert!(
+                        !matches!(cell, '1' | '2') || seen[r + 1][c + 1],
+                        "grid {index}: the brick at row {r}, column {c} cannot be reached"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_campaign_has_32_named_levels_each_with_bricks_to_break() {
+        assert_eq!(CAMPAIGN.len(), 32);
+        for (name, grid) in CAMPAIGN {
+            assert!(!name.is_empty());
+            assert!(
+                parse_level(grid)
+                    .iter()
+                    .any(|b| b.kind != BrickKind::Indestructible),
+                "{name} has nothing to clear"
+            );
+        }
+    }
+
     #[test]
     fn all_built_in_levels_have_rectangular_rows() {
-        for level in LEVELS {
+        for level in all_grids() {
             let width = level[0].chars().count();
             assert!(level.iter().all(|row| row.chars().count() == width));
             assert!(width <= 14);

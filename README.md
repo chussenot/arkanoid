@@ -12,7 +12,13 @@ cargo run --release
 ```
 
 No assets or setup required — it builds and launches straight from a fresh
-clone.
+clone, into a 32-level campaign. The levels are in the spirit of the 1986
+arcade game (staircases, frames, columns, walls of armored and
+indestructible bricks), designed for this game rather than copied from it.
+The HUD shows each level's name. `--classic` plays the three levels the
+game was first specified with instead.
+
+![The 32 campaign levels](docs/campaign.png)
 
 ### 3D renderer (experimental)
 
@@ -92,7 +98,7 @@ Widen, Slow and Multiball only, and no asteroids.
 
 ## Thousands of levels
 
-Three built-in levels ship in the binary and need no setup. For
+The campaign's 32 levels ship in the binary and need no setup. For
 thousands more, fetch the community [LBreakoutHD](https://github.com/midzer/lbreakouthd)
 levelset archive with one command:
 
