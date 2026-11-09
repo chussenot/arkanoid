@@ -51,6 +51,22 @@ failed, or unconfident answer falls back to the heuristic.
 [`docs/autopilot.md`](docs/autopilot.md) covers the design, the latency
 budget, and the measurements.
 
+## Sound
+
+BRYX's music and effects come from the
+[Electric Pulse](https://github.com/chussenot/electric-pulse) engine. They
+are composed as ABC text in `audio/cues/` and rendered at build time, so
+the game runs no C at play time. Bricks broken in a rally climb the E minor
+pentatonic scale in time with the music, and every effect is panned to
+where it happened. Each act has its own loop, faster and fuller act by act.
+See [`docs/design/audio.md`](docs/design/audio.md).
+
+Building with sound (the default) needs a C compiler and, on Linux, the ALSA
+headers (`sudo apt install libasound2-dev`). `cargo run --release
+--no-default-features` builds a silent game with neither.
+`BRYX_SOUND=effects` or `BRYX_SOUND=off` sets the starting sound mode; M
+changes it in game.
+
 ## Controls
 
 | Key                | Action                  |
@@ -60,6 +76,7 @@ budget, and the measurements.
 | Escape (or P)       | Pause / resume           |
 | After a Game Over   | Space: continue from the start of the act (level 1, 9, 17 or 25); Escape or P: new game |
 | After a Victory     | Space: play again        |
+| M                   | Sound: on, effects only, off |
 
 Keyboard only; menu and pause screens show the same keys on-screen.
 
