@@ -84,7 +84,7 @@ const MAX_CUBE_INSTANCES: usize =
 const MAX_ASTEROIDS: usize = 8;
 /// `game.rs` caps bolts in flight at 16.
 const MAX_BOLTS: usize = 16;
-const MAX_SPHERE_INSTANCES: usize = 1 /* main ball */ + MAX_EXTRA_BALLS + TRAIL_LEN + MAX_ASTEROIDS;
+const MAX_SPHERE_INSTANCES: usize = 1 /* main ball */ + MAX_EXTRA_BALLS + TRAIL_LEN;
 
 /// Maps a playfield-space (x right, y down, pixels) position to this
 /// renderer's world-space X/Z ground-plane coordinates.
@@ -151,9 +151,15 @@ fn brick_color(brick: &Brick) -> [f32; 4] {
 /// the textured front face and the flat side faces always agree on which
 /// visual state a brick is in.
 fn sprite_for_brick(brick: &Brick) -> SpriteId {
-    match brick.kind {
+    sprite_for_kind(brick.kind, brick.hits_remaining)
+}
+
+/// `sprite_for_brick` from a kind and hit count alone: a destroyed brick's
+/// tumble ghost has no live `&Brick` left (see `brick_color_for`).
+fn sprite_for_kind(kind: BrickKind, hits_remaining: u8) -> SpriteId {
+    match kind {
         BrickKind::Normal => SpriteId::BrickNormal,
-        BrickKind::Armored if brick.hits_remaining >= 2 => SpriteId::BrickArmoredIntact,
+        BrickKind::Armored if hits_remaining >= 2 => SpriteId::BrickArmoredIntact,
         BrickKind::Armored => SpriteId::BrickArmoredHit,
         BrickKind::Indestructible => SpriteId::BrickIndestructible,
     }
@@ -510,6 +516,53 @@ fn build_sphere_mesh(stacks: u32, sectors: u32) -> (Vec<Vertex3D>, Vec<u16>) {
     (vertices, indices)
 }
 
+/// The asteroid's rock: a coarse sphere whose vertices are pushed in or out
+/// by a fixed hash of their position, then flat-shaded face by face. It
+/// reads as stone at a glance, never as the ball, which is smooth, round
+/// and bright (DESIGN.md, "Shapes": round only where it carries meaning).
+const ROCK_STACKS: u32 = 5;
+const ROCK_SECTORS: u32 = 7;
+/// How far a vertex may move off the unit sphere, either way.
+const ROCK_JAG: f32 = 0.22;
+
+/// Builds the rock mesh (see `ROCK_STACKS`): deterministic, so every
+/// asteroid is the same rock, turned differently.
+fn build_rock_mesh() -> (Vec<Vertex3D>, Vec<u16>) {
+    let (sphere, indices) = build_sphere_mesh(ROCK_STACKS, ROCK_SECTORS);
+    // Jitter keyed on the *quantized position*, not the vertex index: the
+    // UV sphere duplicates its seam and pole vertices, and duplicates must
+    // move together or the rock tears open.
+    let jag = |p: [f32; 3]| -> Vec3 {
+        let q = p.map(|c| (c * 1000.0).round() as i32);
+        let mut h = (q[0].wrapping_mul(73_856_093)
+            ^ q[1].wrapping_mul(19_349_663)
+            ^ q[2].wrapping_mul(83_492_791)) as u32;
+        h ^= h >> 13;
+        h = h.wrapping_mul(0x5bd1_e995);
+        h ^= h >> 15;
+        let unit = (h & 0xffff) as f32 / 65_535.0; // 0..=1
+        Vec3::from(p) * (1.0 + ROCK_JAG * (unit * 2.0 - 1.0))
+    };
+    let mut vertices = Vec::with_capacity(indices.len());
+    for tri in indices.as_chunks::<3>().0 {
+        let [a, b, c] = [0, 1, 2].map(|k| jag(sphere[tri[k] as usize].position));
+        let normal = (b - a).cross(c - a);
+        if normal.length_squared() < 1e-8 {
+            continue; // the UV sphere's zero-area pole triangles
+        }
+        let normal = normal.normalize();
+        for p in [a, b, c] {
+            vertices.push(Vertex3D {
+                position: p.to_array(),
+                normal: normal.to_array(),
+                uv: [0.0, 0.0],
+            });
+        }
+    }
+    let indices = (0..vertices.len() as u16).collect();
+    (vertices, indices)
+}
+
 const VERTEX_ATTRS: [wgpu::VertexAttribute; 3] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 5 => Float32x2];
 const INSTANCE_ATTRS: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
@@ -555,6 +608,7 @@ struct VertexOutput {
     @location(3) uv: vec2<f32>,
     @location(4) uv_rect: vec4<f32>,
     @location(5) emissive: f32,
+    @location(6) object_normal: vec3<f32>,
 };
 
 // Standard quaternion*vector rotation (q assumed unit-length, which every
@@ -597,6 +651,7 @@ fn vs_main(vert: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.uv = vert.uv;
     out.uv_rect = inst.uv_rect;
     out.emissive = inst.emissive;
+    out.object_normal = vert.normal;
     return out;
 }
 
@@ -612,16 +667,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Front- and top-face texturing (bricks' +Z and +Y sides -- see `Instance3D`'s
     // doc comment): a nonzero-area `uv_rect` means "this instance carries
-    // an atlas sprite," and `n.z` close to 1 means "this fragment belongs
-    // to that unrotated cube's +Z face" (no rotation ever happens here,
-    // so object-space and world-space normals are identical). Every other
-    // face/instance keeps the flat `color` albedo. `textureSampleLevel`
+    // an atlas sprite," and the *object-space* normal picks the cube's +Z
+    // and +Y faces, so the pattern stays on its faces while a destroyed
+    // brick's ghost tumbles. Every other face/instance keeps the flat
+    // `color` albedo. `textureSampleLevel`
     // (not `textureSample`) is used deliberately: this atlas has no
     // mipmaps, and an explicit LOD sidesteps WGSL's derivative-uniformity
     // requirement for a texture sample inside this per-fragment branch.
     let has_sprite = (in.uv_rect.z - in.uv_rect.x) > 0.0;
     var albedo = in.color.rgb;
-    if has_sprite && (n.z > 0.9 || n.y > 0.9) {
+    let face = in.object_normal;
+    if has_sprite && (face.z > 0.9 || face.y > 0.9) {
         let atlas_uv = vec2<f32>(
             mix(in.uv_rect.x, in.uv_rect.z, in.uv.x),
             mix(in.uv_rect.y, in.uv_rect.w, in.uv.y)
@@ -793,6 +849,9 @@ struct TumbleGhost {
     vy: f32,
     half_extent: [f32; 3],
     color: [f32; 4],
+    /// The brick's face sprite, so its pattern tumbles with it (debris has
+    /// none).
+    sprite: Option<SpriteId>,
     axis: Vec3,
     spin_dir: f32,
     elapsed: f32,
@@ -812,6 +871,7 @@ impl TumbleGhost {
             // color -- see `brick_color_for` -- and every other kind has
             // only one color regardless of hit count).
             color: brick_color_for(kind, 0),
+            sprite: Some(sprite_for_kind(kind, 0)),
             axis: tumble_axis(x, y),
             spin_dir: if x >= 0.0 { 1.0 } else { -1.0 },
             elapsed: 0.0,
@@ -829,6 +889,7 @@ impl TumbleGhost {
             vy: TUMBLE_LAUNCH_SPEED,
             half_extent: [radius * 0.8; 3],
             color: palette::ASTEROID.linear(),
+            sprite: None,
             axis: tumble_axis(x, y),
             spin_dir: if x >= 0.0 { 1.0 } else { -1.0 },
             elapsed: 0.0,
@@ -856,11 +917,15 @@ impl TumbleGhost {
         (1.0 - self.elapsed / TUMBLE_DURATION_SECS).clamp(0.0, 1.0)
     }
 
-    fn instance(&self) -> Instance3D {
+    fn instance(&self, atlas: &Atlas) -> Instance3D {
         let center = [self.x, BRICK_THICKNESS / 2.0 + self.y_offset, self.z];
         let mut color = self.color;
         color[3] *= self.alpha_fade();
-        Instance3D::new(center, self.half_extent, color).with_rotation(self.rotation().to_array())
+        let base = match self.sprite {
+            Some(id) => Instance3D::textured(center, self.half_extent, color, atlas.uv_rect(id)),
+            None => Instance3D::new(center, self.half_extent, color),
+        };
+        base.with_rotation(self.rotation().to_array())
     }
 }
 
@@ -938,6 +1003,10 @@ pub struct Renderer3D {
     sphere_index_buffer: wgpu::Buffer,
     sphere_index_count: u32,
     sphere_instance_buffer: wgpu::Buffer,
+    rock_vertex_buffer: wgpu::Buffer,
+    rock_index_buffer: wgpu::Buffer,
+    rock_index_count: u32,
+    rock_instance_buffer: wgpu::Buffer,
     // -- juice: hit-flash, destroy-tumble, ball trail, screen shake,
     // power-up spin -- see the module-level "-- juice --" comment above
     // `bricks_just_hit` for why this is diffed/timed here rather than read
@@ -1241,6 +1310,23 @@ impl Renderer3D {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let (rock_vertices, rock_indices) = build_rock_mesh();
+        let rock_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("render3d rock vertices"),
+            contents: bytemuck::cast_slice(&rock_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let rock_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("render3d rock indices"),
+            contents: bytemuck::cast_slice(&rock_indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let rock_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("render3d rock instances"),
+            size: (size_of::<Instance3D>() * MAX_ASTEROIDS) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         let hud = Hud::new(&device, &queue, config.format);
 
@@ -1262,6 +1348,10 @@ impl Renderer3D {
             sphere_index_buffer,
             sphere_index_count: sphere_indices.len() as u32,
             sphere_instance_buffer,
+            rock_vertex_buffer,
+            rock_index_buffer,
+            rock_index_count: rock_indices.len() as u32,
+            rock_instance_buffer,
             ball_trail: VecDeque::new(),
             prev_bricks: Vec::new(),
             prev_level: 0,
@@ -1456,14 +1546,24 @@ impl Renderer3D {
                 palette::BALL.linear(),
             )
         }));
-        sphere_instances.extend(curr.asteroids.iter().take(MAX_ASTEROIDS).map(|asteroid| {
-            let (x, z) = world_xz(asteroid.x, asteroid.y);
-            Instance3D::new(
-                [x, asteroid.radius, z],
-                [asteroid.radius; 3],
-                palette::ASTEROID.linear(),
-            )
-        }));
+        // Asteroids: the jagged rock mesh, turning slowly; each one's angle
+        // is offset by where it is, so no two face the same way.
+        let rock_instances: Vec<Instance3D> = curr
+            .asteroids
+            .iter()
+            .take(MAX_ASTEROIDS)
+            .map(|asteroid| {
+                let (x, z) = world_xz(asteroid.x, asteroid.y);
+                let angle = self.powerup_spin_angle + (asteroid.x + asteroid.y) * 0.013;
+                let spin = Quat::from_axis_angle(Vec3::new(0.3, 1.0, 0.2).normalize(), angle);
+                Instance3D::new(
+                    [x, asteroid.radius, z],
+                    [asteroid.radius; 3],
+                    palette::ASTEROID.linear(),
+                )
+                .with_rotation(spin.to_array())
+            })
+            .collect();
 
         // Bricks -- front face textured from `self.atlas` (see
         // `sprite_for_brick`/`Instance3D::textured`), side/top/bottom
@@ -1507,7 +1607,11 @@ impl Renderer3D {
         // Destroy-tumble ghosts: bricks destroyed recently enough that
         // they're still mid-tumble (spec: "the cube tumbles away with
         // gravity for 0.5s"). See `TumbleGhost` and `ingest_tick_events`.
-        cube_instances.extend(self.tumbling.iter().map(TumbleGhost::instance));
+        cube_instances.extend(
+            self.tumbling
+                .iter()
+                .map(|ghost| ghost.instance(&self.atlas)),
+        );
 
         // Falling capsules: pill-proportioned boxes in their kind's hue,
         // rolling slowly (spec: "power-up capsules rotate slowly"). Each
@@ -1582,6 +1686,11 @@ impl Renderer3D {
             &self.sphere_instance_buffer,
             0,
             bytemuck::cast_slice(&sphere_instances),
+        );
+        self.queue.write_buffer(
+            &self.rock_instance_buffer,
+            0,
+            bytemuck::cast_slice(&rock_instances),
         );
 
         self.hud.prepare(
@@ -1674,6 +1783,11 @@ impl Renderer3D {
                 0,
                 0..sphere_instances.len() as u32,
             );
+
+            pass.set_vertex_buffer(0, self.rock_vertex_buffer.slice(..));
+            pass.set_vertex_buffer(1, self.rock_instance_buffer.slice(..));
+            pass.set_index_buffer(self.rock_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            pass.draw_indexed(0..self.rock_index_count, 0, 0..rock_instances.len() as u32);
         }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1959,6 +2073,48 @@ mod tests {
         assert_ne!(widen, slow);
         assert_ne!(widen, multiball);
         assert_ne!(slow, multiball);
+    }
+
+    #[test]
+    fn rock_mesh_is_jagged_closed_and_flat_shaded() {
+        let (vertices, indices) = build_rock_mesh();
+        assert!(indices.iter().all(|&i| (i as usize) < vertices.len()));
+        let radii: Vec<f32> = vertices
+            .iter()
+            .map(|v| Vec3::from(v.position).length())
+            .collect();
+        let (min, max) = radii
+            .iter()
+            .fold((f32::MAX, 0.0f32), |(lo, hi), &r| (lo.min(r), hi.max(r)));
+        assert!(max - min > 0.15, "not jagged: radii {min}..{max}");
+        assert!(max <= 1.0 + ROCK_JAG + 1e-4 && min >= 1.0 - ROCK_JAG - 1e-4);
+        // Flat shading: the three vertices of a face share its normal.
+        for tri in vertices.as_chunks::<3>().0 {
+            assert_eq!(tri[0].normal, tri[1].normal);
+            assert_eq!(tri[1].normal, tri[2].normal);
+        }
+        // Closed: every jittered seam/pole duplicate moved with its twin,
+        // so each edge is shared by exactly two faces.
+        let key = |p: [f32; 3]| p.map(|c| (c * 1e4).round() as i64);
+        let mut edges = std::collections::HashMap::new();
+        for tri in vertices.as_chunks::<3>().0 {
+            for (a, b) in [(0, 1), (1, 2), (2, 0)] {
+                let (ka, kb) = (key(tri[a].position), key(tri[b].position));
+                let edge = if ka < kb { (ka, kb) } else { (kb, ka) };
+                *edges.entry(edge).or_insert(0) += 1;
+            }
+        }
+        assert!(edges.values().all(|&n| n == 2), "the rock has a hole");
+    }
+
+    #[test]
+    fn a_tumbling_brick_keeps_its_pattern() {
+        let atlas = crate::assets::TextureSource::Procedural.load();
+        let ghost = TumbleGhost::spawn(100.0, 50.0, 52.0, 22.0, BrickKind::Armored);
+        let uv = ghost.instance(&atlas).uv_rect;
+        assert!(uv[2] > uv[0], "the ghost must carry its sprite");
+        let debris = TumbleGhost::debris(100.0, 50.0, 10.0);
+        assert_eq!(debris.instance(&atlas).uv_rect, [0.0; 4]);
     }
 
     #[test]

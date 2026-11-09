@@ -235,12 +235,33 @@ fn level_digits(game: &Game) -> (String, String) {
     )
 }
 
-/// Builds the interface for one frame. Pure: same game, same layout.
-pub fn layout(frame: &Frame) -> Layout {
+/// A change in lives the HUD is still marking: the moment a life is lost
+/// (or gained from a Player capsule) gets a beat of its own instead of an
+/// icon silently disappearing. `age` is seconds since the change.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LifeCue {
+    pub lost: bool,
+    pub age: f32,
+}
+
+/// How long a [`LifeCue`] plays. One beat, no repetition: nothing in the
+/// HUD flashes, let alone above 3 Hz (DESIGN.md, "Motion").
+pub const LIFE_CUE_SECS: f32 = 0.9;
+
+impl LifeCue {
+    /// 1 at the change, easing out to 0 at [`LIFE_CUE_SECS`].
+    fn strength(&self) -> f32 {
+        let t = (self.age / LIFE_CUE_SECS).clamp(0.0, 1.0);
+        (1.0 - t) * (1.0 - t)
+    }
+}
+
+/// Builds the interface for one frame. Pure: same game and cue, same layout.
+pub fn layout(frame: &Frame, cue: Option<LifeCue>) -> Layout {
     let game = frame.game;
     let mut out = Layout::default();
     backdrop(&mut out);
-    band(&mut out, frame);
+    band(&mut out, frame, cue);
     match game.state {
         GameState::Playing => capsule_letters(&mut out, frame.capsules),
         state => state_screen(&mut out, game, state),
@@ -290,7 +311,7 @@ fn caption(text: &str, x: f32, align: Align) -> Line {
     }
 }
 
-fn band(out: &mut Layout, frame: &Frame) {
+fn band(out: &mut Layout, frame: &Frame, cue: Option<LifeCue>) {
     let game = frame.game;
 
     // Score, left.
@@ -359,9 +380,25 @@ fn band(out: &mut Layout, frame: &Frame) {
 
     // Lives, right: one small paddle per life, the count past six.
     let right = CANVAS_WIDTH - MARGIN_X;
-    out.lines.push(caption("LIVES", right, Align::Right));
+    let cue = cue.filter(|c| c.age < LIFE_CUE_SECS);
+    // During a cue the caption takes the cause's hue: the laser red of a
+    // lost ball, the Player capsule's gold of a gained life.
+    let cue_hue = cue.map(|c| {
+        if c.lost {
+            palette::CAPSULE_LASER
+        } else {
+            palette::CAPSULE_PLAYER
+        }
+    });
+    let caption_color = match (cue, cue_hue) {
+        (Some(c), Some(hue)) if c.strength() > 0.25 => hue,
+        _ => palette::TEXT_DIM,
+    };
+    out.lines.push(Line {
+        spans: vec![span("LIVES", caption_color, true)],
+        ..caption("LIVES", right, Align::Right)
+    });
     let (icon_w, icon_h, gap) = (16.0, 4.0, 6.0);
-    let shown = game.lives.min(6) as usize;
     let mut x = right;
     if game.lives > 6 {
         let extra = format!("+{}", game.lives - 5);
@@ -375,18 +412,64 @@ fn band(out: &mut Layout, frame: &Frame) {
         });
         x -= text_width(&extra, size::NOTE, 0.0) + gap;
     }
-    let icons = if game.lives > 6 { 5 } else { shown };
-    for _ in 0..icons {
+    let icons = if game.lives > 6 {
+        5
+    } else {
+        game.lives as usize
+    };
+    let icon_y = 31.0 - icon_h / 2.0;
+    for i in 0..icons {
         x -= icon_w;
-        out.overlay.push(Quad::rect(
-            x,
-            31.0 - icon_h / 2.0,
-            icon_w,
-            icon_h,
-            palette::PADDLE.linear(),
-        ));
+        // A gained life's icon (the leftmost) starts gold and settles to
+        // metal.
+        let color = match (cue, cue_hue) {
+            (Some(c), Some(hue)) if !c.lost && i + 1 == icons => {
+                mix(palette::PADDLE.linear(), hue.linear(), c.strength())
+            }
+            _ => palette::PADDLE.linear(),
+        };
+        out.overlay
+            .push(Quad::rect(x, icon_y, icon_w, icon_h, color));
         x -= gap;
     }
+    if let (Some(c), Some(hue)) = (cue, cue_hue) {
+        if c.lost {
+            // The life that went: its icon, red, in the slot it left,
+            // fading (and, with motion allowed, dropping a few pixels).
+            if game.lives < 6 {
+                let drop = if reduced_motion() {
+                    0.0
+                } else {
+                    5.0 * (1.0 - c.strength())
+                };
+                out.overlay.push(Quad::rect(
+                    x - icon_w,
+                    icon_y + drop,
+                    icon_w,
+                    icon_h,
+                    hue.linear_alpha(c.strength()),
+                ));
+            }
+            // And where it went: the field's floor lights once, fading.
+            out.overlay.push(Quad::rect(
+                0.0,
+                CANVAS_HEIGHT - 3.0,
+                CANVAS_WIDTH,
+                3.0,
+                hue.linear_alpha(0.9 * c.strength()),
+            ));
+        }
+    }
+}
+
+/// Linear mix of two linear RGBA colors, `t` of the way from `a` to `b`.
+fn mix(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
+    [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+        a[3] + (b[3] - a[3]) * t,
+    ]
 }
 
 /// A 1 px rectangle outline.
@@ -508,6 +591,27 @@ fn centered(spans: Vec<Span>, size: f32, tracking: f32, y: f32) -> Line {
     }
 }
 
+/// The slate: an opaque full-width band of field ink behind a state
+/// screen's text, ruled top and bottom like the ceiling. The scrim dims the
+/// scene; the slate clears it from behind the words. That matters in 3D,
+/// where the perspective puts the bricks and the paddle exactly where the
+/// title and the prompt sit. Full-bleed, so it reads as a band across the
+/// instrument rather than a card floating on it.
+fn slate(out: &mut Layout, top: f32, bottom: f32) {
+    out.overlay.push(Quad::rect(
+        0.0,
+        top,
+        CANVAS_WIDTH,
+        bottom - top,
+        palette::FIELD.linear(),
+    ));
+    let rule = palette::RULE.linear();
+    out.overlay
+        .push(Quad::rect(0.0, top, CANVAS_WIDTH, 1.0, rule));
+    out.overlay
+        .push(Quad::rect(0.0, bottom - 1.0, CANVAS_WIDTH, 1.0, rule));
+}
+
 fn state_screen(out: &mut Layout, game: &Game, state: GameState) {
     out.overlay.push(Quad::rect(
         0.0,
@@ -519,6 +623,7 @@ fn state_screen(out: &mut Layout, game: &Game, state: GameState) {
     let dim = palette::TEXT_DIM;
     match state {
         GameState::Menu => {
+            slate(out, FIELD_CENTER_Y - 134.0, FIELD_CENTER_Y + 182.0);
             out.lines
                 .push(title("BRYX", size::DISPLAY, 0.28, FIELD_CENTER_Y - 118.0));
             let set = match game.level_set() {
@@ -542,6 +647,7 @@ fn state_screen(out: &mut Layout, game: &Game, state: GameState) {
             ));
         }
         GameState::Paused => {
+            slate(out, FIELD_CENTER_Y - 112.0, FIELD_CENTER_Y + 96.0);
             out.lines
                 .push(title("PAUSED", size::TITLE, 0.2, FIELD_CENTER_Y - 96.0));
             controls(out, FIELD_CENTER_Y - 10.0, "Resume");
@@ -559,6 +665,7 @@ fn state_screen(out: &mut Layout, game: &Game, state: GameState) {
                 ];
                 ("GAME OVER", reached)
             };
+            slate(out, FIELD_CENTER_Y - 106.0, FIELD_CENTER_Y + 62.0);
             out.lines
                 .push(title(heading, size::TITLE, 0.2, FIELD_CENTER_Y - 90.0));
             let (zeros, digits) = score_digits(game.score);
@@ -583,6 +690,34 @@ fn state_screen(out: &mut Layout, game: &Game, state: GameState) {
             ));
         }
         GameState::Playing => {}
+    }
+}
+
+/// Turns the lives count, sampled once per rendered frame, into a
+/// [`LifeCue`]. Render-side like the renderers' other juice: a diff
+/// against the last frame, never a simulation hook (`events.rs`'s
+/// `LifeLost` is drained before the frame renders).
+#[derive(Debug, Default)]
+struct LivesWatch {
+    last: Option<u32>,
+    change: Option<(bool, std::time::Instant)>,
+}
+
+impl LivesWatch {
+    fn observe(&mut self, lives: u32, now: std::time::Instant) -> Option<LifeCue> {
+        if let Some(last) = self.last {
+            if lives != last {
+                self.change = Some((lives < last, now));
+            }
+        }
+        self.last = Some(lives);
+        let (lost, at) = self.change?;
+        let age = now.duration_since(at).as_secs_f32();
+        if age >= LIFE_CUE_SECS {
+            self.change = None;
+            return None;
+        }
+        Some(LifeCue { lost, age })
     }
 }
 
@@ -645,6 +780,7 @@ pub struct Hud {
     atlas: TextAtlas,
     text_renderer: TextRenderer,
     buffers: Vec<(TextBuffer, f32, f32)>,
+    lives: LivesWatch,
 }
 
 impl Hud {
@@ -722,6 +858,7 @@ impl Hud {
             atlas,
             text_renderer,
             buffers: Vec::new(),
+            lives: LivesWatch::default(),
         }
     }
 
@@ -737,7 +874,10 @@ impl Hud {
         frame: &Frame,
     ) {
         self.letterbox = Letterbox::fit(width, height);
-        let layout = layout(frame);
+        let cue = self
+            .lives
+            .observe(frame.game.lives, std::time::Instant::now());
+        let layout = layout(frame, cue);
         let mut quads = layout.backdrop;
         quads.truncate(MAX_QUADS);
         self.backdrop_count = quads.len() as u32;
@@ -901,11 +1041,11 @@ mod tests {
             (GameState::Victory, "VICTORY"),
         ] {
             game.state = state;
-            let layout = layout(&frame(&game));
+            let layout = layout(&frame(&game), None);
             assert!(all_text(&layout).contains(word), "{state:?}");
         }
         game.state = GameState::Playing;
-        let text = all_text(&layout(&frame(&game)));
+        let text = all_text(&layout(&frame(&game), None));
         assert!(!text.contains("BRYX") && !text.contains("PAUSED"));
         assert!(text.contains("SCORE") && text.contains("LIVES"));
     }
@@ -916,9 +1056,42 @@ mod tests {
         game.score = 1234;
         for state in [GameState::GameOver, GameState::Victory] {
             game.state = state;
-            let text = all_text(&layout(&frame(&game)));
+            let text = all_text(&layout(&frame(&game), None));
             assert!(text.contains("SCORE 001234"), "{state:?}: {text}");
         }
+    }
+
+    #[test]
+    fn a_lost_life_lights_the_floor_once_then_clears() {
+        let start = std::time::Instant::now();
+        let at = |secs: f32| start + std::time::Duration::from_secs_f32(secs);
+        let mut watch = LivesWatch::default();
+        assert_eq!(watch.observe(3, at(0.0)), None, "first sample sets no cue");
+        assert_eq!(watch.observe(3, at(0.1)), None);
+        let cue = watch.observe(2, at(0.2)).expect("a loss starts a cue");
+        assert!(cue.lost && cue.age == 0.0);
+        assert!(watch.observe(2, at(0.6)).is_some_and(|c| c.lost));
+        assert_eq!(watch.observe(2, at(0.2 + LIFE_CUE_SECS)), None);
+        let gained = watch.observe(3, at(2.0)).expect("a gain starts a cue");
+        assert!(!gained.lost);
+
+        let mut game = Game::new();
+        game.state = GameState::Playing;
+        let floor = |cue| {
+            layout(&frame(&game), cue).overlay.iter().any(|q| {
+                q.center[1] + q.half_size[1] == CANVAS_HEIGHT
+                    && q.half_size[0] == CANVAS_WIDTH / 2.0
+            })
+        };
+        assert!(floor(Some(LifeCue {
+            lost: true,
+            age: 0.0
+        })));
+        assert!(!floor(Some(LifeCue {
+            lost: false,
+            age: 0.0
+        })));
+        assert!(!floor(None));
     }
 
     #[test]
@@ -926,7 +1099,7 @@ mod tests {
         let mut game = Game::new();
         for state in [GameState::Menu, GameState::Paused] {
             game.state = state;
-            let text = all_text(&layout(&frame(&game)));
+            let text = all_text(&layout(&frame(&game), None));
             for key in ["SPACE", "ESC", "A", "D", "←", "→"] {
                 assert!(text.lines().any(|l| l == key), "{state:?} lacks {key}");
             }
@@ -936,11 +1109,14 @@ mod tests {
     #[test]
     fn the_autopilot_tag_appears_only_with_the_autopilot() {
         let game = Game::new();
-        let without = all_text(&layout(&frame(&game)));
-        let with = all_text(&layout(&Frame {
-            autopilot: true,
-            ..frame(&game)
-        }));
+        let without = all_text(&layout(&frame(&game), None));
+        let with = all_text(&layout(
+            &Frame {
+                autopilot: true,
+                ..frame(&game)
+            },
+            None,
+        ));
         assert!(!without.contains("AUTOPILOT"));
         assert!(with.contains("AUTOPILOT"));
     }
@@ -950,10 +1126,13 @@ mod tests {
         let mut game = Game::new();
         let capsules = [(100.0, 200.0, PowerUpKind::Laser)];
         let with = |game: &Game| {
-            layout(&Frame {
-                capsules: &capsules,
-                ..frame(game)
-            })
+            layout(
+                &Frame {
+                    capsules: &capsules,
+                    ..frame(game)
+                },
+                None,
+            )
         };
         game.state = GameState::Playing;
         assert!(all_text(&with(&game)).lines().any(|l| l == "L"));
@@ -974,10 +1153,16 @@ mod tests {
             GameState::Victory,
         ] {
             game.state = state;
-            let layout = layout(&Frame {
-                autopilot: true,
-                ..frame(&game)
-            });
+            let layout = layout(
+                &Frame {
+                    autopilot: true,
+                    ..frame(&game)
+                },
+                Some(LifeCue {
+                    lost: true,
+                    age: 0.1,
+                }),
+            );
             for q in layout.backdrop.iter().chain(&layout.overlay) {
                 assert!(q.center[0] - q.half_size[0] >= 0.0);
                 assert!(q.center[0] + q.half_size[0] <= CANVAS_WIDTH);
