@@ -426,23 +426,20 @@ mod tests {
         let strategist = Blocking::new(backend, "fake").unwrap();
         let mut autopilot = Autopilot::new(Some(Box::new(strategist)), 1);
         let mut game = Game::with_seed(11);
-        // Built-in levels 1 and 2 (level 3 cannot be cleared, see
-        // `autopilot::tests::reached_level_3`).
-        for _ in 0..120 * 360 {
+        for _ in 0..120 * 900 {
             let input = autopilot.input(&game, DT);
             game.tick(&input, DT);
             autopilot.observe(&game);
             game.events.clear();
-            if game.level >= 3 || game.state != GameState::Playing {
+            if matches!(game.state, GameState::Victory | GameState::GameOver) {
                 break;
             }
         }
-        assert_eq!(game.level, 3, "{:?}", autopilot.stats());
-        assert_eq!(game.state, GameState::Playing);
+        assert_eq!(game.state, GameState::Victory, "{:?}", autopilot.stats());
         assert!(autopilot.stats().accepted > 0);
     }
 
-    /// Plays built-in levels 1 and 2 against the real model, game time
+    /// Plays the three built-in levels against the real model, game time
     /// frozen while it answers. Needs `TYPESAFE_API_KEY`; run by hand:
     /// `cargo test --features typesafe -- --ignored --nocapture live_`.
     #[test]
@@ -453,7 +450,7 @@ mod tests {
         let mut autopilot = Autopilot::new(Some(Box::new(strategist)), 1).with_log(true);
         let mut game = Game::with_seed(42);
         let mut ticks = 0;
-        while ticks < 120 * 360 && game.level < 3 && game.state != GameState::GameOver {
+        while ticks < 120 * 900 && !matches!(game.state, GameState::Victory | GameState::GameOver) {
             let input = autopilot.input(&game, DT);
             game.tick(&input, DT);
             autopilot.observe(&game);
@@ -469,6 +466,6 @@ mod tests {
             game.score,
             autopilot.stats()
         );
-        assert_eq!(game.level, 3);
+        assert_eq!(game.state, GameState::Victory);
     }
 }

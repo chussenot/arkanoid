@@ -7,7 +7,7 @@ description = "Launch the game on autopilot, strategy from TypeSafe (needs TYPES
 run = "cargo run --release --features typesafe -- --autopilot"
 
 [tasks."live:autopilot"]
-description = "Play levels 1-2 headless against the real TypeSafe API (needs TYPESAFE_API_KEY)"
+description = "Play the three built-in levels headless against the real TypeSafe API (needs TYPESAFE_API_KEY)"
 run = "cargo test --features typesafe -- --ignored --nocapture live_"
 
 [tasks.build]

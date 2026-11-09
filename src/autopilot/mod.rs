@@ -47,9 +47,13 @@ pub const MIN_CONFIDENCE: f64 = 0.3;
 /// the heuristic lane anyway. Hosted p50 is about 250 ms.
 const SERVE_WAIT_SECS: f32 = 1.5;
 
-/// Paddle hits in a row without a brick broken after which a model's lane
-/// is overridden: the shot is looping (typically between indestructible
-/// bricks and the paddle) and the heuristic rotation breaks the loop.
+/// Paddle hits in a row without a brick broken after which the shot counts
+/// as looping (typically between indestructible bricks and the paddle):
+/// the model's lane is overridden, and its answers are set aside, until a
+/// brick breaks, while the heuristic rotation looks for a way through.
+/// Setting answers aside, not only the current lane, is what stops a model
+/// that keeps naming the same unreachable lane from re-entering the loop on
+/// its very next answer.
 const LOOP_OVERRIDE_RALLIES: u32 = 4;
 
 /// Shortens a power-up catch's return trip estimate: a rising ball's
@@ -411,6 +415,9 @@ impl Autopilot {
             let verdict = if self.pending != Some(reply.id) {
                 self.stats.late += 1;
                 "late, ignored"
+            } else if self.fruitless >= LOOP_OVERRIDE_RALLIES {
+                self.stats.loop_overrides += 1;
+                "shots are looping, heuristic kept until a brick breaks"
             } else if advice.confidence < MIN_CONFIDENCE {
                 self.stats.low_confidence += 1;
                 "below the confidence bar, heuristic kept"
@@ -468,12 +475,8 @@ mod tests {
         }
     }
 
-    /// The built-in levels the autopilot is held to: 1 and 2. Level 3's
-    /// breakable bricks sit inside a closed box of indestructible ones (top
-    /// and bottom rows all `X`, `X` at both ends of every row between), so
-    /// no shot can reach them, piloted or not.
-    fn reached_level_3(game: &Game) -> bool {
-        game.level >= 3
+    fn won(game: &Game) -> bool {
+        game.state == GameState::Victory
     }
 
     /// Answers every request at once with a fixed lane, so a test runs
@@ -518,18 +521,19 @@ mod tests {
         }
     }
 
-    /// Game time allowed for built-in levels 1 and 2 together: six minutes,
-    /// against the 200 to 250 s the heuristic takes on the seeds below.
-    const TWO_LEVELS: u32 = 120 * 360;
+    /// Game time allowed for the three built-in levels: fifteen minutes,
+    /// against the 348 to 626 s the heuristic takes across seeds (level 3,
+    /// entered through one four-brick gate, is most of it).
+    const ALL_LEVELS: u32 = 120 * 900;
 
     #[test]
-    fn the_heuristic_alone_clears_the_first_two_built_in_levels() {
+    fn the_heuristic_alone_wins_the_built_in_levels() {
         for seed in [1, 7, 42] {
             let mut game = Game::with_seed(seed);
             let mut autopilot = Autopilot::new(None, 1);
-            play(&mut game, &mut autopilot, TWO_LEVELS, reached_level_3);
+            play(&mut game, &mut autopilot, ALL_LEVELS, won);
             assert!(
-                reached_level_3(&game) && game.state == GameState::Playing,
+                won(&game),
                 "seed {seed}: {:?} at level {}, {} bricks left, {} lives, {:?}",
                 game.state,
                 game.level,
@@ -547,7 +551,7 @@ mod tests {
         let mut game = Game::with_seed(2);
         game.load_external_levels(set.levels);
         let mut autopilot = Autopilot::new(None, 1);
-        play(&mut game, &mut autopilot, TWO_LEVELS, |_| false);
+        play(&mut game, &mut autopilot, ALL_LEVELS, |_| false);
         assert_eq!(
             game.state,
             GameState::Victory,
@@ -567,11 +571,15 @@ mod tests {
             replies: VecDeque::new(),
         };
         let mut autopilot = Autopilot::new(Some(Box::new(strategist)), 1);
-        play(&mut game, &mut autopilot, TWO_LEVELS, reached_level_3);
-        assert!(reached_level_3(&game), "{:?}", autopilot.stats());
+        play(&mut game, &mut autopilot, ALL_LEVELS, won);
+        assert!(won(&game), "{:?}", autopilot.stats());
         let stats = autopilot.stats();
         assert!(stats.accepted > 0, "{stats:?}");
         assert!(stats.empty_lane > 0, "the far-left lane empties: {stats:?}");
+        // On level 3 the far-left bricks sit behind indestructible ones,
+        // reachable only through the gate: a model that keeps naming that
+        // lane loops until its answers are set aside.
+        assert!(stats.loop_overrides > 0, "{stats:?}");
     }
 
     #[test]
@@ -583,7 +591,7 @@ mod tests {
             replies: VecDeque::new(),
         };
         let mut autopilot = Autopilot::new(Some(Box::new(strategist)), 1);
-        play(&mut game, &mut autopilot, TWO_LEVELS / 2, |_| false);
+        play(&mut game, &mut autopilot, ALL_LEVELS / 2, |_| false);
         let stats = autopilot.stats();
         assert_eq!(stats.accepted, 0);
         assert!(stats.low_confidence > 0);
@@ -594,8 +602,8 @@ mod tests {
     fn a_silent_model_delays_each_serve_but_never_stops_the_game() {
         let mut game = Game::with_seed(5);
         let mut autopilot = Autopilot::new(Some(Box::new(Silent)), 1);
-        play(&mut game, &mut autopilot, TWO_LEVELS, reached_level_3);
-        assert!(reached_level_3(&game), "{:?}", autopilot.stats());
+        play(&mut game, &mut autopilot, ALL_LEVELS, won);
+        assert!(won(&game), "{:?}", autopilot.stats());
         assert_eq!(autopilot.stats().accepted, 0);
     }
 
@@ -609,7 +617,7 @@ mod tests {
                 replies: VecDeque::new(),
             };
             let mut autopilot = Autopilot::new(Some(Box::new(strategist)), every);
-            play(&mut game, &mut autopilot, TWO_LEVELS / 2, |_| false);
+            play(&mut game, &mut autopilot, ALL_LEVELS / 2, |_| false);
             autopilot.stats().clone()
         };
         let every_rally = run(1);
