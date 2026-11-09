@@ -29,10 +29,14 @@ mod assets;
 mod events;
 #[path = "../game.rs"]
 mod game;
+#[path = "../hud.rs"]
+mod hud;
 #[path = "../levels.rs"]
 mod levels;
 #[path = "../levelset.rs"]
 mod levelset;
+#[path = "../palette.rs"]
+mod palette;
 #[path = "../render.rs"]
 mod render;
 #[path = "../render3d/mod.rs"]
@@ -61,9 +65,9 @@ const WARMUP_FRAMES: usize = 60;
 const MEASURED_FRAMES: usize = 600;
 
 const CLEAR_COLOR: wgpu::Color = wgpu::Color {
-    r: 0.05,
-    g: 0.06,
-    b: 0.09,
+    r: 0.0,
+    g: 0.0,
+    b: 0.0,
     a: 1.0,
 };
 
@@ -190,7 +194,11 @@ impl ApplicationHandler for Bench {
                 .create_window(attrs)
                 .expect("failed to create window"),
         );
-        self.renderer = Some(Renderer3D::new(Arc::clone(&window)));
+        self.renderer = Some(Renderer3D::new(
+            Arc::clone(&window),
+            assets::TextureSource::Procedural.load(),
+            false,
+        ));
         self.window = Some(window);
         self.last = Instant::now();
         event_loop.set_control_flow(ControlFlow::Poll);

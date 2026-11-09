@@ -5,8 +5,10 @@ mod autopilot;
 mod cli;
 mod events;
 mod game;
+mod hud;
 mod levels;
 mod levelset;
+mod palette;
 mod render;
 mod render3d;
 
@@ -40,12 +42,16 @@ enum AnyRenderer {
 }
 
 impl AnyRenderer {
-    fn new(kind: cli::RendererKind, window: Arc<Window>, atlas: Atlas) -> Self {
+    /// Both renderers draw their sprites from the same `atlas` (procedural
+    /// or `--assets`), so a brick kind looks the same through either lens.
+    fn new(kind: cli::RendererKind, window: Arc<Window>, atlas: Atlas, autopilot: bool) -> Self {
         match kind {
-            cli::RendererKind::Classic => Self::Classic(Box::new(Renderer::new(window, atlas))),
-            // Renderer3D manages its own brick-front-face atlas internally
-            // (see render3d/atlas.rs's doc comment) rather than taking B's.
-            cli::RendererKind::ThreeD => Self::ThreeD(Box::new(render3d::Renderer3D::new(window))),
+            cli::RendererKind::Classic => {
+                Self::Classic(Box::new(Renderer::new(window, atlas, autopilot)))
+            }
+            cli::RendererKind::ThreeD => Self::ThreeD(Box::new(render3d::Renderer3D::new(
+                window, atlas, autopilot,
+            ))),
         }
     }
 
@@ -76,11 +82,11 @@ impl AnyRenderer {
     }
 }
 
-/// Fixed logical playfield (spec: 800x600). Scaling/letterboxing a resized
-/// window onto this is a later milestone -- for now the window just opens at
-/// this size and resizing merely keeps the surface valid.
-const LOGICAL_WIDTH: u32 = 800;
-const LOGICAL_HEIGHT: u32 = 600;
+/// The window opens at the canvas size: the fixed 800x600 playfield plus
+/// the HUD band above it (`hud::CANVAS_*`). A resized window letterboxes
+/// the canvas (`hud::Letterbox`); the simulation never changes.
+const LOGICAL_WIDTH: u32 = hud::CANVAS_WIDTH as u32;
+const LOGICAL_HEIGHT: u32 = hud::CANVAS_HEIGHT as u32;
 
 /// Simulation tick rate: 120 Hz, independent of the display's refresh rate.
 const FIXED_DT: f32 = 1.0 / 120.0;
@@ -90,15 +96,6 @@ const FIXED_DT: f32 = 1.0 / 120.0;
 /// indefinitely on the next update -- the spiral of death. Past the cap the
 /// simulation just loses the extra time instead.
 const MAX_TICKS_PER_FRAME: u32 = 10;
-
-/// Placeholder clear color for Milestone 1 -- a dark blue-gray so it's
-/// obviously not "no draw happened at all" (black) once bricks/paddle land.
-const CLEAR_COLOR: wgpu::Color = wgpu::Color {
-    r: 0.05,
-    g: 0.06,
-    b: 0.09,
-    a: 1.0,
-};
 
 /// Winit application state: the window/renderer (created on `resumed`) plus
 /// the fixed-timestep accumulator driving `Game::tick`.
@@ -110,9 +107,8 @@ struct App {
     renderer_kind: cli::RendererKind,
     /// Sprite pixels this session draws with (see `assets::TextureSource`),
     /// resolved once in `main` -- held here only until `resumed` builds the
-    /// classic `Renderer` that actually uploads it, since window/renderer
-    /// creation has to wait for `ApplicationHandler::resumed`. The 3D
-    /// renderer doesn't consume this (see `main()`'s comment).
+    /// renderer that uploads it, since window/renderer creation has to wait
+    /// for `ApplicationHandler::resumed`.
     atlas: Atlas,
     game: Game,
     /// Held-key state, updated by `WindowEvent::KeyboardInput` and read once
@@ -178,6 +174,7 @@ impl ApplicationHandler for App {
             self.renderer_kind,
             Arc::clone(&window),
             self.atlas.clone(),
+            self.autopilot.is_some(),
         ));
         self.window = Some(window);
         self.last_update = Instant::now();
@@ -225,7 +222,7 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
                     renderer.render(
-                        CLEAR_COLOR,
+                        palette::LETTERBOX.clear(),
                         &self.render_prev,
                         &self.game,
                         self.render_alpha,
@@ -379,9 +376,8 @@ fn main() {
     // procedural pixels instead of panicking
     // (assets::TextureSource::load's contract). The resulting `Atlas` rides
     // along on `App` until `resumed` builds the classic `Renderer` that
-    // uploads it (see render.rs's bead b5 for the texture/UV wiring). The
-    // 3D renderer manages its own brick-front-face atlas internally (see
-    // render3d/atlas.rs's doc comment) rather than taking this one.
+    // uploads it (see render.rs's bead b5 for the texture/UV wiring); the 3D
+    // renderer textures its bricks from the same atlas.
     let texture_source = match args.assets {
         Some(dir) => assets::TextureSource::Pack(std::path::PathBuf::from(dir)),
         None => assets::TextureSource::default(),

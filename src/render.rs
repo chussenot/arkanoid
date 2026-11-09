@@ -10,22 +10,19 @@ use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
 use std::time::Instant;
 
-use glyphon::cosmic_text::Align;
-use glyphon::{
-    Attrs, Buffer as TextBuffer, Cache as TextCache, Family, FontSystem, Metrics, Resolution,
-    Shaping, SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Viewport,
-};
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
-use crate::assets::{Atlas, SpriteId, UvRect};
-use crate::events::{GameEvent, PowerUpKind};
+use crate::assets::{Atlas, SpriteId, UvRect, CAPSULE_SIZE};
+use crate::events::GameEvent;
 use crate::game::{
-    Ball, Brick, Game, GameState, GunKind, Paddle, ASTEROID_BLAST_RADIUS, ASTEROID_RADIUS,
+    Ball, Brick, Game, GunKind, Paddle, ASTEROID_BLAST_RADIUS, ASTEROID_RADIUS,
     GATE_REACH_ABOVE_PADDLE, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
 };
+use crate::hud::{self, Hud, BAND_HEIGHT};
 use crate::levels::BrickKind;
+use crate::palette;
 
 /// One corner of the shared unit quad every entity is drawn from. Kept in
 /// `[-1, 1]` on both axes so a vertex shader can place it with a single
@@ -76,9 +73,8 @@ struct QuadInstance {
     uv: [f32; 4],
     /// `1.0`: sample the atlas texture at `uv` and multiply by `color`.
     /// `0.0`: draw `color` flat, ignoring `uv` -- every quad's behavior
-    /// before this bead, still used by juice/HUD quads with no sprite of
-    /// their own (trail, extra-ball dots kept simple, powerups, the scrim,
-    /// life icons).
+    /// before this bead, still used by quads with no sprite of their own
+    /// (hit flashes, the Break gate, laser bolts).
     textured: f32,
 }
 
@@ -119,11 +115,6 @@ const WHITE_TINT: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 /// `levels.rs`'s own tests: up to 14 columns x 8 rows).
 const MAX_BRICKS: usize = 14 * 8;
 
-/// Defensive cap on how many life icons ever get drawn. Lives start at 3
-/// and the Player power-up can raise them to `game::MAX_LIVES` (9); this
-/// just bounds the instance buffer.
-const MAX_LIFE_ICONS: usize = 10;
-
 /// Defensive caps on `Game::extra_balls`/`Game::powerups` for sizing the
 /// instance buffer -- `game.rs` doesn't hard-cap either (Multiball can be
 /// caught repeatedly, several bricks can drop a powerup in the same tick),
@@ -138,9 +129,9 @@ const MAX_EXPLOSIONS: usize = 8;
 /// `game.rs` caps bolts in flight at 16.
 const MAX_BOLTS: usize = 16;
 
-/// Falling power-up capsules are square, smaller than a brick but bigger
-/// than the ball -- big enough to read as "catch me" at a glance.
-const POWERUP_HALF_SIZE: f32 = 9.0;
+/// Falling capsules are pills (`assets::CAPSULE_SIZE`) wide enough to
+/// carry their letter, which the HUD layer sets on top (`hud.rs`).
+const POWERUP_HALF_SIZE: [f32; 2] = [CAPSULE_SIZE.0 / 2.0, CAPSULE_SIZE.1 / 2.0];
 
 /// Quads in the ball's fading trail (spec: "a 4-quad fading trail").
 const TRAIL_LEN: usize = 4;
@@ -154,15 +145,13 @@ const MAX_DESTROY_GHOSTS: usize = 8;
 
 /// Fixed number of quad instances the instance buffer has room for: the
 /// paddle, the ball trail, the ball, the largest possible brick grid (plus
-/// its worst-case destroy-ghosts), the dark scrim quad drawn behind
-/// Menu/Paused/GameOver/Victory overlays, and the lives-icon row. Sized
-/// once at the ceiling rather than resized per frame.
+/// its worst-case destroy-ghosts), and every capped entity list. The HUD
+/// (band, scrim, lives, text) is `hud.rs`'s. Sized once at the ceiling
+/// rather than resized per frame.
 const MAX_QUADS: usize = 2
     + TRAIL_LEN
     + MAX_BRICKS
     + MAX_DESTROY_GHOSTS
-    + 1
-    + MAX_LIFE_ICONS
     + MAX_EXTRA_BALLS
     + MAX_POWERUPS
     + MAX_ASTEROIDS
@@ -170,54 +159,22 @@ const MAX_QUADS: usize = 2
     + MAX_BOLTS
     + 1 /* the Break gate */;
 
-/// Flat fallback color kept only for quads that don't carry a sprite of
-/// their own (ball trail, life icons) -- the paddle and ball's own quads
-/// are textured (see `render()`), not flat-filled with this.
-const BALL_COLOR: [f32; 4] = [1.0, 0.78, 0.2, 1.0];
-
-const POWERUP_WIDEN_COLOR: [f32; 4] = [0.35, 0.85, 0.40, 1.0];
-const POWERUP_SLOW_COLOR: [f32; 4] = [0.35, 0.55, 0.95, 1.0];
-const POWERUP_MULTIBALL_COLOR: [f32; 4] = [0.80, 0.35, 0.90, 1.0];
-const POWERUP_GLUE_COLOR: [f32; 4] = [0.95, 0.45, 0.65, 1.0];
-const POWERUP_LASER_COLOR: [f32; 4] = [0.95, 0.25, 0.20, 1.0];
-const POWERUP_SUPER_LASER_COLOR: [f32; 4] = [0.30, 0.95, 0.95, 1.0];
-/// Grey: the one capsule worth dodging.
-const POWERUP_TINY_COLOR: [f32; 4] = [0.55, 0.55, 0.58, 1.0];
-/// The color of a life icon: the capsule that brings one more.
-const POWERUP_PLAYER_COLOR: [f32; 4] = BALL_COLOR;
-const POWERUP_BREAK_COLOR: [f32; 4] = [1.0, 0.55, 0.10, 1.0];
-/// Half the width of the Break gate drawn over the right wall's edge.
-const GATE_HALF_WIDTH: f32 = 3.0;
-/// Bolts, and the paddle while it carries the gun that fires them, take
-/// their capsule's color.
-const LASER_PADDLE_TINT: [f32; 4] = [1.0, 0.55, 0.5, 1.0];
-const SUPER_LASER_PADDLE_TINT: [f32; 4] = [0.6, 1.0, 1.0, 1.0];
-
-/// Asteroids reuse the ball's round sprite, tinted rock-orange, at their
-/// own radius: round without a sprite of their own.
-const ASTEROID_TINT: [f32; 4] = [0.85, 0.45, 0.25, 1.0];
-/// A blown-up asteroid: the same round sprite, hot and growing as it fades.
-const EXPLOSION_TINT: [f32; 3] = [1.0, 0.75, 0.3];
 const EXPLOSION_SECS: f32 = 0.35;
-/// The paddle while Glue is active: the same sprite, tinted the Glue
-/// capsule's color so the player can tell a hit will stick.
-const GLUE_PADDLE_TINT: [f32; 4] = [1.0, 0.7, 0.85, 1.0];
 
-/// One distinct color per `PowerUpKind` so a falling capsule reads as
-/// "which power-up" at a glance, no icon/text needed.
-fn powerup_color(kind: PowerUpKind) -> [f32; 4] {
-    match kind {
-        PowerUpKind::Widen => POWERUP_WIDEN_COLOR,
-        PowerUpKind::Slow => POWERUP_SLOW_COLOR,
-        PowerUpKind::Multiball => POWERUP_MULTIBALL_COLOR,
-        PowerUpKind::Glue => POWERUP_GLUE_COLOR,
-        PowerUpKind::Laser => POWERUP_LASER_COLOR,
-        PowerUpKind::SuperLaser => POWERUP_SUPER_LASER_COLOR,
-        PowerUpKind::Tiny => POWERUP_TINY_COLOR,
-        PowerUpKind::Player => POWERUP_PLAYER_COLOR,
-        PowerUpKind::Break => POWERUP_BREAK_COLOR,
-    }
+/// The open Break gate: a bar this half-width down the right edge.
+const GATE_HALF_WIDTH: f32 = 3.0;
+
+/// Linear RGBA of `c` mixed toward white by `1 - k`: the paddle's tint while
+/// a capsule's effect is on it. A full-strength tint would darken the
+/// brushed metal into the capsule's own hue; this keeps the paddle metal
+/// and lets the hue show.
+fn paddle_tint(c: palette::Rgb, k: f32) -> [f32; 4] {
+    let [r, g, b, _] = c.linear();
+    [1.0 - k + k * r, 1.0 - k + k * g, 1.0 - k + k * b, 1.0]
 }
+
+/// How strongly a capsule's hue tints the paddle while its effect lasts.
+const PADDLE_TINT_STRENGTH: f32 = 0.55;
 
 /// One asteroid explosion playing out, render-side only: spawned from a
 /// `GameEvent::AsteroidExploded` (the asteroid is already gone from `Game`
@@ -280,14 +237,15 @@ fn brick_sprite(brick: &Brick) -> SpriteId {
 // on `curr` to read. Comparing this frame's `Game` state against a snapshot
 // of the last-rendered frame (kept on `Renderer`) sidesteps that -- and the
 // diffing itself is plain data in, plain data out, so it's unit-testable
-// without a GPU `Renderer` to construct, same spirit as `overlay_text`
-// above.
+// without a GPU `Renderer` to construct, same spirit as `hud::layout`.
 
 /// White flash color for a brick that was just hit (surviving or not) --
 /// drawn flat (bypassing the atlas sample entirely, see `render()`), so it
 /// reads as a distinct one-frame pop rather than just a lighter version of
 /// the brick's normal sprite.
-const HIT_FLASH_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+fn hit_flash_color() -> [f32; 4] {
+    palette::HIT_FLASH.linear()
+}
 
 /// Spec: "screen-space shake 3 px / 80 ms on brick destruction".
 const SHAKE_MAX_OFFSET: f32 = 3.0;
@@ -357,83 +315,6 @@ fn push_trail(trail: &mut VecDeque<(f32, f32)>, ball: &Ball) {
     }
 }
 
-// -- HUD / menu / pause / game-over / victory screens ----------------------
-//
-// Score/level/overlay text is drawn with glyphon in *physical* surface
-// pixels (via `Renderer::to_physical`, since that's the space `Viewport`
-// operates in), while the scrim and lives-icon quads below stay in the same
-// *logical* 800x600 playfield space every other quad in this file uses (the
-// shared vertex shader maps that space to NDC on its own). Both line up at
-// the window's default 800x600 size; on a resized window they stretch
-// together the same non-uniform way the brick/paddle/ball quads already do
-// -- true aspect-preserving letterboxing is still a later milestone, same
-// limitation `Renderer::resize` already documents.
-
-const HUD_MARGIN: f32 = 18.0;
-const HUD_FONT_SIZE: f32 = 22.0;
-const HUD_LINE_HEIGHT: f32 = 26.0;
-const TITLE_FONT_SIZE: f32 = 52.0;
-const TITLE_LINE_HEIGHT: f32 = 58.0;
-const DETAIL_FONT_SIZE: f32 = 20.0;
-const DETAIL_LINE_HEIGHT: f32 = 26.0;
-/// Vertical offset (logical px) of the overlay title/detail lines from the
-/// playfield's vertical center.
-const TITLE_OFFSET_Y: f32 = -40.0;
-const DETAIL_OFFSET_Y: f32 = 30.0;
-
-const LIFE_ICON_SIZE: f32 = 16.0;
-const LIFE_ICON_GAP: f32 = 8.0;
-
-const HUD_TEXT_COLOR: glyphon::Color = glyphon::Color::rgb(230, 232, 240);
-const TITLE_TEXT_COLOR: glyphon::Color = glyphon::Color::rgb(255, 210, 90);
-/// Dark, partly-transparent quad drawn over the whole playfield behind any
-/// non-`Playing` overlay -- needs the pipeline's blend mode to actually
-/// blend (see `Renderer::new`'s pipeline setup) rather than replace.
-const SCRIM_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 0.62];
-
-/// Title + detail line for the screen drawn on top of (Menu, Paused) or
-/// instead of (GameOver, Victory) the live game whenever `state` isn't
-/// `Playing`. Pure function of `Game`, so it's unit-testable without a GPU
-/// -- the one branchy (5-way) piece of logic this module adds for wiring
-/// the state machine to "which screen renders".
-fn overlay_text(game: &Game) -> Option<(&'static str, String)> {
-    match game.state {
-        GameState::Menu => Some((
-            "BRYX",
-            "SPACE: Start   ARROWS / A D: Move   ESC or P: Pause".to_string(),
-        )),
-        GameState::Paused => Some(("PAUSED", "ESC or P: Resume".to_string())),
-        GameState::GameOver => Some(("GAME OVER", format!("Final Score: {}", game.score))),
-        GameState::Victory => Some(("VICTORY!", format!("Final Score: {}", game.score))),
-        GameState::Playing => None,
-    }
-}
-
-/// Builds a single-line (or wrapped, if it's long enough) glyphon text
-/// buffer, shaped and ready to hand to `TextRenderer::prepare` via a
-/// `TextArea`. `wrap_width` also doubles as the box `align` centers/aligns
-/// within -- callers pass the full surface width for anything that should
-/// center across the screen.
-fn make_line_buffer(
-    font_system: &mut FontSystem,
-    text: &str,
-    font_size: f32,
-    line_height: f32,
-    wrap_width: f32,
-    align: Align,
-) -> TextBuffer {
-    let mut buffer = TextBuffer::new(font_system, Metrics::new(font_size, line_height));
-    buffer.set_size(Some(wrap_width), None);
-    buffer.set_text(
-        text,
-        &Attrs::new().family(Family::SansSerif),
-        Shaping::Basic,
-        Some(align),
-    );
-    buffer.shape_until_scroll(font_system, false);
-    buffer
-}
-
 // The shader below hardcodes the playfield size as WGSL consts (see its own
 // comment for why). This guard catches the two numbers drifting apart at
 // compile time instead of as a silently squished/stretched playfield if
@@ -462,10 +343,9 @@ struct VertexOutput {
 
 // Fixed logical playfield (spec: 800x600, physics never changes on resize).
 // Hardcoded rather than passed as a uniform: the value truly never changes,
-// so a bind group would only add ceremony. Note this stretches the 800x600
-// field to fill whatever the surface size is -- proper aspect-preserving
-// letterboxing on resize is deferred, same as `Renderer::resize` already
-// documents; nothing new is being deferred here.
+// so a bind group would only add ceremony. The render pass's viewport is
+// the letterboxed field rect (`hud::Letterbox::field_viewport`), so these
+// coordinates fill the field at any window size without stretching.
 const PLAYFIELD_WIDTH: f32 = 800.0;
 const PLAYFIELD_HEIGHT: f32 = 600.0;
 
@@ -575,8 +455,8 @@ impl RenderState {
 /// Owns the wgpu instance-derived state for one window: the adapter-negotiated
 /// device/queue, and the surface configured to present to that window.
 ///
-/// Draws the paddle, ball, and every standing brick as instances of the one
-/// shared quad pipeline; HUD lands as more instances in a later milestone.
+/// Draws the game world as instances of the one shared quad pipeline, inside
+/// the letterboxed field; `hud.rs` draws the band, screens and text.
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
@@ -593,12 +473,11 @@ pub struct Renderer {
     /// Binds `sprite_atlas`'s uploaded texture + sampler to `fs_main`'s
     /// `@group(0)` -- see `create_atlas_bind_group`.
     sprite_atlas_bind_group: wgpu::BindGroup,
-    // -- text: HUD score/level, menu/pause/game-over/victory overlays --
-    font_system: FontSystem,
-    swash_cache: SwashCache,
-    viewport: Viewport,
-    atlas: TextAtlas,
-    text_renderer: TextRenderer,
+    /// The band, state screens and capsule letters (`hud.rs`), shared
+    /// with the 3D renderer.
+    hud: Hud,
+    /// `--autopilot` is playing; the HUD says so.
+    autopilot: bool,
     // -- juice: ball trail, brick hit-flash/destroy-ghosts, shake -- see
     // the module-level "-- juice --" comment for why this is diffed here
     // rather than read off `Game::events`.
@@ -637,7 +516,7 @@ impl Renderer {
     /// guarantees it's always a drawable atlas either way) -- uploaded once
     /// here as a texture the whole session's paddle/ball/brick quads sample
     /// from.
-    pub fn new(window: Arc<Window>, sprite_atlas: Atlas) -> Self {
+    pub fn new(window: Arc<Window>, sprite_atlas: Atlas, autopilot: bool) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::default();
         let surface = instance
@@ -733,11 +612,10 @@ impl Renderer {
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
                     // Alpha blending, not `REPLACE`: every opaque quad
-                    // (paddle/ball/bricks/life-icons) has alpha 1.0, so
+                    // (paddle/ball/bricks) has alpha 1.0, so
                     // blending produces the exact same pixels `REPLACE`
                     // did -- but it's also what lets the semi-transparent
-                    // menu/pause/game-over/victory scrim quad (see
-                    // `SCRIM_COLOR`) actually blend instead of just
+                    // ball trail and explosions actually blend instead of just
                     // painting over the scene as a solid rectangle.
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
@@ -761,16 +639,7 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
-        // `text_cache` isn't kept on `Renderer`: `TextAtlas::new` clones it
-        // internally (it's a cheap `Arc` underneath, shared pipeline/layout
-        // state), and `Viewport` doesn't need it past construction.
-        let font_system = FontSystem::new();
-        let swash_cache = SwashCache::new();
-        let text_cache = TextCache::new(&device);
-        let viewport = Viewport::new(&device, &text_cache);
-        let mut atlas = TextAtlas::new(&device, &queue, &text_cache, config.format);
-        let text_renderer =
-            TextRenderer::new(&mut atlas, &device, wgpu::MultisampleState::default(), None);
+        let hud = Hud::new(&device, &queue, config.format);
 
         Self {
             surface,
@@ -782,11 +651,8 @@ impl Renderer {
             instance_buffer,
             sprite_atlas,
             sprite_atlas_bind_group,
-            font_system,
-            swash_cache,
-            viewport,
-            atlas,
-            text_renderer,
+            hud,
+            autopilot,
             ball_trail: VecDeque::new(),
             prev_bricks: Vec::new(),
             prev_level: 0,
@@ -817,12 +683,11 @@ impl Renderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            // Not a `*Srgb` format: `assets.rs`'s recipes (and every flat
-            // color constant in this file) already work in the same plain
-            // 0..1 space `fs_main` writes straight to an sRGB *surface* --
-            // sampling this texture must hand those bytes back unchanged,
-            // not sRGB-decode them a second time.
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            // sRGB: the atlas holds sRGB-encoded bytes (pack PNGs and the
+            // recipes' `palette` colors alike), so sampling decodes them to
+            // linear, matching every flat `palette::Rgb::linear` color, and
+            // the sRGB surface encodes the result once on output.
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -897,9 +762,8 @@ impl Renderer {
     ///
     /// A zero-area size (window minimized) is skipped: wgpu forbids
     /// configuring to zero, and there is nothing to render to anyway.
-    /// Scaling/letterboxing the fixed 800x600 playfield into the new size is
-    /// a later milestone -- this just keeps the surface valid so resizing
-    /// doesn't crash.
+    /// The letterbox is recomputed from the surface size every frame
+    /// (`hud::Letterbox::fit`), so nothing else changes here.
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width == 0 || new_size.height == 0 {
             return;
@@ -938,7 +802,6 @@ impl Renderer {
         alpha: f32,
     ) {
         let drawn = RenderState::lerp(prev, &RenderState::from(curr), alpha);
-        let overlay = overlay_text(curr);
 
         // -- juice bookkeeping: see the "-- juice --" comment above
         // `bricks_just_hit` for why this is a diff against last frame
@@ -951,7 +814,7 @@ impl Renderer {
         let score_increased = curr.score > self.prev_score;
         self.prev_score = curr.score;
         self.shake_remaining = next_shake_remaining(self.shake_remaining, dt, score_increased);
-        let shake = if self.shake_remaining > 0.0 {
+        let shake = if self.shake_remaining > 0.0 && !hud::reduced_motion() {
             let amplitude = SHAKE_MAX_OFFSET * (self.shake_remaining / SHAKE_DURATION_SECS);
             [
                 rand::random_range(-amplitude..=amplitude),
@@ -986,19 +849,22 @@ impl Renderer {
             2 + TRAIL_LEN
                 + curr.bricks.len()
                 + destroyed_ghosts.len()
-                + 1
-                + MAX_LIFE_ICONS
                 + curr.extra_balls.len().min(MAX_EXTRA_BALLS)
                 + curr.powerups.len().min(MAX_POWERUPS)
                 + curr.asteroids.len().min(MAX_ASTEROIDS)
                 + self.explosions.len()
-                + curr.bolts.len().min(MAX_BOLTS),
+                + curr.bolts.len().min(MAX_BOLTS)
+                + 1,
         );
         // A gun shows over Glue: it changes what Space does.
         let paddle_tint = match curr.gun.map(|g| g.kind) {
-            Some(GunKind::Laser) => LASER_PADDLE_TINT,
-            Some(GunKind::SuperLaser) => SUPER_LASER_PADDLE_TINT,
-            None if curr.glue_timer > 0.0 => GLUE_PADDLE_TINT,
+            Some(GunKind::Laser) => paddle_tint(palette::CAPSULE_LASER, PADDLE_TINT_STRENGTH),
+            Some(GunKind::SuperLaser) => {
+                paddle_tint(palette::CAPSULE_SUPER_LASER, PADDLE_TINT_STRENGTH)
+            }
+            None if curr.glue_timer > 0.0 => {
+                paddle_tint(palette::CAPSULE_GLUE, PADDLE_TINT_STRENGTH)
+            }
             None => WHITE_TINT,
         };
         instances.push(QuadInstance::new_textured(
@@ -1013,24 +879,20 @@ impl Renderer {
         // the opaque ball quad below so the ball itself always ends up on
         // top of its own trail. Uses the trail as it stood at the *start*
         // of this frame, then updates it (`push_trail`) for next frame.
+        let ball_uv = self.sprite_atlas.uv_rect(SpriteId::Ball);
         let trail_len = self.ball_trail.len().max(1) as f32;
         instances.extend(self.ball_trail.iter().enumerate().map(|(i, &(x, y))| {
             let fade = (i + 1) as f32 / trail_len;
             let radius = drawn.ball.radius * (0.5 + 0.5 * fade);
-            QuadInstance::new(
+            QuadInstance::new_textured(
                 shaken(x, y),
                 [radius, radius],
-                [
-                    BALL_COLOR[0],
-                    BALL_COLOR[1],
-                    BALL_COLOR[2],
-                    TRAIL_BASE_ALPHA * fade,
-                ],
+                ball_uv,
+                [1.0, 1.0, 1.0, TRAIL_BASE_ALPHA * fade],
             )
         }));
         push_trail(&mut self.ball_trail, &drawn.ball);
 
-        let ball_uv = self.sprite_atlas.uv_rect(SpriteId::Ball);
         instances.push(QuadInstance::new_textured(
             shaken(drawn.ball.x, drawn.ball.y),
             [drawn.ball.radius, drawn.ball.radius],
@@ -1041,12 +903,12 @@ impl Renderer {
         // already enforce every built-in level fits this cap. A brick that
         // was just hit and survived (e.g. armored's first hit) flashes flat
         // white for this one frame instead of its normal sprite -- a tinted
-        // *sample* wouldn't pop the same way (see `HIT_FLASH_COLOR`'s doc).
+        // *sample* wouldn't pop the same way (see `hit_flash_color`'s doc).
         instances.extend(curr.bricks.iter().take(MAX_BRICKS).map(|brick| {
             let half_size = [brick.width / 2.0, brick.height / 2.0];
             let center = shaken(brick.x, brick.y);
             if hit_flash.contains(&(brick.x, brick.y)) {
-                QuadInstance::new(center, half_size, HIT_FLASH_COLOR)
+                QuadInstance::new(center, half_size, hit_flash_color())
             } else {
                 let uv = self.sprite_atlas.uv_rect(brick_sprite(brick));
                 QuadInstance::new_textured(center, half_size, uv, WHITE_TINT)
@@ -1059,7 +921,7 @@ impl Renderer {
             QuadInstance::new(
                 shaken(ghost.x, ghost.y),
                 [ghost.width / 2.0, ghost.height / 2.0],
-                HIT_FLASH_COLOR,
+                hit_flash_color(),
             )
         }));
 
@@ -1077,14 +939,20 @@ impl Renderer {
             )
         }));
 
-        // Falling power-up capsules, colored by kind (see `powerup_color`).
-        instances.extend(curr.powerups.iter().take(MAX_POWERUPS).map(|powerup| {
-            QuadInstance::new(
-                shaken(powerup.x, powerup.y),
-                [POWERUP_HALF_SIZE, POWERUP_HALF_SIZE],
-                powerup_color(powerup.kind),
-            )
-        }));
+        // Falling capsules: the pill sprite in the kind's hue. Their letters
+        // are text, set by the HUD layer at the same spot (`capsules`).
+        let capsule_uv = self.sprite_atlas.uv_rect(SpriteId::Capsule);
+        let mut capsules = Vec::with_capacity(curr.powerups.len().min(MAX_POWERUPS));
+        for powerup in curr.powerups.iter().take(MAX_POWERUPS) {
+            let center = shaken(powerup.x, powerup.y);
+            instances.push(QuadInstance::new_textured(
+                center,
+                POWERUP_HALF_SIZE,
+                capsule_uv,
+                palette::capsule(powerup.kind).linear(),
+            ));
+            capsules.push((center[0], center[1] + BAND_HEIGHT, powerup.kind));
+        }
 
         // The open Break gate: a bar in the capsule's color down the right
         // edge, from just above the paddle to the bottom. Not shaken: it is
@@ -1097,29 +965,30 @@ impl Renderer {
                     (top + PLAYFIELD_HEIGHT) / 2.0,
                 ],
                 [GATE_HALF_WIDTH, (PLAYFIELD_HEIGHT - top) / 2.0],
-                POWERUP_BREAK_COLOR,
+                palette::CAPSULE_BREAK.linear(),
             ));
         }
 
-        // Bolts in flight, flat quads in their gun's color.
+        // Bolts in flight, flat quads in their gun's capsule color.
         instances.extend(curr.bolts.iter().take(MAX_BOLTS).map(|bolt| {
             QuadInstance::new(
                 shaken(bolt.x, bolt.y),
                 bolt.half_size,
                 match bolt.kind {
-                    GunKind::Laser => POWERUP_LASER_COLOR,
-                    GunKind::SuperLaser => POWERUP_SUPER_LASER_COLOR,
+                    GunKind::Laser => palette::CAPSULE_LASER.linear(),
+                    GunKind::SuperLaser => palette::CAPSULE_SUPER_LASER.linear(),
                 },
             )
         }));
 
-        // Asteroids, read straight off `curr` like the power-ups.
+        // Asteroids: the cratered rock sprite, never the ball's.
+        let rock_uv = self.sprite_atlas.uv_rect(SpriteId::Asteroid);
         instances.extend(curr.asteroids.iter().take(MAX_ASTEROIDS).map(|asteroid| {
             QuadInstance::new_textured(
                 shaken(asteroid.x, asteroid.y),
                 [asteroid.radius, asteroid.radius],
-                ball_uv,
-                ASTEROID_TINT,
+                rock_uv,
+                palette::ASTEROID.linear(),
             )
         }));
         instances.extend(self.explosions.iter().map(|explosion| {
@@ -1128,133 +997,24 @@ impl Renderer {
                 shaken(explosion.x, explosion.y),
                 [radius, radius],
                 ball_uv,
-                [
-                    EXPLOSION_TINT[0],
-                    EXPLOSION_TINT[1],
-                    EXPLOSION_TINT[2],
-                    alpha,
-                ],
+                palette::EXPLOSION.linear_alpha(alpha),
             )
         }));
-
-        // Menu/Paused/GameOver/Victory: dim the scene before the icons and
-        // overlay text are drawn on top of it, so HUD chrome stays legible.
-        // Not shaken: HUD chrome stays put even while the world does.
-        if overlay.is_some() {
-            instances.push(QuadInstance::new(
-                [PLAYFIELD_WIDTH / 2.0, PLAYFIELD_HEIGHT / 2.0],
-                [PLAYFIELD_WIDTH / 2.0, PLAYFIELD_HEIGHT / 2.0],
-                SCRIM_COLOR,
-            ));
-        }
-
-        // Lives, top-right, nearest-to-the-edge icon first. Not shaken,
-        // same reasoning as the scrim above.
-        let life_icon_count = (curr.lives as usize).min(MAX_LIFE_ICONS);
-        for i in 0..life_icon_count {
-            let step = LIFE_ICON_SIZE + LIFE_ICON_GAP;
-            let x = PLAYFIELD_WIDTH - HUD_MARGIN - LIFE_ICON_SIZE / 2.0 - i as f32 * step;
-            let y = HUD_MARGIN + LIFE_ICON_SIZE / 2.0;
-            instances.push(QuadInstance::new(
-                [x, y],
-                [LIFE_ICON_SIZE / 2.0, LIFE_ICON_SIZE / 2.0],
-                BALL_COLOR,
-            ));
-        }
 
         self.queue
             .write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instances));
 
-        // -- text: score (top-left), level (top-center), and the overlay
-        // title/detail (Menu/Paused/GameOver/Victory) if any -- built fresh
-        // every frame. These are a handful of short strings redrawn at
-        // display refresh rate, not a hot simulation path, so reshaping
-        // them each call is the simplest correct thing to do.
-        //
-        // ponytail: no persistent-buffer/dirty-tracking cache here; add one
-        // if profiling ever shows text shaping actually costing a frame.
-        let surface_width = self.config.width as f32;
-        let score_text = format!("Score: {}", curr.score);
-        let level_text = match curr.level_name() {
-            Some(name) => format!("Level {}: {name}", curr.level),
-            None => format!("Level {}", curr.level),
-        };
-        let score_buffer = make_line_buffer(
-            &mut self.font_system,
-            &score_text,
-            HUD_FONT_SIZE,
-            HUD_LINE_HEIGHT,
-            surface_width,
-            Align::Left,
-        );
-        let level_buffer = make_line_buffer(
-            &mut self.font_system,
-            &level_text,
-            HUD_FONT_SIZE,
-            HUD_LINE_HEIGHT,
-            surface_width,
-            Align::Center,
-        );
-        let overlay_buffers = overlay.map(|(title, detail)| {
-            let title_buffer = make_line_buffer(
-                &mut self.font_system,
-                title,
-                TITLE_FONT_SIZE,
-                TITLE_LINE_HEIGHT,
-                surface_width,
-                Align::Center,
-            );
-            let detail_buffer = make_line_buffer(
-                &mut self.font_system,
-                &detail,
-                DETAIL_FONT_SIZE,
-                DETAIL_LINE_HEIGHT,
-                surface_width,
-                Align::Center,
-            );
-            (title_buffer, detail_buffer)
-        });
-
-        let (hud_margin_x, hud_margin_y) = self.to_physical(HUD_MARGIN, HUD_MARGIN);
-        let mut text_areas = vec![
-            Self::text_area(&score_buffer, hud_margin_x, hud_margin_y, HUD_TEXT_COLOR),
-            Self::text_area(&level_buffer, 0.0, hud_margin_y, HUD_TEXT_COLOR),
-        ];
-        if let Some((title_buffer, detail_buffer)) = &overlay_buffers {
-            let (_, title_y) = self.to_physical(0.0, PLAYFIELD_HEIGHT / 2.0 + TITLE_OFFSET_Y);
-            let (_, detail_y) = self.to_physical(0.0, PLAYFIELD_HEIGHT / 2.0 + DETAIL_OFFSET_Y);
-            text_areas.push(Self::text_area(
-                title_buffer,
-                0.0,
-                title_y,
-                TITLE_TEXT_COLOR,
-            ));
-            text_areas.push(Self::text_area(
-                detail_buffer,
-                0.0,
-                detail_y,
-                HUD_TEXT_COLOR,
-            ));
-        }
-
-        self.viewport.update(
+        self.hud.prepare(
+            &self.device,
             &self.queue,
-            Resolution {
-                width: self.config.width,
-                height: self.config.height,
+            self.config.width,
+            self.config.height,
+            &hud::Frame {
+                game: curr,
+                autopilot: self.autopilot,
+                capsules: &capsules,
             },
         );
-        self.text_renderer
-            .prepare(
-                &self.device,
-                &self.queue,
-                &mut self.font_system,
-                &mut self.atlas,
-                &self.viewport,
-                text_areas,
-                &mut self.swash_cache,
-            )
-            .expect("glyphon text preparation failed");
 
         let surface_texture = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
@@ -1298,53 +1058,22 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            // Band and field ground, then the world inside the field's
+            // letterboxed rect, then the HUD over it (see `hud.rs`).
+            self.hud.draw_backdrop(&mut pass);
+            let (x, y, w, h) = self.hud.letterbox().field_viewport();
+            pass.set_viewport(x, y, w, h, 0.0, 1.0);
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.sprite_atlas_bind_group, &[]);
             pass.set_vertex_buffer(0, self.quad_vertex_buffer.slice(..));
             pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             pass.draw(0..QUAD_VERTICES.len() as u32, 0..instances.len() as u32);
-
-            self.text_renderer
-                .render(&self.atlas, &self.viewport, &mut pass)
-                .expect("glyphon text render failed");
+            self.hud.draw_overlay(&mut pass);
         }
         self.queue.submit(std::iter::once(encoder.finish()));
         self.queue.present(surface_texture);
-        // Reclaims atlas space for glyphs that stopped being used this
-        // frame (e.g. the previous overlay's text) -- cheap no-op most
-        // frames, matters once several different screens have all drawn
-        // text at some point in the session.
-        self.atlas.trim();
-    }
-
-    /// Maps a point in the logical 800x600 playfield to the physical
-    /// surface pixel space glyphon's `Viewport`/`TextArea` operate in,
-    /// using the same non-uniform stretch the quad vertex shader already
-    /// applies to every other quad (see `SHADER_SRC`) -- keeps HUD text
-    /// aligned with the quads at whatever size the window's been resized
-    /// to, even though true aspect-preserving letterboxing is still a
-    /// later milestone (same limitation `resize` documents).
-    fn to_physical(&self, x: f32, y: f32) -> (f32, f32) {
-        (
-            x / PLAYFIELD_WIDTH * self.config.width as f32,
-            y / PLAYFIELD_HEIGHT * self.config.height as f32,
-        )
-    }
-
-    /// Builds one `TextArea` covering the whole surface horizontally at
-    /// `(left, top)`, uniformly colored `color` -- every text element this
-    /// module draws is a single independently-positioned line/block, so
-    /// they all share this same shape.
-    fn text_area(buffer: &TextBuffer, left: f32, top: f32, color: glyphon::Color) -> TextArea<'_> {
-        TextArea {
-            buffer,
-            left,
-            top,
-            scale: 1.0,
-            bounds: TextBounds::default(),
-            default_color: color,
-            custom_glyphs: &[],
-        }
+        // Reclaims glyph atlas space for text that stopped being drawn.
+        self.hud.trim();
     }
 }
 
@@ -1408,61 +1137,6 @@ mod tests {
     }
 
     #[test]
-    fn overlay_text_is_none_only_while_playing() {
-        let mut game = Game::new();
-        game.state = GameState::Playing;
-        assert!(
-            overlay_text(&game).is_none(),
-            "no overlay should draw during Playing"
-        );
-
-        for state in [
-            GameState::Menu,
-            GameState::Paused,
-            GameState::GameOver,
-            GameState::Victory,
-        ] {
-            game.state = state;
-            assert!(
-                overlay_text(&game).is_some(),
-                "{state:?} must show an overlay"
-            );
-        }
-    }
-
-    #[test]
-    fn game_over_and_victory_overlays_show_the_final_score() {
-        let mut game = Game::new();
-        game.score = 1234;
-
-        game.state = GameState::GameOver;
-        let (_, detail) = overlay_text(&game).expect("GameOver must have an overlay");
-        assert!(
-            detail.contains("1234"),
-            "game over overlay must show the final score"
-        );
-
-        game.state = GameState::Victory;
-        let (_, detail) = overlay_text(&game).expect("Victory must have an overlay");
-        assert!(
-            detail.contains("1234"),
-            "victory overlay must show the final score"
-        );
-    }
-
-    #[test]
-    fn menu_overlay_has_a_title_and_mentions_the_start_key() {
-        let mut game = Game::new(); // Game::new() already starts in Menu
-        game.state = GameState::Menu;
-        let (title, detail) = overlay_text(&game).expect("Menu must have an overlay");
-        assert_eq!(title, "BRYX");
-        assert!(
-            detail.contains("SPACE"),
-            "must tell the player how to start"
-        );
-    }
-
-    #[test]
     fn each_brick_kind_gets_its_own_distinct_sprite() {
         let normal = brick_sprite(&brick(BrickKind::Normal, 1));
         let armored = brick_sprite(&brick(BrickKind::Armored, 2));
@@ -1470,16 +1144,6 @@ mod tests {
         assert_ne!(normal, armored);
         assert_ne!(normal, indestructible);
         assert_ne!(armored, indestructible);
-    }
-
-    #[test]
-    fn each_powerup_kind_gets_its_own_distinct_color() {
-        let widen = powerup_color(PowerUpKind::Widen);
-        let slow = powerup_color(PowerUpKind::Slow);
-        let multiball = powerup_color(PowerUpKind::Multiball);
-        assert_ne!(widen, slow);
-        assert_ne!(widen, multiball);
-        assert_ne!(slow, multiball);
     }
 
     #[test]
