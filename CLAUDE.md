@@ -92,12 +92,12 @@ Module boundaries (the strict separation is the architectural point — don't bl
 - `src/render.rs` — wgpu setup + the instanced-quad pipeline.
 - `src/levels.rs` — level grids as const `&[&str]` data (`.` empty, `1` normal, `2` armored, `X` indestructible): `LEVELS` (v1's three, played by the tests and `--classic`) and `CAMPAIGN` (32 named levels, a normal game). Adding a level must require touching only this file, and a test rejects any grid with a destructible brick no ball can reach. Campaign levels are original designs: never transcribe another game's levels (see `ATTRIBUTION`).
 - `src/events.rs` — `enum GameEvent { BrickDestroyed, BallLost, ... }` emitted by the simulation each tick; render (and later audio) consume it.
-- Game states are an explicit enum-driven machine: `Menu → Playing ⇄ Paused → GameOver/Victory`. No ad-hoc booleans for state.
+- Game states are an explicit enum-driven machine: `Menu → Playing ⇄ Paused → GameOver/Victory → Playing` (Space continues from the act checkpoint, Escape/P starts over; see the spec's "Ending a run"). No ad-hoc booleans for state.
 
 ## Gameplay contract highlights (full detail in docs/spec.md)
 
 - Fixed logical playfield 800×600; window resize scales/letterboxes, never changes physics.
-- Ball exit angle is a linear map from paddle-hit-offset to 30°–150°, clamped away from 90°±5° (no perfectly vertical trajectories); speed +4% per paddle hit, capped at 700 px/s.
+- Ball exit angle is a linear map from paddle-hit-offset to 30°–150°, clamped away from 90°±5° (no perfectly vertical trajectories); speed +4% per paddle hit, capped at 700 px/s (the campaign's cap ramps from 560 px/s on level 1 to 700 on level 32; `--classic` keeps the flat 700).
 - Collision is AABB-vs-circle resolved against the nearest face; tunneling at max ball speed is prevented by substepping the tick — this needs a property-style test (random angles at 700 px/s never cross a 22 px brick uncaught), not just an implementation.
 - Exactly nine power-ups: Widen (paddle ×1.5, 15s, timers refresh not stack-add), Slow (ball ×0.7 once, floored at launch speed), Multiball (2 extra balls; life lost only when the *last* ball drops), Glue (ball sticks to the paddle, a Space press releases it), Laser (held Space fires twin bolts), Super laser (held Space fires a piercing bolt), Tiny (paddle ×0.6; cancels Widen and vice versa), Player (extra life), Break (a gate in the right wall; sliding the paddle out skips the level). Do not add a tenth without updating the spec first.
 - Post-v1 additions (Glue, Laser, Super laser, Tiny, Player, Break, asteroids) sit behind `game::Features`; `--classic` turns them off and the pinned replay hash runs under `Features::V1`. See the spec's "Additions after v1".

@@ -94,8 +94,6 @@ pub const GLUE_HOLD_SECS: f32 = 3.0;
 const TINY_MULTIPLIER: f32 = 0.6;
 const TINY_DURATION_SECS: f32 = 15.0;
 
-/// Points for leaving a level through the Break gate.
-const WARP_SCORE: u32 = 10_000;
 /// The Break gate's span on the right wall: from this far above the
 /// paddle's center to the bottom of the field, so the paddle meets it
 /// where it already moves.
@@ -609,9 +607,27 @@ pub fn offset_to_exit_angle_deg(offset_norm: f32) -> f32 {
 /// Grow a ball's speed by one paddle hit's worth (+4%), capped (spec: cap
 /// at 700 px/s). Once capped, further hits are no-ops — applying this
 /// repeatedly never exceeds the cap.
+#[cfg(test)]
 fn grow_ball_speed(current_speed: f32) -> f32 {
-    (current_speed * BALL_SPEED_GROWTH).min(BALL_SPEED_CAP)
+    grow_ball_speed_to(current_speed, BALL_SPEED_CAP)
 }
+
+/// [`grow_ball_speed`] under an explicit cap: the campaign's cap rises with
+/// the level (`Game::ball_speed_cap`).
+fn grow_ball_speed_to(current_speed: f32, cap: f32) -> f32 {
+    (current_speed * BALL_SPEED_GROWTH).min(cap)
+}
+
+/// The campaign's ball speed cap on its first level. It climbs linearly to
+/// [`BALL_SPEED_CAP`] on the last one, so the campaign's difficulty rises
+/// with the level number, whatever each layout asks. v1's levels
+/// (`--classic`) and loaded levelsets keep the flat 700 px/s cap.
+const CAMPAIGN_FIRST_SPEED_CAP: f32 = 560.0;
+
+/// Levels per campaign act. A Game Over continues from the first level of
+/// the act it happened in (`Game::checkpoint`), so a 32-level run is never
+/// lost whole to one bad rally.
+pub const LEVELS_PER_ACT: usize = 8;
 
 /// Rotates a 2D velocity vector by `angle_deg` degrees. Only used to fan
 /// Multiball's two spawned balls out from the source ball's own direction
@@ -829,6 +845,48 @@ impl Game {
         }
     }
 
+    /// The ball's speed cap on the current level: v1's flat 700 px/s,
+    /// except on the campaign, where it ramps from
+    /// [`CAMPAIGN_FIRST_SPEED_CAP`] on level 1 to 700 px/s on the last.
+    pub fn ball_speed_cap(&self) -> f32 {
+        if self.level_set() != LevelSetKind::Campaign {
+            return BALL_SPEED_CAP;
+        }
+        let last = self.level_count().max(2) - 1;
+        let t = (self.level - 1) as f32 / last as f32;
+        CAMPAIGN_FIRST_SPEED_CAP + (BALL_SPEED_CAP - CAMPAIGN_FIRST_SPEED_CAP) * t
+    }
+
+    /// The level a Game Over continues from: the first level of the
+    /// current act ([`LEVELS_PER_ACT`]). Level 1 for any progression of
+    /// one act or less, so there "continue" is simply "play again".
+    pub fn checkpoint(&self) -> usize {
+        (self.level - 1) / LEVELS_PER_ACT * LEVELS_PER_ACT + 1
+    }
+
+    /// Starts a fresh run at `level` (1-based): full lives, score zeroed,
+    /// every timer and effect cleared, ball on the paddle, playing. The
+    /// progression (campaign, v1 or a loaded set) and the features stay.
+    /// The RNG streams carry on, so a replay is still deterministic.
+    fn restart_at(&mut self, level: usize) {
+        self.level = level.clamp(1, self.level_count());
+        self.lives = STARTING_LIVES;
+        self.score = 0;
+        self.paddle = Paddle::new();
+        self.ball = Ball::attached_to(&self.paddle);
+        self.extra_balls.clear();
+        self.powerups.clear();
+        self.widen_timer = 0.0;
+        self.glue_timer = 0.0;
+        self.tiny_timer = 0.0;
+        self.gun = None;
+        self.gun_cooldown = 0.0;
+        self.stall_nudges = 0;
+        self.bricks = self.current_level_bricks();
+        self.reset_for_serve();
+        self.state = GameState::Playing;
+    }
+
     fn new_with_rng(rng: StdRng, asteroid_rng: StdRng) -> Self {
         let paddle = Paddle::new();
         let ball = Ball::attached_to(&paddle);
@@ -885,10 +943,22 @@ impl Game {
                     self.state = GameState::Playing;
                 }
             }
-            GameState::GameOver | GameState::Victory => {
-                // Terminal states: the simulation stays frozen. Whether a
-                // key returns to the menu from here is a render/HUD
-                // concern (arkanoid-p4f), not a simulation one.
+            // The run is over and the simulation frozen until a fresh key
+            // press (a held Space or Pause from the last rally never
+            // counts): Space continues from the act's checkpoint after a
+            // Game Over, or plays again after a Victory; Pause starts a new
+            // game from level 1.
+            GameState::GameOver => {
+                if space_pressed {
+                    self.restart_at(self.checkpoint());
+                } else if pause_pressed {
+                    self.restart_at(1);
+                }
+            }
+            GameState::Victory => {
+                if space_pressed || pause_pressed {
+                    self.restart_at(1);
+                }
             }
             GameState::Playing => {
                 if pause_pressed {
@@ -1061,8 +1131,22 @@ impl Game {
 
     /// The paddle has slid all the way out through the Break gate: the
     /// level is left, with a bonus, as if it had been cleared.
+    /// Leaving through the Break gate pays out exactly the bricks it skips:
+    /// the gate saves time and risk, never score. (A flat +10,000 was worth
+    /// about five cleared levels, 1,966 points on average, so skipping
+    /// levels beat playing them once a best score was worth chasing.)
+    /// What the bricks still standing would score if broken: the Break
+    /// gate's payout. Indestructible bricks score nothing.
+    fn skipped_score(&self) -> u32 {
+        self.bricks
+            .iter()
+            .filter(|b| b.kind != BrickKind::Indestructible)
+            .map(|b| b.score)
+            .sum()
+    }
+
     fn warp(&mut self) {
-        self.score += WARP_SCORE;
+        self.score += self.skipped_score();
         self.events.push(GameEvent::Warped);
         self.paddle.x = PLAYFIELD_WIDTH / 2.0;
         self.extra_balls.clear();
@@ -1096,7 +1180,7 @@ impl Game {
         let half_width = self.paddle.width / 2.0;
         let offset_norm = ((ball.x - self.paddle.x) / half_width).clamp(-1.0, 1.0);
         let angle_rad = offset_to_exit_angle_deg(offset_norm).to_radians();
-        let speed = grow_ball_speed(ball.speed());
+        let speed = grow_ball_speed_to(ball.speed(), self.ball_speed_cap());
 
         ball.vx = speed * angle_rad.cos();
         ball.vy = -speed * angle_rad.sin();
@@ -2728,10 +2812,12 @@ mod tests {
     }
 
     #[test]
-    fn sliding_out_through_the_open_gate_skips_to_the_next_level_with_a_bonus() {
+    fn sliding_out_through_the_open_gate_skips_to_the_next_level_paying_its_bricks() {
         let mut game = rallying();
         game.apply_powerup(PowerUpKind::Break);
         let score = game.score;
+        let skipped = game.skipped_score();
+        assert!(skipped > 0);
         for _ in 0..240 {
             game.tick(&held(|i| i.right = true), DT);
             if game.level == 2 {
@@ -2740,7 +2826,11 @@ mod tests {
             assert!(game.paddle.left() < PLAYFIELD_WIDTH, "still sliding out");
         }
         assert_eq!(game.level, 2);
-        assert_eq!(game.score, score + WARP_SCORE);
+        assert_eq!(
+            game.score,
+            score + skipped,
+            "the bricks it skipped, no bonus"
+        );
         assert!(game.events.contains(&GameEvent::Warped));
         assert!(!game.gate_open, "a new level starts with it shut");
         assert_eq!(game.paddle.x, PLAYFIELD_WIDTH / 2.0, "back in the middle");
@@ -3409,6 +3499,81 @@ mod tests {
             game.tick(&Input::default(), DT);
         }
         state_hash(&game)
+    }
+
+    #[test]
+    fn the_campaign_speed_cap_rises_with_the_level_and_v1_stays_flat() {
+        let mut game = Game::new().with_campaign();
+        assert_eq!(game.ball_speed_cap(), CAMPAIGN_FIRST_SPEED_CAP);
+        game.level = game.level_count();
+        assert_eq!(game.ball_speed_cap(), BALL_SPEED_CAP);
+        game.level = 16;
+        let mid = game.ball_speed_cap();
+        assert!(mid > CAMPAIGN_FIRST_SPEED_CAP && mid < BALL_SPEED_CAP);
+        let v1 = Game::new();
+        assert_eq!(v1.ball_speed_cap(), BALL_SPEED_CAP);
+    }
+
+    #[test]
+    fn a_paddle_hit_never_pushes_the_ball_past_the_level_cap() {
+        let mut game = Game::new().with_campaign();
+        game.state = GameState::Playing;
+        game.ball.attached = false;
+        game.ball.x = game.paddle.x;
+        game.ball.y = game.paddle.top() - game.ball.radius + 1.0;
+        game.ball.vx = 0.0;
+        game.ball.vy = 555.0;
+        let mut ball = game.ball;
+        game.resolve_paddle_collision(&mut ball);
+        assert!((ball.speed() - CAMPAIGN_FIRST_SPEED_CAP).abs() < 1e-2);
+    }
+
+    #[test]
+    fn checkpoints_fall_on_the_first_level_of_each_act() {
+        let mut game = Game::new().with_campaign();
+        for (level, checkpoint) in [(1, 1), (8, 1), (9, 9), (16, 9), (17, 17), (32, 25)] {
+            game.level = level;
+            assert_eq!(game.checkpoint(), checkpoint, "level {level}");
+        }
+        let mut v1 = Game::new();
+        v1.level = 3;
+        assert_eq!(v1.checkpoint(), 1);
+    }
+
+    #[test]
+    fn game_over_continues_from_the_checkpoint_on_a_fresh_space_press() {
+        let mut game = Game::new().with_campaign();
+        game.level = 12;
+        game.score = 5_000;
+        game.lives = 0;
+        game.state = GameState::GameOver;
+        // Space still held from the last rally: nothing happens.
+        game.space_was_held = true;
+        game.tick(&held(|i| i.space = true), DT);
+        assert_eq!(game.state, GameState::GameOver);
+        game.tick(&Input::default(), DT);
+        game.tick(&held(|i| i.space = true), DT);
+        assert_eq!(game.state, GameState::Playing);
+        assert_eq!(game.level, 9);
+        assert_eq!((game.lives, game.score), (STARTING_LIVES, 0));
+        assert!(game.ball.attached);
+        assert_eq!(game.level_name(), Some(levels::CAMPAIGN[8].0));
+    }
+
+    #[test]
+    fn game_over_starts_a_new_game_on_pause_and_victory_plays_again() {
+        let mut game = Game::new().with_campaign();
+        game.level = 20;
+        game.lives = 0;
+        game.state = GameState::GameOver;
+        game.tick(&held(|i| i.pause = true), DT);
+        assert_eq!((game.state, game.level), (GameState::Playing, 1));
+
+        game.level = game.level_count();
+        game.state = GameState::Victory;
+        game.tick(&Input::default(), DT);
+        game.tick(&held(|i| i.space = true), DT);
+        assert_eq!((game.state, game.level), (GameState::Playing, 1));
     }
 
     #[test]

@@ -188,6 +188,17 @@ pub struct Frame<'a> {
     /// renderer drew them: field position plus band in 2D, the projected
     /// center in 3D.
     pub capsules: &'a [(f32, f32, PowerUpKind)],
+    /// The stored best score for this progression (`record.rs`).
+    pub record: Record,
+}
+
+/// The best score as the HUD shows it: `best` is `None` where no record is
+/// kept (loaded levelsets); `new_best` marks the end screen of a run that
+/// just beat it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Record {
+    pub best: Option<u32>,
+    pub new_best: bool,
 }
 
 /// The type scale, in canvas pixels. Steps of roughly 1.25 below the
@@ -263,8 +274,13 @@ pub fn layout(frame: &Frame, cue: Option<LifeCue>) -> Layout {
     backdrop(&mut out);
     band(&mut out, frame, cue);
     match game.state {
-        GameState::Playing => capsule_letters(&mut out, frame.capsules),
-        state => state_screen(&mut out, game, state),
+        GameState::Playing => {
+            capsule_letters(&mut out, frame.capsules);
+            if game.ball.attached && !frame.autopilot {
+                serve_prompt(&mut out, game);
+            }
+        }
+        state => state_screen(&mut out, game, state, frame.record),
     }
     out
 }
@@ -529,11 +545,21 @@ fn keycap(out: &mut Layout, label: &str, x: f32, y: f32) -> f32 {
 /// field's center line, the action left of it. Keys in a group are
 /// alternatives; groups are separated by a wider gap.
 fn controls(out: &mut Layout, top: f32, pause_label: &str) {
-    let rows: [(&[&[&str]], &str); 3] = [
-        (&[&["←", "→"], &["A", "D"]], "Move"),
-        (&[&["SPACE"]], "Launch, release, fire"),
-        (&[&["ESC"], &["P"]], pause_label),
-    ];
+    key_rows(
+        out,
+        top,
+        &[
+            (&[&["←", "→"], &["A", "D"]], "Move".into()),
+            (&[&["SPACE"]], "Launch, release, fire".into()),
+            (&[&["ESC"], &["P"]], pause_label.into()),
+        ],
+    );
+}
+
+/// Rows of drawn keys and the action they do: keys right-aligned on the
+/// field's center line, the action left of it. Keys in a group are
+/// alternatives; groups are separated by a wider gap.
+fn key_rows(out: &mut Layout, top: f32, rows: &[(&[&[&str]], String)]) {
     let (key_gap, group_gap, pitch) = (4.0, 14.0, 34.0);
     let column = CANVAS_WIDTH / 2.0 - 8.0;
     for (i, (groups, action)) in rows.iter().enumerate() {
@@ -557,7 +583,7 @@ fn controls(out: &mut Layout, top: f32, pause_label: &str) {
             }
         }
         out.lines.push(Line {
-            spans: vec![span(*action, palette::TEXT, false)],
+            spans: vec![span(action.clone(), palette::TEXT, false)],
             size: size::BODY,
             tracking: 0.0,
             x: column + 18.0,
@@ -612,7 +638,30 @@ fn slate(out: &mut Layout, top: f32, bottom: f32) {
         .push(Quad::rect(0.0, bottom - 1.0, CANVAS_WIDTH, 1.0, rule));
 }
 
-fn state_screen(out: &mut Layout, game: &Game, state: GameState) {
+/// While the ball waits on the paddle (each level's start, after each lost
+/// life): which level this is, by number and name, and the key that
+/// starts it. It sits in the empty middle of the field, between the bricks
+/// and the paddle, and goes the moment the ball does. Hidden under the autopilot,
+/// which launches on its own.
+fn serve_prompt(out: &mut Layout, game: &Game) {
+    let (number, count) = level_digits(game);
+    let mut spans = vec![
+        span(number, palette::TEXT, true),
+        span(count, palette::TEXT_DIM, true),
+    ];
+    if let Some(name) = game.level_name() {
+        let name: String = name.chars().take(28).collect();
+        spans.push(span(format!("  {name}"), palette::TEXT, false));
+    }
+    // The field's middle band, clear in both lenses: below the deepest
+    // brick rows and above the paddle, which the 3D camera draws about a
+    // fifth of the field higher than 2D does.
+    let y = FIELD_CENTER_Y + 10.0;
+    out.lines.push(centered(spans, size::SUMMARY, 0.0, y));
+    key_rows(out, y + 30.0, &[(&[&["SPACE"]], "Launch".into())]);
+}
+
+fn state_screen(out: &mut Layout, game: &Game, state: GameState, record: Record) {
     out.overlay.push(Quad::rect(
         0.0,
         BAND_HEIGHT,
@@ -631,9 +680,19 @@ fn state_screen(out: &mut Layout, game: &Game, state: GameState) {
                 LevelSetKind::Classic => "CLASSIC",
                 LevelSetKind::Loaded => "LEVELSET",
             };
-            let subtitle = format!("{set} · {} LEVELS", game.level_count());
+            let mut subtitle = vec![span(
+                format!("{set} · {} LEVELS", game.level_count()),
+                dim,
+                true,
+            )];
+            if let Some(best) = record.best.filter(|&b| b > 0) {
+                let (zeros, digits) = score_digits(best);
+                subtitle.push(span(" · BEST ", dim, true));
+                subtitle.push(span(zeros, palette::TEXT_FAINT, true));
+                subtitle.push(span(digits, palette::TEXT, true));
+            }
             out.lines.push(centered(
-                vec![span(subtitle, dim, true)],
+                subtitle,
                 size::NOTE,
                 CAPTION_TRACKING,
                 FIELD_CENTER_Y - 30.0,
@@ -653,7 +712,8 @@ fn state_screen(out: &mut Layout, game: &Game, state: GameState) {
             controls(out, FIELD_CENTER_Y - 10.0, "Resume");
         }
         GameState::GameOver | GameState::Victory => {
-            let (heading, reached) = if state == GameState::Victory {
+            let victory = state == GameState::Victory;
+            let (heading, reached) = if victory {
                 let all = format!("ALL {} LEVELS", game.level_count());
                 ("VICTORY", vec![span(all, palette::TEXT, true)])
             } else {
@@ -665,9 +725,9 @@ fn state_screen(out: &mut Layout, game: &Game, state: GameState) {
                 ];
                 ("GAME OVER", reached)
             };
-            slate(out, FIELD_CENTER_Y - 106.0, FIELD_CENTER_Y + 62.0);
+            slate(out, FIELD_CENTER_Y - 136.0, FIELD_CENTER_Y + 140.0);
             out.lines
-                .push(title(heading, size::TITLE, 0.2, FIELD_CENTER_Y - 90.0));
+                .push(title(heading, size::TITLE, 0.2, FIELD_CENTER_Y - 120.0));
             let (zeros, digits) = score_digits(game.score);
             let mut summary = vec![
                 span("SCORE ", dim, true),
@@ -680,13 +740,49 @@ fn state_screen(out: &mut Layout, game: &Game, state: GameState) {
                 summary,
                 size::SUMMARY,
                 0.04,
-                FIELD_CENTER_Y - 10.0,
+                FIELD_CENTER_Y - 48.0,
             ));
+            // The record: a new best in the Player capsule's gold (the one
+            // reward hue), otherwise the best to beat.
+            if record.new_best {
+                out.lines.push(centered(
+                    vec![span("NEW BEST", palette::CAPSULE_PLAYER, true)],
+                    size::NOTE,
+                    CAPTION_TRACKING,
+                    FIELD_CENTER_Y - 20.0,
+                ));
+            } else if let Some(best) = record.best.filter(|&b| b > 0) {
+                let (zeros, digits) = score_digits(best);
+                out.lines.push(centered(
+                    vec![
+                        span("BEST ", dim, true),
+                        span(zeros, palette::TEXT_FAINT, true),
+                        span(digits, dim, true),
+                    ],
+                    size::NOTE,
+                    CAPTION_TRACKING,
+                    FIELD_CENTER_Y - 20.0,
+                ));
+            }
+            // What the keys do now (`Game::tick`'s terminal states).
+            let checkpoint = game.checkpoint();
+            let rows: Vec<(&[&[&str]], String)> = if victory || checkpoint == 1 {
+                vec![(&[&["SPACE"]], "Play again".into())]
+            } else {
+                vec![
+                    (
+                        &[&["SPACE"]],
+                        format!("Continue from level {checkpoint:02}"),
+                    ),
+                    (&[&["ESC"], &["P"]], "New game".into()),
+                ]
+            };
+            key_rows(out, FIELD_CENTER_Y + 20.0, &rows);
             out.lines.push(centered(
                 vec![span("Close the window to quit", dim, false)],
                 size::NOTE,
                 0.0,
-                FIELD_CENTER_Y + 30.0,
+                FIELD_CENTER_Y + 106.0,
             ));
         }
         GameState::Playing => {}
@@ -997,6 +1093,7 @@ mod tests {
             game,
             autopilot: false,
             capsules: &[],
+            record: Record::default(),
         }
     }
 
@@ -1095,6 +1192,74 @@ mod tests {
     }
 
     #[test]
+    fn the_serve_prompt_names_the_level_and_the_key_until_launch() {
+        let mut game = Game::new().with_campaign();
+        game.state = GameState::Playing;
+        let text = all_text(&layout(&frame(&game), None));
+        assert!(
+            text.contains("Warm-up") && text.contains("Launch"),
+            "{text}"
+        );
+        let auto = all_text(&layout(
+            &Frame {
+                autopilot: true,
+                ..frame(&game)
+            },
+            None,
+        ));
+        assert!(
+            !auto.contains("Launch"),
+            "the autopilot launches on its own"
+        );
+        game.ball.attached = false;
+        assert!(!all_text(&layout(&frame(&game), None)).contains("Launch"));
+    }
+
+    #[test]
+    fn game_over_offers_the_checkpoint_and_a_new_game() {
+        let mut game = Game::new().with_campaign();
+        game.state = GameState::GameOver;
+        game.level = 12;
+        let text = all_text(&layout(&frame(&game), None));
+        assert!(
+            text.contains("Continue from level 09") && text.contains("New game"),
+            "{text}"
+        );
+        game.level = 5;
+        let text = all_text(&layout(&frame(&game), None));
+        assert!(
+            text.contains("Play again") && !text.contains("Continue"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_record_shows_on_the_menu_and_a_new_best_on_the_end_screen() {
+        let mut game = Game::new().with_campaign();
+        let with = |game: &Game, record| {
+            all_text(&layout(
+                &Frame {
+                    record,
+                    ..frame(game)
+                },
+                None,
+            ))
+        };
+        let best = Record {
+            best: Some(20_000),
+            new_best: false,
+        };
+        assert!(with(&game, best).contains("BEST 020000"));
+        assert!(!with(&game, Record::default()).contains("BEST"));
+        game.state = GameState::GameOver;
+        let new_best = Record {
+            best: Some(25_000),
+            new_best: true,
+        };
+        assert!(with(&game, new_best).contains("NEW BEST"));
+    }
+
+    #[test]
     fn menu_and_pause_show_the_controls() {
         let mut game = Game::new();
         for state in [GameState::Menu, GameState::Paused] {
@@ -1142,9 +1307,10 @@ mod tests {
 
     #[test]
     fn nothing_is_laid_out_off_canvas_and_band_text_stays_in_the_band() {
-        let mut game = Game::new();
+        let mut game = Game::new().with_campaign();
         game.lives = 9;
         game.score = 987_654;
+        game.level = 30;
         for state in [
             GameState::Menu,
             GameState::Playing,
@@ -1156,6 +1322,10 @@ mod tests {
             let layout = layout(
                 &Frame {
                     autopilot: true,
+                    record: Record {
+                        best: Some(999_999),
+                        new_best: true,
+                    },
                     ..frame(&game)
                 },
                 Some(LifeCue {

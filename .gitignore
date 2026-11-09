@@ -23,3 +23,6 @@
 # gitignored like this repo's other fetched asset script rather than
 # committed as binary blobs. See ATTRIBUTION for source/license.
 /assets/pack/
+
+# Agent worktrees (Claude Code `isolation: worktree`): local checkouts, never content.
+/.claude/worktrees/

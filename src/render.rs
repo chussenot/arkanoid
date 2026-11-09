@@ -478,6 +478,8 @@ pub struct Renderer {
     hud: Hud,
     /// `--autopilot` is playing; the HUD says so.
     autopilot: bool,
+    /// The best score the HUD shows, set by `main` (`set_record`).
+    record: hud::Record,
     // -- juice: ball trail, brick hit-flash/destroy-ghosts, shake -- see
     // the module-level "-- juice --" comment for why this is diffed here
     // rather than read off `Game::events`.
@@ -653,6 +655,7 @@ impl Renderer {
             sprite_atlas_bind_group,
             hud,
             autopilot,
+            record: hud::Record::default(),
             ball_trail: VecDeque::new(),
             prev_bricks: Vec::new(),
             prev_level: 0,
@@ -792,6 +795,11 @@ impl Renderer {
     /// behind to diff: it is only in the event.
     pub fn ingest_tick_events(&mut self, events: &[GameEvent]) {
         ingest_explosions(&mut self.explosions, events);
+    }
+
+    /// The best score to show from the next frame on (see `record.rs`).
+    pub fn set_record(&mut self, record: hud::Record) {
+        self.record = record;
     }
 
     pub fn render(
@@ -1013,6 +1021,7 @@ impl Renderer {
                 game: curr,
                 autopilot: self.autopilot,
                 capsules: &capsules,
+                record: self.record,
             },
         );
 
