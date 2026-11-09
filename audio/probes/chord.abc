@@ -1,0 +1,10 @@
+X:1
+M:4/4
+L:1/16
+Q:1/4=120
+K:C
+% An E minor triad in one voice.
+%%hold on
+%%instrument pad wave=triangle amp=60 attack=0 decay=0 sustain=100 release=10 gate=100 fx=0
+V:pad instrument=pad
+| [EGB]16 |

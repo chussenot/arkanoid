@@ -132,9 +132,10 @@ cleanly, but each act shapes those bars its own way:
 | break | the floor drops out: no drums, one bass thump a bar, the pad and the theme's head in long notes; then the bass rebuilds under a hat |
 | turn | a breath (no kick, bass or arpeggio) with the theme's head, then everything back, and the lead walks on to E as the loop restarts |
 
-Measured on the renders, a track's quietest bar now sits 5–14 dB under
-its loudest (9.7 dB on average). It was 1.6–4 dB, which made every track
-one flat level.
+Measured on the renders, a track's quietest bar now sits 11–16 dB under
+its loudest (13.1 dB at the median). The first version of the score sat
+at 1.6–4 dB, which made every track one flat level. Forms and
+subtraction brought it to 9.7 dB, and dynamics did the rest.
 
 ### Counter-lines
 
@@ -221,6 +222,17 @@ different order.
 - **Held notes.** Every track sets `%%hold on`, so a written note sounds
   once for its length. Pads swell, augmented themes really hold, and
   vibrato runs across a whole note.
+- **Dynamics** (`SECTION_LEVEL` in `compose.py`): intro mp, A and B mf,
+  break p, the recap f, and a swell into the recap beat by beat. Hats
+  accent their off-beats, the kick its downbeats, and the recap adds a
+  ghost snare. The lead accents each phrase's first note and its peak.
+- **Drums**: a pitch-swept triangle kick, a clocked-noise snare that
+  drops an octave as it sounds, and a metallic hat.
+- **Pads** hold whole triads, each chord voiced to move as little as it can.
+- **Automation** (`ramps()`): the machine tracks' filter opens across B,
+  closes in the break and reopens into the recap. The echo swells in the
+  break and is thrown at the turn. The pulse leads narrow toward the
+  climax. Every ramp returns its parameter before the loop ends.
 - **Palettes** (`compose.py`):
   - *pulse*: classic duty-cycle leads, the lead's pulse width sweeping
     (`pwm`);
@@ -232,8 +244,6 @@ different order.
     sweeping slowly.
 - **Vibrato fades in** on every lead (`vibrato_delay`), so short notes
   stay clean and long ones sing.
-- **Drums**: a low triangle thump for the kick, a noise snare and a short
-  noise hat.
 - **FX buses**:
   - bus 0: drums and bass;
   - bus 1: a dotted-eighth echo on the melody;

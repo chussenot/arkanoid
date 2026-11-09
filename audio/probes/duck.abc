@@ -1,0 +1,14 @@
+X:1
+M:4/4
+L:1/16
+Q:1/4=120
+K:C
+% A held pad on bus 1, pumped by a kick it does not share a bus with.
+%%hold on
+%%instrument pad wave=square amp=60 attack=0 decay=0 sustain=100 release=1 gate=100 fx=1
+%%instrument kick wave=triangle amp=1 attack=0 decay=10 sustain=0 release=1 gate=20 fx=0
+%%effect 1 mode=insert sidechain=80 sidechain_release=300 sidechain_key=kick mix=100
+V:pad instrument=pad
+| e16 |
+V:kick instrument=kick
+| z8 E,,1 z7 |

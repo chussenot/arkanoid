@@ -24,6 +24,8 @@ mod mixer;
 mod mulaw;
 #[cfg(feature = "audio")]
 mod output;
+#[cfg(all(test, feature = "audio"))]
+mod probes;
 
 pub use director::SoundMode;
 

@@ -1,0 +1,12 @@
+X:1
+M:4/4
+L:1/16
+Q:1/4=120
+K:C
+% A bright square through an insert bus whose low-pass closes over the note.
+%%hold on
+%%instrument tone wave=square amp=100 attack=0 decay=0 sustain=100 release=1 gate=100 fx=1
+%%effect 1 mode=insert lowpass=1 mix=100
+%%ramp bus1 lowpass 1 95 0 15
+V:tone instrument=tone
+| e16 |

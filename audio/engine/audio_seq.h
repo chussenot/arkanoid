@@ -49,6 +49,9 @@ typedef struct {
     int fx_send;
     int accent_gain;
     int vibrato_delay_ms;  /* BRYX: vibrato depth fades in over this long after a note-on */
+    int pitch_env_cents;   /* BRYX: a note starts this far off its pitch and sweeps home... */
+    int pitch_env_ms;      /* BRYX: ...over this long (a chip kick, a tom, a zap) */
+    int noise_clock;       /* BRYX: 0 white, 1 long LFSR, 2 metal LFSR (see DspOscillator) */
 } SeqInstrument;
 
 typedef struct {
@@ -58,6 +61,8 @@ typedef struct {
     uint8_t accent;
     uint8_t fx_trigger;
     uint8_t tie;           /* BRYX: 1 continues the previous step's note instead of striking a new one */
+    int16_t note2;         /* BRYX: a chord's second and third notes; 0 or less = none (MIDI 0 is never written) */
+    int16_t note3;
 } SeqStep;
 
 typedef struct {
@@ -71,6 +76,31 @@ typedef struct {
     int track_count;
     SeqTrack tracks[SEQ_MAX_TRACKS];
 } SeqPattern;
+
+/* BRYX: a parameter moving over time. Between start_step and end_step
+ * (absolute timeline steps) the value runs from `from` to `to`; after
+ * end_step it stays at `to` until another ramp moves it. */
+typedef enum {
+    SEQ_RAMP_LADDER_CUTOFF = 0,
+    SEQ_RAMP_LADDER_RESONANCE,
+    SEQ_RAMP_LOWPASS,
+    SEQ_RAMP_DELAY_MIX,
+    SEQ_RAMP_DRIVE,
+    SEQ_RAMP_BUS_MIX,
+    SEQ_RAMP_DUTY            /* a track's pulse width, taken at each note-on */
+} SeqRampParam;
+
+#define SEQ_MAX_RAMPS 32
+
+typedef struct {
+    int track;               /* SEQ_RAMP_DUTY: track index */
+    int bus;                 /* the other params: FX bus index */
+    SeqRampParam param;
+    int from;
+    int to;
+    int start_step;
+    int end_step;
+} SeqRamp;
 
 typedef struct {
     char title[128];
@@ -86,6 +116,9 @@ typedef struct {
     int fx_bus_count;
     SeqFxBus fx_buses[SEQ_MAX_FX_BUSES];
     int master_permille;   /* BRYX: output gain in 1/1000ths; 0 means 1000 (unity) */
+    int chord_voices;      /* BRYX: 1 when any track writes chords (more voices per track) */
+    int ramp_count;        /* BRYX */
+    SeqRamp ramps[SEQ_MAX_RAMPS];
 } SeqSong;
 
 typedef struct {
@@ -112,6 +145,8 @@ typedef struct {
     int gate_percent;
     int duration_samples;
     int step_index;
+    int note2;             /* BRYX: chord notes; 0 or less = none */
+    int note3;
 } SeqNoteEvent;
 
 #define SEQ_MAX_STEP_EVENTS SEQ_MAX_TRACKS
