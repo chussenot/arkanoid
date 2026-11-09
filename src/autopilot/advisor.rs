@@ -42,7 +42,8 @@ column: '.' empty, '1' a brick one hit from breaking, '2' an armored brick two h
 breaking, 'X' indestructible. `lanes` splits the 800 px field into five lanes and counts, \
 for each, the breakable bricks left (`destructible`), those a straight shot from the \
 paddle reaches first (`exposed`), and the indestructible ones that only deflect the \
-ball. `balls` and `paddle` are positions in pixels, y pointing down. \
+ball. `balls` and `paddle` are positions in pixels, y pointing down; `asteroids` drift \
+down through the field and deflect a ball that hits them. \
 `rallies_without_progress` counts paddle hits since a brick last broke: a high value \
 means the current aim is looping and a different lane is needed. A lane with no \
 destructible bricks is never a good answer. Which lane should the next shot attack?";
@@ -106,6 +107,11 @@ impl Advisor {
             "lives": situation.lives,
             "level": situation.level,
             "rallies_without_progress": situation.rallies_without_progress,
+            "asteroids": situation
+                .asteroids
+                .iter()
+                .map(|(x, y)| json!({ "x": x.round(), "y": y.round() }))
+                .collect::<Vec<_>>(),
         })
     }
 
@@ -303,6 +309,7 @@ mod tests {
             lives: game.lives,
             level: game.level,
             rallies_without_progress: 0,
+            asteroids: vec![(400.0, 300.0)],
         }
     }
 

@@ -36,7 +36,7 @@ use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
 use crate::events::{GameEvent, PowerUpKind};
-use crate::game::{Ball, Brick, Game, Paddle, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH};
+use crate::game::{Ball, Brick, Game, Paddle, ASTEROID_RADIUS, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH};
 use crate::levels::BrickKind;
 use crate::render::RenderState;
 use atlas::{Atlas, SpriteId};
@@ -74,7 +74,9 @@ const MAX_DESTROY_GHOSTS: usize = 20;
 const TRAIL_LEN: usize = 4;
 const MAX_CUBE_INSTANCES: usize =
     1 /* paddle */ + MAX_BRICKS + MAX_POWERUPS + WALL_COUNT + MAX_DESTROY_GHOSTS;
-const MAX_SPHERE_INSTANCES: usize = 1 /* main ball */ + MAX_EXTRA_BALLS + TRAIL_LEN;
+/// `game.rs` keeps at most 3 asteroids; a defensive bound like the others.
+const MAX_ASTEROIDS: usize = 8;
+const MAX_SPHERE_INSTANCES: usize = 1 /* main ball */ + MAX_EXTRA_BALLS + TRAIL_LEN + MAX_ASTEROIDS;
 
 /// Maps a playfield-space (x right, y down, pixels) position to this
 /// renderer's world-space X/Z ground-plane coordinates.
@@ -88,6 +90,10 @@ fn world_xz(px: f32, py: f32) -> (f32, f32) {
 // so duplicated here rather than exposed cross-module for one caller each).
 
 const PADDLE_COLOR: [f32; 4] = [0.80, 0.85, 0.95, 1.0];
+/// The paddle while Glue is active, tinted toward the Glue capsule's color
+/// so the player can tell a hit will stick.
+const GLUE_PADDLE_COLOR: [f32; 4] = [0.95, 0.65, 0.80, 1.0];
+const ASTEROID_COLOR: [f32; 4] = [0.85, 0.45, 0.25, 1.0];
 const BALL_COLOR: [f32; 4] = [1.0, 0.78, 0.2, 1.0];
 const NORMAL_BRICK_COLOR: [f32; 4] = [0.85, 0.25, 0.25, 1.0];
 const ARMORED_BRICK_COLOR: [f32; 4] = [0.30, 0.45, 0.68, 1.0];
@@ -97,6 +103,7 @@ const WALL_COLOR: [f32; 4] = [0.16, 0.18, 0.24, 1.0];
 const POWERUP_WIDEN_COLOR: [f32; 4] = [0.35, 0.85, 0.40, 1.0];
 const POWERUP_SLOW_COLOR: [f32; 4] = [0.35, 0.55, 0.95, 1.0];
 const POWERUP_MULTIBALL_COLOR: [f32; 4] = [0.80, 0.35, 0.90, 1.0];
+const POWERUP_GLUE_COLOR: [f32; 4] = [0.95, 0.45, 0.65, 1.0];
 
 /// Shared by `brick_color` (a standing brick) and `TumbleGhost::spawn` (a
 /// just-destroyed one, which by the time `BrickDestroyedAt` fires is
@@ -134,6 +141,7 @@ fn powerup_color(kind: PowerUpKind) -> [f32; 4] {
         PowerUpKind::Widen => POWERUP_WIDEN_COLOR,
         PowerUpKind::Slow => POWERUP_SLOW_COLOR,
         PowerUpKind::Multiball => POWERUP_MULTIBALL_COLOR,
+        PowerUpKind::Glue => POWERUP_GLUE_COLOR,
     }
 }
 
@@ -624,6 +632,7 @@ fn interpolate(prev: &RenderState, curr: &RenderState, alpha: f32) -> RenderStat
                 vy: curr.ball.vy,
                 radius: lerp(prev.ball.radius, curr.ball.radius, alpha),
                 attached: curr.ball.attached,
+                glued: curr.ball.glued,
             }
         },
     }
@@ -775,6 +784,23 @@ impl TumbleGhost {
         }
     }
 
+    /// A blown-up asteroid's debris: a rock-colored cube of the asteroid's
+    /// size, launched and spun away like a destroyed brick.
+    fn debris(x: f32, y: f32, radius: f32) -> Self {
+        let (wx, wz) = world_xz(x, y);
+        Self {
+            x: wx,
+            z: wz,
+            y_offset: 0.0,
+            vy: TUMBLE_LAUNCH_SPEED,
+            half_extent: [radius * 0.8; 3],
+            color: ASTEROID_COLOR,
+            axis: tumble_axis(x, y),
+            spin_dir: if x >= 0.0 { 1.0 } else { -1.0 },
+            elapsed: 0.0,
+        }
+    }
+
     /// Advances gravity/spin by `dt` seconds of wall-clock time.
     fn step(&mut self, dt: f32) {
         self.elapsed += dt;
@@ -822,6 +848,10 @@ fn ingest_brick_destroyed_events(ghosts: &mut Vec<TumbleGhost>, events: &[GameEv
         {
             if ghosts.len() < MAX_DESTROY_GHOSTS {
                 ghosts.push(TumbleGhost::spawn(x, y, width, height, kind));
+            }
+        } else if let GameEvent::AsteroidExploded { x, y } = *event {
+            if ghosts.len() < MAX_DESTROY_GHOSTS {
+                ghosts.push(TumbleGhost::debris(x, y, ASTEROID_RADIUS));
             }
         }
     }
@@ -1329,8 +1359,9 @@ impl Renderer3D {
         let mut cube_instances = Vec::with_capacity(
             1 + curr.bricks.len() + curr.powerups.len() + WALL_COUNT + self.tumbling.len(),
         );
-        let mut sphere_instances =
-            Vec::with_capacity(1 + curr.extra_balls.len() + self.ball_trail.len());
+        let mut sphere_instances = Vec::with_capacity(
+            1 + curr.extra_balls.len() + self.ball_trail.len() + curr.asteroids.len(),
+        );
 
         // Paddle.
         {
@@ -1342,7 +1373,11 @@ impl Renderer3D {
                     PADDLE_THICKNESS / 2.0,
                     drawn.paddle.height / 2.0,
                 ],
-                PADDLE_COLOR,
+                if curr.glue_timer > 0.0 {
+                    GLUE_PADDLE_COLOR
+                } else {
+                    PADDLE_COLOR
+                },
             ));
         }
 
@@ -1383,6 +1418,14 @@ impl Renderer3D {
         sphere_instances.extend(curr.extra_balls.iter().take(MAX_EXTRA_BALLS).map(|ball| {
             let (x, z) = world_xz(ball.x, ball.y);
             Instance3D::new([x, ball.radius, z], [ball.radius; 3], BALL_COLOR)
+        }));
+        sphere_instances.extend(curr.asteroids.iter().take(MAX_ASTEROIDS).map(|asteroid| {
+            let (x, z) = world_xz(asteroid.x, asteroid.y);
+            Instance3D::new(
+                [x, asteroid.radius, z],
+                [asteroid.radius; 3],
+                ASTEROID_COLOR,
+            )
         }));
 
         // Bricks -- front face textured from `self.atlas` (see
@@ -1636,6 +1679,7 @@ mod tests {
                 vy: 0.0,
                 radius: 6.0,
                 attached,
+                glued: None,
             },
         }
     }
@@ -1881,6 +1925,7 @@ mod tests {
             vy: 0.0,
             radius: 6.0,
             attached: true,
+            glued: None,
         };
         push_trail(&mut trail, &ball);
         assert!(trail.is_empty(), "an attached ball leaves no trail");

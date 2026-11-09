@@ -62,12 +62,14 @@ exceeds ball radius — assert this in a test, not a comment).
 paddle. 0 lives → GameOver with final score. All destructible bricks
 cleared → next level; last level cleared → Victory screen.
 
-**Power-ups (exactly these three, nothing more)**: dropped by 15% of
-destroyed bricks, fall at 140 px/s, caught with the paddle:
+**Power-ups (exactly these four, nothing more)**: dropped by 15% of
+destroyed bricks, uniformly among the four, fall at 140 px/s, caught with
+the paddle:
 - Widen (paddle ×1.5 for 15 s, timers stack by refresh, not addition)
 - Slow (ball speed ×0.7 once, floor at launch speed)
 - Multiball (spawn 2 extra balls from current ball position; life is
   lost only when the LAST ball drops)
+- Glue (added after v1, see below)
 
 **HUD**: score (top-left), lives as icons (top-right), level number
 (top-center). Menu and pause screens: title + key hints, keyboard only.
@@ -112,3 +114,36 @@ Definition of done: `cargo run --release` from a fresh clone starts the
 menu; a keyboard-only player can reach Victory; all tests green; clippy
 clean; README explains controls and the fixed-timestep design in one
 paragraph each.
+
+## Additions after v1
+
+Each is behind `game::Features`, so `--classic` plays v1's rules exactly:
+the pinned replay hash in `game.rs` runs under `Features::V1` and must not
+move.
+
+- **Glue** (power-up, 15 s, timer refreshes on re-catch): a ball hitting
+  the paddle sticks to it where it landed and rides along, keeping the
+  exit velocity the hit gave it (the same offset → angle mapping). A
+  Space *press* releases every glued ball (holding Space does not: that is
+  the serve); a ball also lets go by itself after 3 s, and when Glue runs
+  out. The rest of the fleet keeps moving meanwhile.
+- **Asteroids**: from 4 s into a serve's flight, then every 5–10 s, one
+  drifts in from the top edge (at most 3 at once), over the bricks, down at
+  40 px/s with a sideways drift and wobble that flip at the walls. A ball
+  touching one blows it up (+100) and bounces off it as off a round
+  obstacle (velocity mirrored about the line between centers, speed
+  unchanged); the paddle touching one blows it up too (+100, harmless). The
+  explosion hits every destructible brick within 40 px of the asteroid's
+  center (closest point of the brick) once, as a ball would: normal bricks
+  break (scored, and rolling their power-up drop), armored ones lose a hit,
+  indestructible ones are untouched; a blast that takes a level's last
+  bricks clears it. One that passes the paddle just leaves. A lost life or
+  a new level clears them.
+
+One rule applies whatever the features: **stall breaking**. After 10 s of
+flight with no ball touching the paddle, hitting a destructible brick or
+blowing up an asteroid, each wall or indestructible-brick bounce turns the
+ball 7° (alternating direction, never flatter than 20° from horizontal,
+speed unchanged) until one of those happens. Without it a ball can settle
+into a closed orbit among indestructible bricks (level 3's box allows one)
+that no input can reach.

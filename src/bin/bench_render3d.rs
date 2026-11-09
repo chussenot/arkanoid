@@ -135,6 +135,7 @@ impl Bench {
                 vy: 260.0,
                 radius: game.ball.radius,
                 attached: false,
+                glued: None,
             },
             Ball {
                 x: 500.0,
@@ -143,6 +144,7 @@ impl Bench {
                 vy: -240.0,
                 radius: game.ball.radius,
                 attached: false,
+                glued: None,
             },
         ];
         game.powerups = vec![
