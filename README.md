@@ -1,6 +1,6 @@
-# arkanoid
+# BRYX
 
-A single-player Arkanoid/Breakout clone in Rust, rendered natively with
+A single-player brick-breaking game in Rust, rendered natively with
 `wgpu`. See [`docs/spec.md`](docs/spec.md) for the full design contract.
 
 ![alt text](image.png)
@@ -12,10 +12,9 @@ cargo run --release
 ```
 
 No assets or setup required — it builds and launches straight from a fresh
-clone, into a 32-level campaign. The levels are in the spirit of the 1986
-arcade game (staircases, frames, columns, walls of armored and
-indestructible bricks), designed for this game rather than copied from it.
-The HUD shows each level's name. `--classic` plays the three levels the
+clone, into a 32-level campaign: simple rows, staircases, frames, columns,
+and walls of armored and indestructible bricks. The HUD shows each level's
+name. `--classic` plays the three levels the
 game was first specified with instead.
 
 ![The 32 campaign levels](docs/campaign.png)
@@ -88,10 +87,6 @@ can send it somewhere you didn't plan. The explosion also breaks the
 bricks around it (armored ones take one hit), so hitting one while it
 crosses the wall clears a cluster. The paddle and laser bolts blow them up
 too. Each is worth 100 points.
-
-Glue, Laser, Player and Break follow the 1986 arcade game's Catch, Laser,
-Player and Break capsules (its Enlarge, Slow and Disruption are Widen,
-Slow and Multiball here); Super laser and Tiny are this game's own.
 
 `cargo run --release -- --classic` plays as the game was first specified:
 Widen, Slow and Multiball only, and no asteroids.
