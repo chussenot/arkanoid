@@ -2,6 +2,65 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## 0.4.0 - 2026-11-09
+#### Features
+- (**audio**) the sound pass: every effect, stinger and track on the new engine - (efbd862) - Claude, *Claude Opus 5.5*
+- (**audio**) engine phase 3: seamless loops, reverb, tempo, band-limiting - (791423c) - Claude, *Claude Opus 5.5*
+- (**audio**) engine phase 2: dynamics, chords, drum synthesis, automation - (762de11) - Claude, *Claude Opus 5.5*
+- (**audio**) fork the engine for a 16-bit mix, held notes and real buses - (1858e98) - Claude, *Claude Opus 5.5*
+- (**audio**) one track per level, a shuffled score for levelsets - (61d0382) - Claude, *Claude Opus 5.5*
+- (**audio**) sound and music, rendered by the Electric Pulse engine - (b767b8a) - Claude, *Claude Opus 5.5*
+- (**autopilot**) play the game itself, shot strategy from TypeSafe System One - (1390dd2) - Claude, *Claude Opus 5.5*
+- (**fx**) kinetic effects with Lyon geometry and WESL post-processing - (6f63171) - Claude, *Claude Opus 5.5*
+- (**game**) report every brick contact as a BrickStruck event - (55779d7) - Claude, *Claude Opus 5.5*
+- (**game**) campaign speed ramp, act checkpoints, continue and fair Break - (651d468) - Claude, *Claude Opus 5.5*
+- (**game**) add the arcade original's Player and Break capsules - (70d2537) - Claude, *Claude Opus 5.5*
+- (**game**) add the Laser, Super laser and Tiny capsules - (e7bdc0d) - Claude, *Claude Opus 5.5*
+- (**game**) an asteroid's explosion breaks the bricks around it - (56a5bce) - Claude, *Claude Opus 5.5*
+- (**game**) add the Glue power-up and drifting asteroids; autopilot forecasts exactly - (b403c98) - Claude, *Claude Opus 5.5*
+- (**hud**) serve prompt, end-screen keys and a local best score - (aaeb8e5) - Claude, *Claude Opus 5.5*
+- (**levels**) open up Bridges and Baffles so their last bricks are reachable - (1fd8e04) - Claude, *Claude Opus 5.5*
+- (**levels**) add a 32-level campaign in the spirit of the arcade original - (fa2f078) - Claude, *Claude Opus 5.5*
+- (**levelset**) drop the bonuses authors placed, mapped to all nine power-ups - (4208b2b) - Claude, *Claude Opus 5.5*
+- (**menu**) pick Campaign, Classic, a levelset or a Shuffle in the menu - (1a5f6c7) - Claude, *Claude Opus 5.5*
+- (**music**) develop the themes, cadence every loop, shape each act - (74f95ea) - Claude, *Claude Opus 5.5*
+- (**music**) a 32-track score on three themes, and themed stingers - (722c3dd) - Claude, *Claude Opus 5.5*
+- (**powerups**) add the Explosive ball and Metal ball capsules - (63b7074) - Claude, *Claude Opus 5.5*
+- (**render**) life cue, state-screen slate, 3D rock and patterned ghosts - (488d8b4) - Claude, *Claude Opus 5.5*
+- (**render**) one palette and one HUD layer for both renderers - (75538e6) - Claude, *Claude Opus 5.5*
+#### Bug Fixes
+- (**audio**) music waits for fanfares, the serve and the warp - (1f6b6ea) - Claude, *Claude Opus 5.5*
+- (**levels**) open a gate in level 3's floor so the game can be won - (92a98c4) - Claude, *Claude Opus 5.5*
+- (**render3d**) use as_chunks for fixed-size triangle chunks - (48eb8de) - Claude, *Claude Opus 5.5*
+#### Documentation
+- (**autopilot**) design, latency budget, measurements and the level 3 limit - (82bc7cf) - Claude, *Claude Opus 5.5*
+- (**design**) director review results, campaign mosaic and new screens - (2dd159f) - Claude, *Claude Opus 5.5*
+- (**design**) record the follow-up fixes and refresh the screenshots - (bf6ef3f) - Claude, *Claude Opus 5.5*
+- (**design**) record the new visual system and the overhaul report - (03b5fd9) - Claude, *Claude Opus 5.5*
+- (**design**) record product context and the incumbent visual system - (6c0d82b) - Claude, *Claude Opus 5.5*
+- (**music**) the score's guide, and audio, spec and README updates - (70f90bf) - Claude, *Claude Opus 5.5*
+- (**readme**) add a mosaic of twelve fetched levels and the script that renders it - (f1f16f4) - Claude, *Claude Opus 5.5*
+- the kinetic effects' design, measurements and contract - (7add7c8) - Claude, *Claude Opus 5.5*
+- audio design, spec Sound section, README sound and M key - (4cd3cdf) - Claude, *Claude Opus 5.5*
+- director review, and spec rules for runs, acts, speed and records - (cf86de0) - Claude, *Claude Opus 5.5*
+- present the project as BRYX and drop the arcade-game inspiration lines - (a00364d) - Claude, *Claude Opus 5.5*
+- describe the campaign, with a mosaic of its 32 levels - (5b4eb1e) - Claude, *Claude Opus 5.5*
+- specify the Player and Break capsules; map the capsules to the arcade original - (3045dbf) - Claude, *Claude Opus 5.5*
+- specify the Laser, Super laser and Tiny capsules; README capsule table - (6dd3797) - Claude, *Claude Opus 5.5*
+- specify Glue, asteroids and stall breaking; update the autopilot page - (e87e063) - Claude, *Claude Opus 5.5*
+#### Build system
+- (**deps**) bump judgment to 0.17 - (7df3c30) - Claude, *Claude Opus 5.5*
+#### Refactoring
+- (**audio**) count the rally in one place both layers can share - (6f24065) - Claude, *Claude Opus 5.5*
+- rename the project from arkanoid to BRYX - (68041a0) - Claude, *Claude Opus 5.5*
+#### Miscellaneous Chores
+- (**audio**) vendor the Electric Pulse audio engine, unmodified - (012ae31) - Claude, *Claude Opus 5.5*
+- (**skills**) vendor the Impeccable design skill into .claude/skills - (1a7e2ba) - Claude, *Claude Opus 5.5*
+- drop an agent worktree committed by mistake and ignore the directory - (4223362) - Claude, *Claude Opus 5.5*
+- add the MIT LICENSE file and Cargo license metadata - (6b2fd8b) - Claude, *Claude Opus 5.5*
+
+- - -
+
 ## 0.3.0 - 2026-08-17
 #### Bug Fixes
 - **(cargo)** set default-run so cargo run/mise run run pick the game - (55a88d5) - Clement HUSSENOT-DESENONGES
