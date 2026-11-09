@@ -218,25 +218,36 @@ different order.
 
 ## Production
 
+- **Held notes.** Every track sets `%%hold on`, so a written note sounds
+  once for its length. Pads swell, augmented themes really hold, and
+  vibrato runs across a whole note.
 - **Palettes** (`compose.py`):
-  - *pulse*: classic duty-cycle leads;
-  - *glass*: thin 8% pulses and a gliding triangle lead;
-  - *buzz*: square waves through the drive and the ladder filter;
-  - *soft*: wide pulses with slow attacks.
+  - *pulse*: classic duty-cycle leads, the lead's pulse width sweeping
+    (`pwm`);
+  - *glass*: thin 8% pulses, a gliding triangle lead, and a chorused pad
+    (two detuned oscillators);
+  - *buzz*: square waves through the drive, the bass and pad through the
+    ladder filter as an insert, so the filter really darkens them;
+  - *soft*: wide pulses with slow attacks, the lead's pulse width
+    sweeping slowly.
+- **Vibrato fades in** on every lead (`vibrato_delay`), so short notes
+  stay clean and long ones sing.
 - **Drums**: a low triangle thump for the kick, a noise snare and a short
   noise hat.
 - **FX buses**:
   - bus 0: drums and bass;
   - bus 1: a dotted-eighth echo on the melody;
-  - bus 2: a sidechain pump on the arpeggio;
+  - bus 2: a sidechain pump on the arpeggio, keyed by the kick;
   - bus 3: the Moog-style ladder filter for the machine tracks.
-- **Mastering.** `python3 audio/compose.py --render <tool>` scales each
-  track until it peaks at or under 112 of 128 with no clipped sample, at
-  no more than -19 dBFS RMS. The score's loudness spread is 1.4 dB, so a
-  level change never jumps in volume. A test checks that no track clips.
-- **Size.** The 33 tracks are about 17 minutes of 8-bit 22,050 Hz audio,
-  about 22 MB of the binary. They are read in place by the mixer, never
-  decoded into memory.
+- **Mastering.** `python3 audio/compose.py --render <tool>` sets each
+  track's output gain (`%%master`) so it peaks at or under 112/128 of full
+  scale with no clipped sample, at no more than -19 dBFS RMS. The gain is
+  applied after the mix, so one probe render gives it exactly. Every track
+  lands at -19.0 dBFS, so a level change never jumps in volume. A test
+  checks that no track reaches full scale.
+- **Size.** The 33 tracks are about 17 minutes of 22,050 Hz audio, one
+  byte a sample as mu-law, about 22 MB of the binary. They are read in
+  place by the mixer, never decoded into memory.
 
 ## The score lint
 

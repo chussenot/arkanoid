@@ -38,4 +38,9 @@ unsigned char *audio_engine_render_song(const SeqSong *song, int sample_rate,
                                         int *out_len, AudioRenderStats *out_stats);
 void audio_engine_free_buffer(unsigned char *buffer);
 
+/* BRYX: an ABC file rendered as signed 16-bit mono, the engine's internal
+ * precision, instead of 8-bit. Free it with audio_engine_free_s16(). */
+int16_t *audio_engine_render_abc_file_s16(const char *path, int sample_rate, int *out_len);
+void audio_engine_free_s16(int16_t *buffer);
+
 #endif

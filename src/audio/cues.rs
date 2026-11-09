@@ -1,8 +1,10 @@
 //! The cue bank: every sound BRYX can make, as the PCM `build.rs` rendered
-//! from `audio/cues/*.abc` with the Electric Pulse engine. The bytes stay
-//! where the binary put them: unsigned 8-bit mono, read and converted one
-//! sample at a time by the mixer, so 33 music tracks cost no memory beyond
-//! the binary itself.
+//! from `audio/cues/*.abc` with BRYX's fork of the Electric Pulse engine.
+//! The bytes stay where the binary put them: 8-bit mu-law mono (`mulaw`),
+//! read and decoded one sample at a time by the mixer, so 33 music tracks
+//! cost no memory beyond the binary itself.
+
+use super::mulaw::MULAW_TO_F32;
 
 /// The rate `build.rs` renders cues at (its `SAMPLE_RATE`).
 pub const CUE_SAMPLE_RATE: f32 = 22_050.0;
@@ -106,7 +108,7 @@ mod rendered {
     include!(concat!(env!("OUT_DIR"), "/cues.rs"));
 }
 
-/// The embedded PCM for `cue`: unsigned 8-bit mono at [`CUE_SAMPLE_RATE`],
+/// The embedded PCM for `cue`: mu-law mono at [`CUE_SAMPLE_RATE`],
 /// effects already trimmed of trailing silence by `build.rs`. Empty
 /// without the `audio` feature, or for a level past the score.
 pub fn pcm(cue: Cue) -> &'static [u8] {
@@ -131,21 +133,43 @@ pub fn pcm(cue: Cue) -> &'static [u8] {
     }
 }
 
-/// One of the engine's samples (unsigned, centered at 128) as `-1.0..1.0`.
+/// One embedded mu-law byte as a sample in `-1.0..1.0`.
 #[inline]
 pub fn sample(byte: u8) -> f32 {
-    (f32::from(byte) - 128.0) / 128.0
+    MULAW_TO_F32[usize::from(byte)]
 }
+
+/// The mu-law bytes for full scale, positive and negative: no level track
+/// may reach them.
+#[cfg(test)]
+const FULL_SCALE: [u8; 2] = [0x80, 0x00];
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use crate::audio::mulaw::{mulaw_decode, mulaw_encode};
+
     #[test]
-    fn samples_are_centered() {
-        assert_eq!(sample(128), 0.0);
-        assert_eq!(sample(0), -1.0);
-        assert!(sample(255) > 0.99);
+    fn mulaw_is_centered_symmetric_and_close() {
+        assert_eq!(mulaw_encode(0), 0xFF, "silence");
+        assert_eq!(sample(0xFF), 0.0);
+        assert!(sample(FULL_SCALE[0]) > 0.97 && sample(FULL_SCALE[1]) < -0.97);
+        assert_eq!(mulaw_encode(i16::MAX), FULL_SCALE[0]);
+        assert_eq!(mulaw_encode(i16::MIN), FULL_SCALE[1]);
+        // Every 16-bit sample comes back within half its segment's step: the
+        // error grows with the level, staying near 1/32 of it (~30 dB
+        // under the signal at every level, not just loud ones).
+        for s in (-32_768..=32_767).step_by(7) {
+            let s = s as i16;
+            let back = i32::from(mulaw_decode(mulaw_encode(s)));
+            let err = (back - i32::from(s)).abs();
+            assert!(
+                err <= 8 + i32::from(s).abs().min(32_635) / 30,
+                "{s} -> {back}"
+            );
+            assert!(back.signum() * i32::from(s).signum() >= 0, "sign of {s}");
+        }
     }
 
     #[cfg(feature = "audio")]
@@ -161,7 +185,10 @@ mod tests {
         for cue in every_cue() {
             let pcm = pcm(cue);
             assert!(!pcm.is_empty(), "{cue:?} has no render");
-            assert!(pcm.iter().any(|b| b.abs_diff(128) > 8), "{cue:?} is silent");
+            assert!(
+                pcm.iter().any(|&b| sample(b).abs() > 0.0625),
+                "{cue:?} is silent"
+            );
         }
         assert_eq!(rendered::LEVEL_MUSIC.len(), usize::from(LEVEL_TRACKS));
         assert!(pcm(Cue::Level(0)).is_empty() && pcm(Cue::Level(33)).is_empty());
@@ -177,7 +204,8 @@ mod tests {
                 assert!(secs > 20.0, "{cue:?}: {secs:.1}s");
             } else {
                 assert!(secs < 8.0, "{cue:?}: {secs:.1}s");
-                assert!(pcm.last().unwrap().abs_diff(128) > 1, "{cue:?} not trimmed");
+                let last = sample(*pcm.last().unwrap()).abs();
+                assert!(last > 0.5 / 128.0, "{cue:?} not trimmed");
             }
         }
     }
@@ -189,7 +217,7 @@ mod tests {
     fn no_music_track_clips() {
         for n in 1..=LEVEL_TRACKS {
             let pcm = pcm(Cue::Level(n));
-            let hot = pcm.iter().filter(|&&b| b == 0 || b == 255).count();
+            let hot = pcm.iter().filter(|b| FULL_SCALE.contains(b)).count();
             assert_eq!(hot, 0, "level {n} clips");
         }
     }

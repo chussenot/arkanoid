@@ -6,6 +6,8 @@ L:1/16
 Q:1/4=132
 K:C
 % Ascent in harmonic minor, Spark answering above, resolving to E major: the score's one major chord.
+%%hold on
+%%master 120.1
 %%instrument brass wave=pulse amp=25 duty=28 attack=6 decay=140 sustain=72 release=320 gate=90 vibrato=7 fx=1
 %%instrument harm wave=pulse amp=15 duty=40 attack=6 decay=140 sustain=64 release=320 gate=90 fx=1
 %%instrument bass wave=triangle amp=28 attack=2 decay=160 sustain=70 release=320 gate=92 fx=0

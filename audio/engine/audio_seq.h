@@ -27,6 +27,10 @@ typedef struct {
     int ladder_amount;     /* wet mix 0..100; 0 disables ladder */
     int ladder_cutoff;     /* 1..100 (percent of Nyquist) */
     int ladder_resonance;  /* 0..100 */
+    /* BRYX additions (zero keeps the original behavior): */
+    int insert;            /* 1: the bus replaces its voices' dry signal instead of adding to it */
+    int sidechain_key;     /* track index + 1 whose note-ons trigger this bus's sidechain; the
+                              keyed sidechain ducks this bus only, never the master */
 } SeqFxBus;
 
 typedef struct {
@@ -44,6 +48,7 @@ typedef struct {
     int stacked_voices;
     int fx_send;
     int accent_gain;
+    int vibrato_delay_ms;  /* BRYX: vibrato depth fades in over this long after a note-on */
 } SeqInstrument;
 
 typedef struct {
@@ -52,6 +57,7 @@ typedef struct {
     uint8_t gate;
     uint8_t accent;
     uint8_t fx_trigger;
+    uint8_t tie;           /* BRYX: 1 continues the previous step's note instead of striking a new one */
 } SeqStep;
 
 typedef struct {
@@ -79,6 +85,7 @@ typedef struct {
     uint8_t arrangement[SEQ_MAX_ARRANGEMENT];
     int fx_bus_count;
     SeqFxBus fx_buses[SEQ_MAX_FX_BUSES];
+    int master_permille;   /* BRYX: output gain in 1/1000ths; 0 means 1000 (unity) */
 } SeqSong;
 
 typedef struct {
@@ -111,6 +118,10 @@ typedef struct {
 
 int seq_song_total_steps(const SeqSong *song);
 int seq_compile_timeline(const SeqSong *song, int sample_rate, SeqTimeline *timeline);
+/* BRYX: the samples a note struck at absolute_step on track_index lasts,
+ * through every tied step after it. */
+int seq_held_samples(const SeqSong *song, const SeqTimeline *timeline,
+                     int absolute_step, int track_index);
 int seq_collect_step_events(const SeqSong *song, const SeqTimeline *timeline,
                             int absolute_step, SeqNoteEvent events[SEQ_MAX_STEP_EVENTS]);
 

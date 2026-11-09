@@ -8,8 +8,8 @@ this closes the review's highest-value open item.
 
 BRYX sounds like a sibling of
 [Electric Pulse](https://github.com/chussenot/electric-pulse): the same
-engine, the same 8-bit dark-synth voice (pulse, triangle and noise
-oscillators, ADSR, drive, delay, sidechain). DESIGN.md's "Measured Field"
+engine, the same dark-synth chip voice (pulse, triangle and noise
+oscillators, ADSR, drive, ladder filter, delay, sidechain). DESIGN.md's "Measured Field"
 carries over to sound: precise, synthetic, warm, never a nostalgic replica
 of any arcade machine. Every note and loop is original.
 
@@ -36,8 +36,8 @@ Four ideas shape everything below:
 
 ```mermaid
 flowchart LR
-  ABC["audio/cues/*.abc<br/>(text, original)"] -->|build.rs| Tool["Electric Pulse engine<br/>(vendored C, host tool)"]
-  Tool --> PCM["8-bit PCM<br/>embedded in the binary"]
+  ABC["audio/cues/*.abc<br/>(text, original)"] -->|build.rs| Tool["Electric Pulse engine<br/>(BRYX's fork, C host tool)"]
+  Tool -->|16-bit| PCM["8-bit mu-law<br/>embedded in the binary"]
   Game[game.rs events + state] --> Dir["director.rs<br/>what, where, which pitch"]
   Dir -->|commands| Mix["mixer.rs<br/>voices, music, duck, limiter"]
   PCM --> Mix
@@ -45,9 +45,9 @@ flowchart LR
 ```
 
 - **Render at build time, not at runtime.** `build.rs` compiles the
-  vendored engine (`audio/engine/`, unmodified, see its PROVENANCE.md) and
-  `audio/render.c` into a host tool, then renders each cue to PCM in
-  `OUT_DIR`; the binary embeds the bytes. The game runs no C and no
+  engine (`audio/engine/`, BRYX's fork: see its PROVENANCE.md) and
+  `audio/render.c` into a host tool, then renders each cue to 16-bit PCM
+  and encodes it to mu-law in `OUT_DIR`; the binary embeds the bytes. The game runs no C and no
   `unsafe` FFI, needs no audio files beside it, and every build sounds the
   same. A sound is an `.abc` text file: edit it, rebuild, hear it.
 - **One renderer, many notes.** Pitch is playback rate, so one rendered
@@ -66,6 +66,48 @@ flowchart LR
   `main.rs` drains them, plus the game's state, exactly as the renderers
   do. Nothing in `src/audio/` can change what happens; the pinned replay
   hash is untouched.
+
+## The engine fork
+
+BRYX began with Electric Pulse's engine unmodified. Writing the score
+exposed three rendering problems that no composition could fix, so BRYX
+forked the engine (`audio/engine/PROVENANCE.md` lists every change):
+- **Voices rendered at 3–5 bits.** The engine synthesized each voice in
+  8-bit output steps and truncated every envelope and effect multiply.
+  Once mastered, the pad swung ±3 steps, and the arpeggio and counter ±4.
+  A quiet voice also lost level to the rounding: one at amplitude 10
+  rendered 4.9 dB below what was written. The fork mixes at 16-bit scale
+  and quantizes once. Measured on every cue, a file that uses no new
+  directive renders the same at high level and correctly at low level.
+- **No held notes.** Every sixteenth-note step struck a new note, so `E16`
+  was sixteen attacks. Pads never finished their attack, vibrato
+  restarted every step, and long notes were never long. With `%%hold on`
+  (every track and stinger), a written note sounds once.
+- **Buses that could not filter, and a pump on everything.** Every effect
+  bus added a processed copy beside the dry signal, so a lowpass could not
+  darken anything. The arpeggio's sidechain ducked the whole mix on every
+  beat, drums included. The fork adds insert buses and a sidechain keyed
+  by the kick that ducks only its own bus. The score uses both: the
+  machine tracks' ladder filter is an insert, and the arpeggio pumps to
+  the kick.
+
+The fork also lets ABC reach instrument features the mixer always had:
+- stacked, detuned oscillators;
+- pulse-width sweeps;
+- vibrato rate and a vibrato that fades in;
+- accent gain.
+
+Rebalancing kept every voice near its level in the first version of the
+score, measured soloed track by track; most land within about 1.5 dB, with
+a few track-specific outliers (Fortress's hat, the soft pad). The stingers
+hold their notes and keep their loudness within about 2 dB.
+
+**Storage: mu-law.** Linear 8-bit storage would throw the 16-bit render
+away again: in the score's quietest bars (median -28 dBFS) it leaves the
+signal 25 dB above its noise. G.711 mu-law spends the same byte
+logarithmically, so those bars keep 37 dB. The embedded audio stays about
+22 MB. `src/audio/mulaw.rs` is the one codec: `build.rs` includes it to
+encode, and the mixer decodes it through a 256-entry table.
 
 ## Cues
 
@@ -97,9 +139,10 @@ flowchart LR
 | Master | 1.5 into the soft limiter |
 
 Measured on 40 s autopilot soundtracks, rendered offline through the same
-director and mixer: about -20 dBFS RMS with peaks near -4 dBFS, the same on
-levels 1 and 22, and no sample at full scale. The score itself is mastered
-to within 1.5 dB track to track ([`music.md`](music.md)).
+director and mixer: about -19.5 dBFS RMS with peaks near -3 dBFS, the same
+on levels 1 and 22, and no sample at full scale. The engine fork moved
+these by about half a decibel. The score itself is mastered to -19.0 dBFS,
+track for track ([`music.md`](music.md)).
 
 ## Player control and accessibility
 
@@ -124,6 +167,9 @@ to within 1.5 dB track to track ([`music.md`](music.md)).
 - **Longer forms.** Each level loops a 16-bar track of 27–36 s. A longer
   form, or a B-side per level, would cost about 0.7 MB of binary per
   track.
+- **Phase 2 of the engine.** Per-note dynamics (velocity, chosen
+  accents), drum synthesis (a pitched kick, metallic noise), chords in one
+  voice, and parameter automation (filter sweeps).
 - **A listening pass.** Every level and loudness figure here was measured
   in a headless environment with no speakers. Please play it on real
   speakers and headphones; the mix constants live in `mixer.rs` and
