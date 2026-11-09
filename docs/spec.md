@@ -64,8 +64,8 @@ exceeds ball radius — assert this in a test, not a comment).
 paddle. 0 lives → GameOver with final score. All destructible bricks
 cleared → next level; last level cleared → Victory screen.
 
-**Power-ups (exactly these nine, nothing more)**: dropped by 15% of
-destroyed bricks, uniformly among the nine, fall at 140 px/s, caught with
+**Power-ups (exactly these eleven, nothing more)**: dropped by 15% of
+destroyed bricks, uniformly among the enabled ones, fall at 140 px/s, caught with
 the paddle. A loaded levelset's level whose author placed bonuses drops
 exactly those instead: each marked brick drops its own (mapped in
 `docs/levelset-format.md`), every time, and unmarked bricks drop nothing;
@@ -74,7 +74,8 @@ a power-up the game has switched off (`--classic`) drops nothing:
 - Slow (ball speed ×0.7 once, floor at launch speed)
 - Multiball (spawn 2 extra balls from current ball position; life is
   lost only when the LAST ball drops)
-- Glue, Laser, Super laser, Tiny, Player, Break (added after v1, see below)
+- Glue, Laser, Super laser, Tiny, Player, Break, Explosive ball, Metal
+  ball (added after v1, see below)
 
 **HUD**: score (top-left), lives as icons (top-right), level number
 (top-center). Menu and pause screens: title + key hints, keyboard only.
@@ -216,6 +217,20 @@ move.
   (Victory if it was the last level). The gate stays open until it is
   used, a life is lost or the level ends. Balls still bounce off the wall
   there.
+- **Explosive ball** (power-up, 15 s, letter E): every ball in play blows
+  up the destructible brick it hits. It bounces as usual, and the blast
+  hits every destructible brick within 30 px of the struck brick's center
+  (closest point of the brick) once, as a ball would: the struck brick and
+  its eight neighbors, never a brick two rows or two columns away.
+  Indestructible bricks are untouched and turn the ball back unexploded.
+- **Metal ball** (power-up, 15 s, letter I for iron): every ball in play
+  breaks any destructible brick it touches outright, armored ones included,
+  and flies on through without bouncing, so it can plow a column in one
+  pass. Indestructible bricks still turn it back.
+  Both ball powers: each ball wears the capsule's hue while it lasts;
+  catching either replaces the one active, timer full again; like the guns,
+  they outlast a lost life and end when the run does. A blast or a pass
+  that takes a level's last bricks clears it.
 - **Asteroids**: from 4 s into a serve's flight, then every 5–10 s, one
   drifts in from the top edge (at most 3 at once), over the bricks, down at
   40 px/s with a sideways drift and wobble that flip at the walls. A ball

@@ -26,6 +26,8 @@ colors:
   capsule-tiny: "#9BA5B9"
   capsule-player: "#F0C232"
   capsule-break: "#FF8A2B"
+  capsule-explosive-ball: "#C5F03C"
+  capsule-metal-ball: "#E6E9F0"
   asteroid: "#8B7F9A"
   explosion: "#FFB55E"
 typography:
@@ -163,9 +165,12 @@ at the point of use:
 - **Capsules** (hue and letter):
   - Widen W (#3DC46B), Slow S (#3F8EF5), Multiball M (#9C66F2);
   - Glue G (#EE62A0), Laser L (#EE463B), Super laser X (#2BCFD8);
-  - Tiny T (#9BA5B9), Player P (#F0C232), Break B (#FF8A2B).
-- **Effects**: the Break gate and the laser bolts reuse their capsule's hue,
-  so cause and effect read as one thing.
+  - Tiny T (#9BA5B9), Player P (#F0C232), Break B (#FF8A2B);
+  - Explosive ball E (#C5F03C, chartreuse: the explosion's amber sits too
+    close to Player and Break), Metal ball I for iron (#E6E9F0, polished
+    steel, the lightest capsule against Tiny's dull gray).
+- **Effects**: the Break gate, the laser bolts and a powered ball reuse
+  their capsule's hue, so cause and effect read as one thing.
 - **Hazards**: Asteroid (#8B7F9A) is cool cratered stone; its Explosion
   (#FFB55E) is the only warm thing about it.
 

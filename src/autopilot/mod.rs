@@ -427,6 +427,7 @@ impl Autopilot {
                     ball,
                     &game.bricks,
                     &game.asteroids,
+                    game.ball_power,
                     line_y,
                     dt,
                     FORECAST_TICKS,
@@ -979,6 +980,13 @@ mod benchmark {
                 Features {
                     player: true,
                     warp: true,
+                    ..Features::V1
+                },
+            ),
+            (
+                "ball powers",
+                Features {
+                    ball_powers: true,
                     ..Features::V1
                 },
             ),

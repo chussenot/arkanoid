@@ -949,6 +949,8 @@ fn ingest_brick_destroyed_events(ghosts: &mut Vec<TumbleGhost>, events: &[GameEv
                 ghosts.push(TumbleGhost::spawn(x, y, width, height, kind));
             }
         } else if let GameEvent::AsteroidExploded { x, y } = *event {
+            // An explosive ball's blast leaves no rock: the bricks it broke
+            // tumble on their own `BrickDestroyedAt`s.
             if ghosts.len() < MAX_DESTROY_GHOSTS {
                 ghosts.push(TumbleGhost::debris(x, y, ASTEROID_RADIUS));
             }
@@ -1530,6 +1532,7 @@ impl Renderer3D {
         // the opaque ball sphere below so the ball itself always ends up
         // layered on top of its own trail. Uses the trail as it stood at
         // the *start* of this frame, then updates it (`push_trail`) after.
+        let ball_color = palette::ball(curr.ball_power.map(|p| p.mode));
         let trail_len = self.ball_trail.len().max(1) as f32;
         sphere_instances.extend(self.ball_trail.iter().enumerate().map(|(i, &(x, y))| {
             let fade = (i + 1) as f32 / trail_len;
@@ -1538,7 +1541,7 @@ impl Renderer3D {
             Instance3D::new(
                 [wx, radius, wz],
                 [radius; 3],
-                palette::BALL.linear_alpha(TRAIL_BASE_ALPHA * fade),
+                ball_color.linear_alpha(TRAIL_BASE_ALPHA * fade),
             )
         }));
         push_trail(&mut self.ball_trail, &drawn.ball);
@@ -1551,16 +1554,12 @@ impl Renderer3D {
             sphere_instances.push(Instance3D::new(
                 [x, drawn.ball.radius, z],
                 [drawn.ball.radius; 3],
-                palette::BALL.linear(),
+                ball_color.linear(),
             ));
         }
         sphere_instances.extend(curr.extra_balls.iter().take(MAX_EXTRA_BALLS).map(|ball| {
             let (x, z) = world_xz(ball.x, ball.y);
-            Instance3D::new(
-                [x, ball.radius, z],
-                [ball.radius; 3],
-                palette::BALL.linear(),
-            )
+            Instance3D::new([x, ball.radius, z], [ball.radius; 3], ball_color.linear())
         }));
         // Asteroids: the jagged rock mesh, turning slowly; each one's angle
         // is offset by where it is, so no two face the same way.

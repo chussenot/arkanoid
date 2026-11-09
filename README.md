@@ -106,7 +106,7 @@ who the game is for and the principles behind those choices.
 
 ## Capsules and asteroids
 
-A destroyed brick drops a capsule 15% of the time, any of nine with equal
+A destroyed brick drops a capsule 15% of the time, any of eleven with equal
 odds. Catch it with the paddle:
 
 Each capsule is a pill in its own color, with its letter on it, so none
@@ -123,6 +123,8 @@ depends on color alone:
 | Tiny | T | grey | The one to dodge: paddle ×0.6 for 15 s (cancels Widen) |
 | Player | P | gold | One extra life (up to 9) |
 | Break | B | orange | Opens a gate at the bottom of the right wall. Slide the paddle out through it to skip to the next level; you score the bricks you skipped, no more. It stays open until you use it, lose a life or the level ends |
+| Explosive ball | E | chartreuse | For 15 s every ball glows chartreuse and blows up the brick it hits together with the eight around it (armored ones lose a hit); it bounces as usual |
+| Metal ball | I | silver | For 15 s every ball turns to steel: it breaks any breakable brick it touches, armored ones included, and flies straight on through. Indestructible bricks still turn it back |
 
 The paddle takes the color of the gun or Glue it carries. Catching one
 laser replaces the other.

@@ -15,8 +15,8 @@
 //! cannot otherwise recover — which power-up kind spawned or was caught.
 
 /// The power-ups a brick can drop: v1's three, plus Glue, Laser, Super laser,
-/// Tiny, Player and Break (docs/spec.md, "Additions after v1"; off under
-/// `game::Features::V1`).
+/// Tiny, Player, Break, Explosive ball and Metal ball (docs/spec.md,
+/// "Additions after v1"; off under `game::Features::V1`).
 ///
 /// ponytail: no code constructs these yet -- brick/power-up gameplay lands
 /// in M3/M4. `#[allow(dead_code)]` until then; drop it once `game.rs` emits
@@ -33,6 +33,8 @@ pub enum PowerUpKind {
     Tiny,
     Player,
     Break,
+    ExplosiveBall,
+    MetalBall,
 }
 
 /// Something the simulation did this tick.
@@ -60,6 +62,10 @@ pub enum GameEvent {
     /// position: it is gone from `Game::asteroids` by the time this fires,
     /// so the renderers' explosion effect reads its spot from here.
     AsteroidExploded { x: f32, y: f32 },
+    /// An explosive ball blew up against a brick, centered on that brick:
+    /// the renderers draw it like an asteroid's explosion, the director
+    /// plays it a little quieter (there can be many in a row).
+    BallExploded { x: f32, y: f32 },
     /// A ball fell below the bottom edge. Fires once per ball, including
     /// during multiball — see `LifeLost` for the life-loss rule.
     BallLost,
