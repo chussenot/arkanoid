@@ -93,11 +93,10 @@ pub const LEVELS: &[&[&str]] = &[LEVEL_1, LEVEL_2, LEVEL_3];
 
 // -- the campaign -------------------------------------------------------------
 //
-// What a normal game plays: 32 levels in the spirit of the 1986 arcade game
-// (staircases, frames, columns, walls of armored and indestructible bricks),
-// designed for this game and copying none of its stages (see ATTRIBUTION:
-// this repo never reproduces those layouts). `LEVELS` above stays v1's three:
-// the tests play them, and so does `--classic`.
+// What a normal game plays: 32 levels (staircases, frames, columns, walls of
+// armored and indestructible bricks), all original designs: this repo never
+// reproduces another game's layouts (see ATTRIBUTION). `LEVELS` above stays
+// v1's three: the tests play them, and so does `--classic`.
 
 /// The campaign, in play order, each with its name.
 pub const CAMPAIGN: &[(&str, &[&str])] = &[

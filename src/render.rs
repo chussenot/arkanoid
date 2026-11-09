@@ -399,7 +399,7 @@ const SCRIM_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 0.62];
 fn overlay_text(game: &Game) -> Option<(&'static str, String)> {
     match game.state {
         GameState::Menu => Some((
-            "ARKANOID",
+            "BRYX",
             "SPACE: Start   ARROWS / A D: Move   ESC or P: Pause".to_string(),
         )),
         GameState::Paused => Some(("PAUSED", "ESC or P: Resume".to_string())),
@@ -651,7 +651,7 @@ impl Renderer {
         .expect("failed to find a compatible wgpu adapter");
 
         let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("arkanoid device"),
+            label: Some("bryx device"),
             ..Default::default()
         }))
         .expect("failed to request wgpu device");
@@ -1455,7 +1455,7 @@ mod tests {
         let mut game = Game::new(); // Game::new() already starts in Menu
         game.state = GameState::Menu;
         let (title, detail) = overlay_text(&game).expect("Menu must have an overlay");
-        assert_eq!(title, "ARKANOID");
+        assert_eq!(title, "BRYX");
         assert!(
             detail.contains("SPACE"),
             "must tell the player how to start"

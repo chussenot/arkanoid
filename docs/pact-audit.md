@@ -1,4 +1,4 @@
-# pact field-test audit — arkanoid-rs 15-agent build
+# pact field-test audit — BRYX 15-agent build (then named `arkanoid-rs`)
 
 Ground-truth notes on an external diagnosis of pact's coordination during
 this repo's build (bootstrap → 5 milestones, 15 bd issues + 1 follow-up,
@@ -113,7 +113,7 @@ Verified directly against this repo's `.beads/`, `.pact/events.jsonl`,
 Everything the diagnosis states about pact's *own* development history —
 the 87% historical skip rate, 136 commits at ~1 bead/commit, the 1800s
 vs. 2700s TTL recommendation trail — describes pact's own repository,
-which isn't part of arkanoid-rs. Take those as asserted, not
+which isn't part of this repository. Take those as asserted, not
 re-verified here.
 
 ## Bottom line

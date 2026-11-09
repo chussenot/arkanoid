@@ -90,7 +90,7 @@ Module boundaries (the strict separation is the architectural point — don't bl
 - `src/main.rs` — window/event loop wiring only.
 - `src/game.rs` — pure simulation (`struct Game`, `fn tick(&mut self, input: &Input, dt_fixed)`). No wgpu/winit/I/O types here; this is what keeps gameplay logic unit-testable headless.
 - `src/render.rs` — wgpu setup + the instanced-quad pipeline.
-- `src/levels.rs` — level grids as const `&[&str]` data (`.` empty, `1` normal, `2` armored, `X` indestructible): `LEVELS` (v1's three, played by the tests and `--classic`) and `CAMPAIGN` (32 named levels, a normal game). Adding a level must require touching only this file, and a test rejects any grid with a destructible brick no ball can reach. Campaign levels are original designs: never transcribe the arcade game's stages (see `ATTRIBUTION`).
+- `src/levels.rs` — level grids as const `&[&str]` data (`.` empty, `1` normal, `2` armored, `X` indestructible): `LEVELS` (v1's three, played by the tests and `--classic`) and `CAMPAIGN` (32 named levels, a normal game). Adding a level must require touching only this file, and a test rejects any grid with a destructible brick no ball can reach. Campaign levels are original designs: never transcribe another game's levels (see `ATTRIBUTION`).
 - `src/events.rs` — `enum GameEvent { BrickDestroyed, BallLost, ... }` emitted by the simulation each tick; render (and later audio) consume it.
 - Game states are an explicit enum-driven machine: `Menu → Playing ⇄ Paused → GameOver/Victory`. No ad-hoc booleans for state.
 

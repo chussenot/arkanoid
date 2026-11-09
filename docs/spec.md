@@ -1,6 +1,6 @@
-# SPEC — `arkanoid-rs`
+# SPEC — BRYX
 
-A single-player Arkanoid/Breakout clone. Rust, native windowed UI, modern
+A single-player brick-breaking game. Rust, native windowed UI, modern
 GPU rendering. This file is the contract: implement what is written here,
 in the order of the milestones, and ask before deviating.
 
@@ -82,9 +82,9 @@ level 2 introduces armored; level 3 uses indestructible bricks to shape
 corridors. Adding a level must require touching only levels.rs.
 
 **The campaign (added after v1)**: 32 more built-in levels in levels.rs
-(`CAMPAIGN`, each with a name the HUD shows), in the spirit of the 1986
-arcade game (staircases, frames, columns, walls of armored and
-indestructible bricks) and copying none of its stages. A normal game plays
+(`CAMPAIGN`, each with a name the HUD shows): staircases, frames, columns,
+walls of armored and indestructible bricks, all original designs (this
+repo never reproduces another game's layouts; see ATTRIBUTION). A normal game plays
 the campaign; `--classic` and the tests play v1's three above. Every
 built-in grid, v1's and the campaign's, is at most 14×8, has a destructible
 brick, and has every destructible brick reachable from the open field
@@ -154,9 +154,9 @@ move.
 - **Tiny** (power-up, 15 s, the one that hurts): paddle ×0.6. Tiny and Widen
   cancel each other: catching one ends the other, so the paddle is only
   ever one size off.
-- **Player** (power-up, the arcade original's P): one extra life, up to 9
+- **Player** (power-up): one extra life, up to 9
   in all (the HUD's room for life icons).
-- **Break** (power-up, the arcade original's B): opens a gate in the right
+- **Break** (power-up): opens a gate in the right
   wall, from 40 px above the paddle's center to the bottom of the field.
   While it is open the paddle can slide out through the wall; once it is
   all the way out (its left edge past the wall) the level is left as if

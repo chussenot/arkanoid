@@ -643,7 +643,7 @@ mod tests {
         static COUNTER: AtomicU32 = AtomicU32::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!(
-            "arkanoid-assets-test-{}-{label}-{n}",
+            "bryx-assets-test-{}-{label}-{n}",
             std::process::id()
         ));
         std::fs::create_dir_all(&dir).expect("failed to create test scratch dir");

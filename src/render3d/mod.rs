@@ -981,7 +981,7 @@ impl Renderer3D {
         .expect("failed to find a compatible wgpu adapter");
 
         let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("arkanoid render3d device"),
+            label: Some("bryx render3d device"),
             ..Default::default()
         }))
         .expect("failed to request wgpu device");
@@ -1662,7 +1662,7 @@ impl Renderer3D {
     /// waits on a compositor at all.
     ///
     /// `#[allow(dead_code)]`: only that sibling `[[bin]]` target ever calls
-    /// this -- the main `arkanoid` binary's own dead-code analysis has no
+    /// this -- the main `bryx` binary's own dead-code analysis has no
     /// visibility into a separate binary crate's call sites.
     #[allow(dead_code)]
     pub fn render_offscreen_for_bench(

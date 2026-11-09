@@ -35,8 +35,8 @@ options! {
     }
 }
 
-const INSTRUCTIONS: &str = "You are choosing where the next shot goes in a game of \
-Arkanoid, to clear every breakable brick in as few paddle hits as possible without \
+const INSTRUCTIONS: &str = "You are choosing where the next shot goes in a brick-breaking \
+game, to clear every breakable brick in as few paddle hits as possible without \
 losing the ball. `map` is the brick wall, rows top to bottom, one character per 50 px \
 column: '.' empty, '1' a brick one hit from breaking, '2' an armored brick two hits from \
 breaking, 'X' indestructible. `lanes` splits the 800 px field into five lanes and counts, \

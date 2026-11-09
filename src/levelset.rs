@@ -329,7 +329,7 @@ fn progress_dir() -> PathBuf {
 }
 
 fn progress_file_path() -> PathBuf {
-    progress_dir().join("arkanoid-progress.txt")
+    progress_dir().join("bryx-progress.txt")
 }
 
 /// Whether the level set identified by `set_id` (conventionally the same
@@ -537,7 +537,7 @@ mod tests {
 
     #[test]
     fn load_dir_on_a_missing_directory_yields_no_levelsets_not_an_error() {
-        let result = load_dir(Path::new("/nonexistent/path/for/arkanoid-tests"));
+        let result = load_dir(Path::new("/nonexistent/path/for/bryx-tests"));
         assert_eq!(result.unwrap(), Vec::new());
     }
 
@@ -599,7 +599,7 @@ mod tests {
     #[test]
     fn set_completion_round_trips_through_the_progress_file() {
         let path = std::env::temp_dir().join(format!(
-            "arkanoid-progress-test-{}-{}.txt",
+            "bryx-progress-test-{}-{}.txt",
             std::process::id(),
             line!()
         ));

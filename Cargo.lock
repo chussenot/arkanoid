@@ -78,22 +78,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arkanoid"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "glam",
- "glyphon",
- "image",
- "judgment",
- "rand",
- "serde_json",
- "tokio",
- "wgpu",
- "winit",
-]
-
-[[package]]
 name = "arrayref"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -213,6 +197,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5"
 dependencies = [
  "objc2 0.6.4",
+]
+
+[[package]]
+name = "bryx"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "glam",
+ "glyphon",
+ "image",
+ "judgment",
+ "rand",
+ "serde_json",
+ "tokio",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]

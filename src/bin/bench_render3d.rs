@@ -15,11 +15,11 @@
 //! renderer has a repeatable way to re-measure rather than re-deriving one.
 //! Reuses the crate's real modules via `#[path]` (this file is `main.rs`
 //! for its own separate binary crate, per Cargo's `src/bin/` convention,
-//! so it has no access to the `arkanoid` binary's modules otherwise --
+//! so it has no access to the `bryx` binary's modules otherwise --
 //! there is no `src/lib.rs` to depend on). `#![allow(dead_code)]`: most of
 //! `render.rs`'s classic 2D renderer and HUD text plumbing comes along for
 //! the ride (only `RenderState` is actually needed here) since it's all one
-//! file: real dead code in the `arkanoid` binary would be a bug, but here
+//! file: real dead code in the `bryx` binary would be a bug, but here
 //! it's an unavoidable side effect of reusing the module wholesale.
 #![allow(dead_code)]
 
