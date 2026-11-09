@@ -173,31 +173,31 @@ Tracks run 27–36 seconds; the menu runs 42.
 | 08 | Scatter | E aeolian, 122 BPM, swing 56 | spark_shift → ascent_head | epic | pulse, break | Spark knocked off the beat and lightly swung; Ascent's head returns in the middle, still a promise, as the first act ends. |
 | **Act II · Structures** | | | | | | |
 | 09 | Picture frame | E aeolian, 120 BPM | ascent → spark_aug (+ ascent_aug) | heroic | soft, four | Ascent framed by itself: stated, then, in the recap, held in long notes beneath its own return. |
-| 10 | Heart | E dorian, 108 BPM, swing 60 | ascent_aug → spark (+ spark) | lift | soft, half | The warm one: Ascent slowed to a sigh over a swung half-time beat. |
+| 10 | Heart | E dorian, 108 BPM, swing 60 | ascent_aug → spark (+ spark) | lift | soft, half | The warm one: Ascent slowed to a sigh over a swung half-time beat; each loop's last bar slows, a breath out. |
 | 11 | Double W | E aeolian, 124 BPM | spark_seq → ascent_inv (+ auto) | drive | pulse, break | Zig-zag: Spark climbing a degree a bar, then Ascent upside down; the arpeggio never stops changing direction. |
-| 12 | Fortress | E phrygian, 118 BPM | ascent → wall | dark | buzz, march | The Wall appears: its first full statement, in the bass, with Phrygian's F natural making it a fortress. |
+| 12 | Fortress | E phrygian, 118 BPM | ascent → wall | dark | buzz, march | The Wall appears: its first full statement, in the bass, with Phrygian's F natural making it a fortress; the filter squeals as B climbs. |
 | 13 | Lattice | E aeolian, 126 BPM, swing 54 | spark_shift → spark_inv (+ spark_aug) | circle | glass, disco | Interlocking Sparks: one knocked off the beat, and in the recap Spark in long notes threaded underneath. |
 | 14 | Wave | E dorian, 114 BPM, swing 62 | ascent → spark_aug (+ spark) | lift | soft, half | Swing and glide: Ascent surfs a Dorian swell. |
 | 15 | Rocket | E aeolian, 128 BPM (to 138) | ascent_hi → ascent_dim (+ auto) | climb | pulse, gallop | Launch: Ascent an octave up, then at double speed while the tempo climbs, over a galloping bass. |
 | 16 | Bridges | E harmonic, 122 BPM | ascent_aug → spark (+ wall_hi) | heroic | glass, four | Ascent stretched across the Wall like a viaduct; harmonic minor's D sharp lifts the span. |
 | **Act III · Machines** | | | | | | |
 | 17 | Spiral | E aeolian, 128 BPM | wall_seq → spark_seq (+ ascent_head) | circle | buzz, disco | The machine act begins: the Wall turned into a rising sequence, an arpeggio that spirals up the octave. |
-| 18 | Pillars | E phrygian, 126 BPM | wall_aug → ascent_aug | pedal | soft, half | Space between columns: a bass that keeps one note a bar, the Wall in long notes, Ascent held like a pillar. |
-| 19 | Crown | E harmonic, 130 BPM | ascent → ascent_hi (+ spark) | heroic | pulse, march | Regal: Ascent as a fanfare in harmonic minor, then crowned an octave higher. |
-| 20 | Hourglass | E aeolian, 128 BPM | ascent → ascent_retro (+ auto) | fall | glass, break | Time turned over: Ascent, then Ascent backwards, the sand running the other way. |
+| 18 | Pillars | E phrygian, 126 BPM | wall_aug → ascent_aug | pedal | soft, half | Space between columns: a bass that keeps one note a bar, the Wall in long notes, Ascent held like a pillar, in the one machine track with a room. |
+| 19 | Crown | E harmonic, 130 BPM | ascent → ascent_hi (+ spark) | heroic | pulse, march | Regal: Ascent as a fanfare in harmonic minor, then crowned an octave higher, broadening into its last cadence. |
+| 20 | Hourglass | E aeolian, 128 BPM | ascent → ascent_retro (+ auto) | fall | glass, break | Time turned over: Ascent, then Ascent backwards, the sand running the other way; the tempo flows forward through A and back through B. |
 | 21 | Shield | E phrygian, 130 BPM | spark → wall (+ auto) | dark | buzz, four | Spark held up against the Wall: hope over the machine. |
 | 22 | Armored frame | E phrygian, 132 BPM | wall_hi → wall_inv (+ wall_inv_aug) | dark | buzz, drive | All armor: the Wall high and ratcheting up, the Wall inverted and sinking, and in the recap the inverted Wall at half speed beneath the high one. The heaviest track of the act. |
 | 23 | Rain | E aeolian, 124 BPM, swing 58 | spark_fall → ascent_inv | fall | glass, sparse | Falling droplets: Spark stepping down over a sparse, swung beat; a breath before the last act. |
 | 24 | Funnel | E harmonic, 134 BPM (to 146) | spark_seq → ascent_dim (+ wall_hi) | cadence | pulse, gallop | Narrowing: Spark ratchets up a step a bar as the tempo climbs to 146, Ascent doubles its speed, and a V-to-i pours into the next act. |
 | **Act IV · Vault** | | | | | | |
-| 25 | Two rooms | E dorian, 132 BPM | ascent → wall (+ spark) | lift | soft, four | Two rooms, two moods: a bright Dorian Ascent, then the Wall next door. |
+| 25 | Two rooms | E dorian, 132 BPM | ascent → wall (+ spark) | lift | soft, four | Two rooms, two moods: a bright Dorian Ascent, then the Wall next door, in a bigger room. |
 | 26 | Ring | E aeolian, 134 BPM, swing 55 | spark → spark_shift (+ canon) | circle | glass, disco | A round: Spark chasing itself a beat behind, around a circle of chords. |
-| 27 | Baffles | E phrygian, 136 BPM | spark_shift → wall_seq (+ ascent_stac) | dark | buzz, break | Deflections: displaced Spark, a Wall sequence, Ascent bouncing in staccato. |
-| 28 | Chevron | E aeolian, 138 BPM | spark_fall → spark_seq (+ ascent_inv) | fall | pulse, four | V-shape: Spark falls, then climbs back the same way. |
+| 27 | Baffles | E phrygian, 136 BPM | spark_shift → wall_seq (+ ascent_stac) | dark | buzz, break | Deflections: displaced Spark, a Wall sequence, Ascent bouncing in staccato, and an echo thrown off the end of every B bar. |
+| 28 | Chevron | E aeolian, 138 BPM | spark_fall → spark_seq (+ ascent_inv) | fall | pulse, four | V-shape: Spark falls, then climbs back the same way, and the tempo makes the same V. |
 | 29 | Split wall | E harmonic, 138 BPM | ascent_hi → wall_hi (+ spark) | cadence | buzz, drive | The Wall split by Ascent breaking through it, an octave above. |
 | 30 | Bulwark | E phrygian, 132 BPM | wall_aug → ascent_aug (+ wall) | pedal | buzz, half | Massive and slow-feeling at speed: half-time drums, the Wall in long notes, a bulwark. |
 | 31 | Minefield | E phrygian, 140 BPM | spark_shift → ascent_stac | dark | glass, sparse | Tension before the end: sparse, staccato, every note placed carefully. |
-| 32 | Vault | E harmonic, 144 BPM | ascent → spark (+ spark) | heroic | pulse, drive | The finale: Ascent over the Wall, then Spark; in the recap all three at once, the Wall below, Ascent above, Spark between. |
+| 32 | Vault | E harmonic, 144 BPM (to 150) | ascent → spark (+ spark) | heroic | pulse, drive | The finale: Ascent over the Wall, then Spark, the tempo pushing to 150; in the recap, at its loudest, all three at once, the Wall below, Ascent above, Spark between. |
 
 ## Stingers
 
@@ -205,10 +205,10 @@ The four moments quote the themes:
 
 | Stinger | What it quotes |
 |---|---|
-| Level clear | Spark bounding up, then the E minor triad climbing to a held high E |
-| Life lost | Ascent's opening leaps turned upside down and falling; it stops on B, unresolved: keep going |
-| Game Over | Ascent backwards and slowed over a Phrygian F in the bass, sinking to a low E; the tempo slows into it |
-| Victory | Ascent in harmonic minor with Spark answering above it, broadening into E **major**: the score's one major chord, saved for winning |
+| Level clear | Spark bounding up, then the E minor triad climbing, swelling, to a held high E over a G and B |
+| Life lost | Ascent's opening leaps turned upside down and falling, fading as they fall; it stops on B, unresolved: keep going |
+| Game Over | Ascent backwards and slowed over a Phrygian F in the bass, a pad of thirds above, sinking to a low E as the tempo slows, in a large room |
+| Victory | Ascent in harmonic minor with Spark answering above it over a swept kick, swelling and broadening into a full E **major** triad: the score's one major chord, saved for winning |
 
 ## Loaded levelsets
 
@@ -251,8 +251,22 @@ different order.
   one on the space tracks that opens in the break. The machine tracks stay
   dry.
 - **Toms**: the rolls into the recap end on toms, high to low.
-- **Tempo**: Funnel and Rocket (`push`) accelerate through B and settle
-  back across the break.
+- **Tempo**: Funnel, Rocket and Vault (`push`) accelerate through B and
+  settle back across the break.
+- **Per-track touches** (recipe keys `ramps()` reads), where a track's
+  idea calls for them:
+  - Heart sighs, slowing in each loop's last bar.
+  - Hourglass's tempo flows forward through A and back through B, and
+    Chevron's tempo makes a V.
+  - Crown broadens into its last cadence.
+  - Two rooms moves B into a bigger room, and Pillars is the one machine
+    track with a room.
+  - Bridges, Rain, Ring and Wave get rooms of their own; Arrow and
+    Minefield stay nearly dry.
+  - Fortress, Armored frame and Split wall squeal (the ladder's resonance
+    rising across B).
+  - Scatter and Baffles throw an echo off the end of every B bar.
+  - Vault plays its recap at ff.
 - **FX buses**:
   - bus 0: drums and bass;
   - bus 1: a dotted-eighth echo on the melody;

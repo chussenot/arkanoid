@@ -5,11 +5,11 @@ M:4/4
 L:1/16
 Q:1/4=130
 K:C
-% Regal: Ascent as a fanfare in harmonic minor, then crowned an octave higher.
+% Regal: Ascent as a fanfare in harmonic minor, then crowned an octave higher, broadening into its last cadence.
 % mode E harmonic, progression heroic, form intro(2) A(4) B(4) break(2) A2(4)
 % A=ascent B=ascent_hi counter=spark
 %%hold on
-%%master 33.5
+%%master 33.6
 %%loop on
 %%bandlimit on
 %%instrument kick wave=triangle amp=67 attack=0 decay=70 sustain=0 release=40 gate=60 pitch=24 pitch_time=55 fx=0
@@ -26,9 +26,13 @@ K:C
 %%effect 2 mode=insert delay_steps=2 delay_feedback=24 delay_mix=18 drive=0 lowpass=40 sidechain=34 sidechain_release=160 sidechain_key=kick mix=100
 %%effect 3 delay_steps=0 delay_feedback=0 delay_mix=0 drive=20 lowpass=20 mix=100
 %%ramp bus1 delay_mix 26 26 0 0
+%%ramp bus1 reverb 6 6 0 0
 %%ramp lead duty 25 25 0 0
 %%ramp bus1 delay_mix 26 60 160 191
 %%ramp bus1 delay_mix 26 26 192 192
+%%ramp bus1 reverb 6 15 160 191
+%%ramp bus1 reverb 6 6 192 192
+%%ramp song tempo 130 116 240 255
 %%ramp lead duty 25 12 192 255
 %%ramp lead duty 25 25 256 256
 V:kick instrument=kick

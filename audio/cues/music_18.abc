@@ -5,11 +5,11 @@ M:4/4
 L:1/16
 Q:1/4=126
 K:C
-% Space between columns: a bass that keeps one note a bar, the Wall in long notes, Ascent held like a pillar.
+% Space between columns: a bass that keeps one note a bar, the Wall in long notes, Ascent held like a pillar, in the one machine track with a room.
 % mode E phrygian, progression pedal, form intro(2) A(4) B(4) break(2) A2(4)
 % A=wall_aug B=ascent_aug counter=None
 %%hold on
-%%master 34.3
+%%master 31.9
 %%loop on
 %%bandlimit on
 %%instrument kick wave=triangle amp=67 attack=0 decay=70 sustain=0 release=40 gate=60 pitch=24 pitch_time=55 fx=0
@@ -22,11 +22,12 @@ K:C
 %%instrument lead wave=pulse amp=26 duty=40 pwm=8 pwm_rate=600 attack=14 decay=160 sustain=78 release=300 gate=92 vibrato=11 vibrato_delay=220 glide=10 accents=marked fx=1
 %%instrument counter wave=triangle amp=20 attack=10 decay=140 sustain=70 release=260 gate=88 accents=marked fx=1
 %%effect 0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=26 lowpass=24 mix=100
-%%effect 1 delay_steps=2 delay_feedback=30 delay_mix=22 drive=12 lowpass=30 mix=80
+%%effect 1 delay_steps=2 delay_feedback=30 delay_mix=22 drive=12 lowpass=30 reverb=20 reverb_size=80 reverb_damp=45 mix=80
 %%effect 2 mode=insert delay_steps=1 delay_feedback=20 delay_mix=14 drive=10 lowpass=36 sidechain=50 sidechain_release=140 sidechain_key=kick mix=100
 %%effect 3 mode=insert delay_steps=0 delay_feedback=0 delay_mix=0 drive=30 lowpass=10 ladder=70 ladder_cutoff=34 ladder_resonance=58 mix=100
 %%ramp bus3 ladder_cutoff 34 34 0 0
 %%ramp bus1 delay_mix 22 22 0 0
+%%ramp bus1 reverb 20 20 0 0
 %%ramp lead duty 40 40 0 0
 %%ramp bus3 ladder_cutoff 34 62 96 159
 %%ramp bus3 ladder_cutoff 34 34 160 160
@@ -34,6 +35,8 @@ K:C
 %%ramp bus3 ladder_cutoff 14 34 192 207
 %%ramp bus1 delay_mix 22 60 160 191
 %%ramp bus1 delay_mix 22 22 192 192
+%%ramp bus1 reverb 20 50 160 191
+%%ramp bus1 reverb 20 20 192 192
 %%ramp lead duty 40 20 192 255
 %%ramp lead duty 40 40 256 256
 V:kick instrument=kick

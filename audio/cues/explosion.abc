@@ -5,10 +5,13 @@ M:4/4
 L:1/16
 Q:1/4=240
 K:C
-%%instrument blast wave=noise amp=36 attack=0 decay=260 sustain=0 release=260 gate=95 fx=0
-%%instrument thump wave=triangle amp=36 attack=0 decay=180 sustain=0 release=120 gate=60 glide=140 fx=0
-%%effect 0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=35 lowpass=45 mix=100
+% A noise burst whose clock falls three octaves (crack, then rumble), over a thump
+% that drops a fifth, in a little room.
+%%hold on
+%%instrument blast wave=noise amp=36 attack=0 decay=260 sustain=0 release=260 gate=95 noise=long pitch=36 pitch_time=260 fx=0
+%%instrument thump wave=triangle amp=36 attack=0 decay=180 sustain=0 release=120 gate=60 pitch=7 pitch_time=140 fx=0
+%%effect 0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=35 lowpass=45 reverb=12 reverb_size=50 reverb_damp=60 mix=100
 V:blast instrument=blast
-| c z15 |
+| C z15 |
 V:thump instrument=thump
-| B,, E,,, z14 |
+| E,,,2 z14 |

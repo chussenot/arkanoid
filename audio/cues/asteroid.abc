@@ -5,10 +5,13 @@ M:4/4
 L:1/16
 Q:1/4=60
 K:C
-%%instrument rumble wave=noise amp=40 attack=220 decay=200 sustain=30 release=260 gate=80 fx=0
+% A low clocked-noise rumble that swells in, over a wavering drone.
+%%hold on
+%%master 80.1
+%%instrument rumble wave=noise amp=40 attack=220 decay=200 sustain=30 release=260 gate=80 noise=long fx=0
 %%instrument drone wave=triangle amp=44 attack=180 decay=200 sustain=50 release=260 gate=80 vibrato=40 fx=0
-%%effect 0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=0 lowpass=75 mix=100
+%%effect 0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=0 lowpass=40 mix=100
 V:rumble instrument=rumble
-| c z7 |
+| C, z7 |
 V:drone instrument=drone
 | E,, z7 |
