@@ -452,6 +452,17 @@ fn brick_from_spawn(x: f32, y: f32, kind: BrickKind, offset_x: f32) -> Brick {
     }
 }
 
+/// The kind of level progression a `Game` plays, as the HUD names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LevelSetKind {
+    /// The 32-level named campaign, the default.
+    Campaign,
+    /// v1's three levels (`--classic`).
+    Classic,
+    /// A levelset loaded with `--levelset`.
+    Loaded,
+}
+
 /// Which built-in levels a game plays when no levelset is loaded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuiltInLevels {
@@ -800,11 +811,21 @@ impl Game {
 
     /// Number of levels in whatever progression is currently active --
     /// what `advance_level` compares `self.level` against to decide
-    /// "load the next level" vs. "Victory".
-    fn level_count(&self) -> usize {
+    /// "load the next level" vs. "Victory". Public for the HUD ("07/32").
+    pub fn level_count(&self) -> usize {
         match &self.external_levels {
             Some(levels) => levels.len(),
             None => self.built_in.len(),
+        }
+    }
+
+    /// Which progression is active, for the menu's one-line description.
+    /// A read of existing state; nothing in the simulation depends on it.
+    pub fn level_set(&self) -> LevelSetKind {
+        match (&self.external_levels, self.built_in) {
+            (Some(_), _) => LevelSetKind::Loaded,
+            (None, BuiltInLevels::Campaign) => LevelSetKind::Campaign,
+            (None, BuiltInLevels::V1) => LevelSetKind::Classic,
         }
     }
 

@@ -129,3 +129,22 @@ Levelset authors (each file's 'Level:' author line, deduplicated):
   - zigie
 
 136 levelset file(s) fetched at commit 3cd2a6160941557f48c49b184f0ad47ddd882c23.
+
+
+Bundled font attribution
+========================
+
+assets/fonts/ is committed and compiled into the binary (include_bytes!
+in src/hud.rs). It holds the only third-party content the game ships:
+
+  Font:     JetBrains Mono, Regular and Bold (static TTF, unmodified)
+  Source:   https://github.com/JetBrains/JetBrainsMono, tag v2.304
+            (fetched via cdn.jsdelivr.net/gh/JetBrains/JetBrainsMono@v2.304)
+  Copyright 2020 The JetBrains Mono Project Authors
+  License:  SIL Open Font License 1.1, full text in assets/fonts/OFL.txt
+  SHA-256:  JetBrainsMono-Regular.ttf a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f
+            JetBrainsMono-Bold.ttf    5590990c82e097397517f275f430af4546e1c45cff408bde4255dad142479dcb
+
+The OFL lets the font be bundled and redistributed with software; the
+font stays under the OFL, not under this repository's MIT license, and
+OFL.txt must travel with it.

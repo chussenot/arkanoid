@@ -59,29 +59,45 @@ budget, and the measurements.
 | Space               | Launch the ball; press to release a glued ball; hold to fire a laser |
 | Escape (or P)       | Pause / resume           |
 
-Keyboard only; menu and pause screens show the same key hints on-screen.
+Keyboard only; menu and pause screens show the same keys on-screen.
+
+Bricks are told apart by pattern as well as color: a plain panel (normal,
+one hit), a plate held by four rivets (armored), the same plate cracked
+(armored, one hit left), diagonal hatching (indestructible). Set
+`BRYX_REDUCED_MOTION=1` to turn off screen and camera shake.
+
+## Design
+
+[`DESIGN.md`](DESIGN.md) is the visual system: one palette
+(`src/palette.rs`) and one HUD layer (`src/hud.rs`) shared by both renderers,
+a 48 px band above the field so the score never crosses the ball's path, and
+JetBrains Mono bundled for the interface. [`PRODUCT.md`](PRODUCT.md) records
+who the game is for and the principles behind those choices.
 
 ## Capsules and asteroids
 
 A destroyed brick drops a capsule 15% of the time, any of nine with equal
 odds. Catch it with the paddle:
 
-| Capsule | Color | Effect |
-|---|---|---|
-| Widen | green | Paddle ×1.5 for 15 s (cancels Tiny) |
-| Slow | blue | Every ball slows to ×0.7, once, never below launch speed |
-| Multiball | purple | Two extra balls split off; a life is lost only when the last one drops |
-| Glue | pink | For 15 s a ball that hits the paddle sticks where it landed; line up and press Space. It leaves at the angle its landing spot gives, or on its own after 3 s |
-| Laser | red | For 15 s, hold Space to fire twin bolts from the paddle's ends; each bolt gives the first brick it meets one hit |
-| Super laser | cyan | For 15 s, hold Space to fire one wide bolt that drills through every breakable brick in its column, armored ones included, until an indestructible brick stops it |
-| Tiny | grey | The one to dodge: paddle ×0.6 for 15 s (cancels Widen) |
-| Player | yellow, like the life icons | One extra life (up to 9) |
-| Break | orange | Opens a gate at the bottom of the right wall. Slide the paddle out through it to skip to the next level, +10,000. It stays open until you use it, lose a life or the level ends |
+Each capsule is a pill in its own color, with its letter on it, so none
+depends on color alone:
+
+| Capsule | Letter | Color | Effect |
+|---|---|---|---|
+| Widen | W | green | Paddle ×1.5 for 15 s (cancels Tiny) |
+| Slow | S | blue | Every ball slows to ×0.7, once, never below launch speed |
+| Multiball | M | purple | Two extra balls split off; a life is lost only when the last one drops |
+| Glue | G | pink | For 15 s a ball that hits the paddle sticks where it landed; line up and press Space. It leaves at the angle its landing spot gives, or on its own after 3 s |
+| Laser | L | red | For 15 s, hold Space to fire twin bolts from the paddle's ends; each bolt gives the first brick it meets one hit |
+| Super laser | X | cyan | For 15 s, hold Space to fire one wide bolt that drills through every breakable brick in its column, armored ones included, until an indestructible brick stops it |
+| Tiny | T | grey | The one to dodge: paddle ×0.6 for 15 s (cancels Widen) |
+| Player | P | gold | One extra life (up to 9) |
+| Break | B | orange | Opens a gate at the bottom of the right wall. Slide the paddle out through it to skip to the next level, +10,000. It stays open until you use it, lose a life or the level ends |
 
 The paddle takes the color of the gun or Glue it carries. Catching one
 laser replaces the other.
 
-**Asteroids** (orange) drift down from the top, over the bricks, wobbling
+**Asteroids** (cratered grey-violet rocks, never round like the ball) drift down from the top, over the bricks, wobbling
 side to side. A ball that hits one blows it up and bounces off it, which
 can send it somewhere you didn't plan. The explosion also breaks the
 bricks around it (armored ones take one hit), so hitting one while it
@@ -176,4 +192,13 @@ Hz without ever changing gameplay physics, which only ever see fixed
 
 BRYX is MIT-licensed: see [`LICENSE`](LICENSE). Optional third-party data
 the fetch scripts download keeps its own license and is never committed;
-[`ATTRIBUTION`](ATTRIBUTION) credits it.
+[`ATTRIBUTION`](ATTRIBUTION) credits it. Two third-party components are
+committed:
+
+- the [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) font in
+  `assets/fonts/`, compiled into the game, under the SIL Open Font License
+  1.1 (`assets/fonts/OFL.txt`), not MIT;
+- the [Impeccable](https://github.com/pbakaus/impeccable) design skill for
+  coding agents in `.claude/skills/impeccable/`, Apache-2.0, with its
+  `LICENSE` and `NOTICE.md` alongside; it is a development tool, not part
+  of the game.

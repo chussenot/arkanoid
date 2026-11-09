@@ -38,6 +38,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::{levels, palette};
+
 /// Where texture pixels come from. `Procedural` is the default and can
 /// never fail; `Pack` names a directory a loader (b3) reads sprite images
 /// from. Turning either variant into an [`Atlas`] via
@@ -79,14 +81,19 @@ impl TextureSource {
 /// Filename a pack directory must provide for `id`, exhaustively matched
 /// so adding a `SpriteId` without adding its filename here is a compile
 /// error rather than a silent missing-sprite fallback at runtime.
-fn pack_filename(id: SpriteId) -> &'static str {
+///
+/// `None` marks a sprite a pack never supplies: the capsule and the
+/// asteroid are always drawn by this module's own recipes, so a pack made
+/// for the original six sprites keeps loading unchanged.
+fn pack_filename(id: SpriteId) -> Option<&'static str> {
     match id {
-        SpriteId::Paddle => "paddle.png",
-        SpriteId::Ball => "ball.png",
-        SpriteId::BrickNormal => "brick_normal.png",
-        SpriteId::BrickArmoredIntact => "brick_armored_intact.png",
-        SpriteId::BrickArmoredHit => "brick_armored_hit.png",
-        SpriteId::BrickIndestructible => "brick_indestructible.png",
+        SpriteId::Paddle => Some("paddle.png"),
+        SpriteId::Ball => Some("ball.png"),
+        SpriteId::BrickNormal => Some("brick_normal.png"),
+        SpriteId::BrickArmoredIntact => Some("brick_armored_intact.png"),
+        SpriteId::BrickArmoredHit => Some("brick_armored_hit.png"),
+        SpriteId::BrickIndestructible => Some("brick_indestructible.png"),
+        SpriteId::Capsule | SpriteId::Asteroid => None,
     }
 }
 
@@ -104,6 +111,10 @@ pub enum SpriteId {
     BrickArmoredIntact,
     BrickArmoredHit,
     BrickIndestructible,
+    /// A capsule's pill, near-white so the per-kind tint sets its hue.
+    Capsule,
+    /// An asteroid's cratered, irregular rock, tinted like the capsule.
+    Asteroid,
 }
 
 impl SpriteId {
@@ -111,9 +122,19 @@ impl SpriteId {
     /// ([`Atlas::cell_rect`] indexes into this by position). Add new
     /// sprites at the end so existing UV rects don't shift under
     /// whoever's already reading them.
-    pub const ALL: [SpriteId; 6] = [
+    pub const ALL: [SpriteId; 8] = [
         SpriteId::Paddle,
         SpriteId::Ball,
+        SpriteId::BrickNormal,
+        SpriteId::BrickArmoredIntact,
+        SpriteId::BrickArmoredHit,
+        SpriteId::BrickIndestructible,
+        SpriteId::Capsule,
+        SpriteId::Asteroid,
+    ];
+
+    /// The brick sprites, each with the pattern [`brick_mark`] draws.
+    pub const BRICKS: [SpriteId; 4] = [
         SpriteId::BrickNormal,
         SpriteId::BrickArmoredIntact,
         SpriteId::BrickArmoredHit,
@@ -143,10 +164,8 @@ pub struct UvRect {
 /// cell without a layout change here.
 pub const CELL_SIZE: u32 = 64;
 
-/// Sprites per atlas row. `SpriteId::ALL`'s length divides evenly by this
-/// today (6 / 3 = 2 rows); if a future sprite makes it uneven,
-/// `Atlas::grid_size` still packs correctly, just with a partial last
-/// row.
+/// Sprites per atlas row. `SpriteId::ALL` (8) leaves the last of three
+/// rows one cell short; `Atlas::grid_size` packs a partial row fine.
 const GRID_COLS: u32 = 3;
 
 /// An RGBA8 pixel buffer plus a fixed grid of sprite regions. This is the
@@ -156,9 +175,10 @@ const GRID_COLS: u32 = 3;
 pub struct Atlas {
     pub width: u32,
     pub height: u32,
-    /// Tightly packed RGBA8 (unorm), row-major, top row first --
-    /// uploadable directly as a wgpu texture with `bytes_per_row = width
-    /// * 4`.
+    /// Tightly packed RGBA8, sRGB-encoded (both renderers upload it as
+    /// `Rgba8UnormSrgb`, so pack PNGs and the recipes' `palette` colors
+    /// are decoded correctly), row-major, top row first -- uploadable
+    /// directly as a wgpu texture with `bytes_per_row = width * 4`.
     pub pixels: Vec<u8>,
 }
 
@@ -235,17 +255,15 @@ impl Atlas {
     /// stream. There is exactly one seed, [`NOISE_SEED`], and it's a
     /// `const`, so two calls (same process or two separate processes)
     /// always produce byte-identical pixels.
-    fn procedural_placeholder() -> Atlas {
+    pub(crate) fn procedural_placeholder() -> Atlas {
         let (width, height) = Self::grid_size();
         let mut atlas = Atlas {
             width,
             height,
             pixels: vec![0; (width * height * 4) as usize],
         };
-        atlas.set_sprite(SpriteId::Paddle, &brushed_metal_paddle());
-        atlas.set_sprite(SpriteId::Ball, &specular_ball());
-        for &(id, base) in BRICK_PALETTE.iter() {
-            atlas.set_sprite(id, &beveled_brick_panel(id, base));
+        for id in SpriteId::ALL {
+            atlas.set_sprite(id, &procedural_sprite(id));
         }
         atlas
     }
@@ -270,11 +288,20 @@ impl Atlas {
             pixels: vec![0; (width * height * 4) as usize],
         };
         for id in SpriteId::ALL {
-            let path = dir.join(pack_filename(id));
-            let sprite = image::open(&path)?
+            let Some(name) = pack_filename(id) else {
+                atlas.set_sprite(id, &procedural_sprite(id));
+                continue;
+            };
+            let mut sprite = image::open(dir.join(name))?
                 .resize_exact(CELL_SIZE, CELL_SIZE, image::imageops::FilterType::Triangle)
-                .to_rgba8();
-            atlas.set_sprite(id, sprite.as_raw());
+                .to_rgba8()
+                .into_raw();
+            // A pack's bricks are told apart by its artist's colors; the
+            // marks keep them told apart without color (PRODUCT.md).
+            if SpriteId::BRICKS.contains(&id) {
+                apply_brick_mark(id, &mut sprite);
+            }
+            atlas.set_sprite(id, &sprite);
         }
         Ok(atlas)
     }
@@ -286,8 +313,8 @@ impl Atlas {
 /// `const`, not read from the clock or an RNG."
 const NOISE_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// Color as three `0.0..=1.0` linear-ish channels, the working space for
-/// every recipe below. Converted to `u8` only at the very end
+/// Color as three `0.0..=1.0` sRGB-encoded channels (`palette::Rgb::srgb`),
+/// the working space for every recipe below. Converted to `u8` only at the very end
 /// ([`to_rgba8`]), so bevel/gloss/noise adjustments can add and multiply
 /// freely without repeated round-trip rounding error.
 type Rgb = [f32; 3];
@@ -383,24 +410,28 @@ const GLOSS_STRENGTH: f32 = 0.22;
 /// as material grain, not visible static.
 const BRICK_NOISE_AMPLITUDE: f32 = 0.05;
 
-/// Per-type brick palette: base color only, loosely matching the flat
-/// colors `render.rs` already draws (`NORMAL_BRICK_COLOR`,
-/// `ARMORED_BRICK_COLOR`, `ARMORED_BRICK_COLOR_HIT`,
-/// `INDESTRUCTIBLE_BRICK_COLOR`) so the new beveled look doesn't read as
-/// an unrelated palette swap. Everything else -- bevel, gloss, noise -- is
-/// the one shared [`beveled_brick_panel`] recipe; only the base color
-/// changes per type.
-const BRICK_PALETTE: [(SpriteId, Rgb); 4] = [
-    (SpriteId::BrickNormal, [0.85, 0.25, 0.25]),
-    (SpriteId::BrickArmoredIntact, [0.30, 0.45, 0.68]),
-    (SpriteId::BrickArmoredHit, [0.90, 0.60, 0.15]),
-    (SpriteId::BrickIndestructible, [0.25, 0.25, 0.28]),
-];
+/// The procedural recipe for `id`: the default atlas, and the fallback for
+/// the sprites a pack never supplies.
+fn procedural_sprite(id: SpriteId) -> Vec<u8> {
+    match id {
+        SpriteId::Paddle => brushed_metal_paddle(),
+        SpriteId::Ball => specular_ball(),
+        SpriteId::BrickNormal => beveled_brick_panel(id, palette::BRICK_NORMAL.srgb()),
+        SpriteId::BrickArmoredIntact => beveled_brick_panel(id, palette::BRICK_ARMORED.srgb()),
+        SpriteId::BrickArmoredHit => beveled_brick_panel(id, palette::BRICK_ARMORED_HIT.srgb()),
+        SpriteId::BrickIndestructible => {
+            beveled_brick_panel(id, palette::BRICK_INDESTRUCTIBLE.srgb())
+        }
+        SpriteId::Capsule => capsule_pill(),
+        SpriteId::Asteroid => cratered_rock(),
+    }
+}
 
 /// Shared brick recipe: a directional gloss ramp (bright top, dark
 /// bottom) plus subtle position-seeded noise on the interior, framed by a
 /// beveled rim (light top/left, shadow bottom/right) so every brick type
-/// reads as a raised panel rather than a flat swatch.
+/// reads as a raised panel rather than a flat swatch, then the kind's
+/// mark ([`brick_mark`]).
 ///
 /// Noise is seeded by this sprite's *absolute* pixel position in the
 /// atlas grid (via [`Atlas::cell_rect`]), not just its local `(x, y)`
@@ -424,11 +455,225 @@ fn beveled_brick_panel(id: SpriteId, base: Rgb) -> Vec<u8> {
             put_pixel(&mut out, x, y, to_rgba8(color, 255));
         }
     }
+    apply_brick_mark(id, &mut out);
     out
 }
 
-/// `render.rs`'s flat `PADDLE_COLOR` -- the brushed-metal recipe's base.
-const PADDLE_BASE: Rgb = [0.80, 0.85, 0.95];
+// -- brick marks: the color-blind-safe half of a brick's identity ---------
+//
+// Drawn in *brick* pixels: the 64 px cell is stretched onto a 52x22 brick
+// (`levels::BRICK_WIDTH`/`BRICK_HEIGHT`), so a mark authored in cell space
+// would come out squashed to a third of its height. Every mark stays
+// inside the bevel, which keeps the cell's corner pixels untouched (the
+// pack fixture tests read them).
+
+/// What a mark does to the pixel under it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Mark {
+    Lighten(f32),
+    Darken(f32),
+}
+
+/// Inset of the armored plate from the brick's edge, in brick pixels.
+const PLATE_INSET: (f32, f32) = (9.0, 6.0);
+/// Rivet centers' inset from the brick's corners, in brick pixels.
+const RIVET_INSET: (f32, f32) = (4.5, 4.5);
+const RIVET_RADIUS: f32 = 1.6;
+/// Hatching period and stripe width along the brick's diagonal.
+const HATCH_PERIOD: f32 = 7.0;
+const HATCH_WIDTH: f32 = 2.5;
+/// The crack across a hit armored brick, as a brick-pixel polyline.
+const CRACK: [(f32, f32); 5] = [
+    (15.0, 2.5),
+    (22.0, 9.0),
+    (19.5, 12.5),
+    (29.0, 17.0),
+    (33.0, 19.5),
+];
+const CRACK_HALF_WIDTH: f32 = 0.9;
+
+/// The mark at brick-pixel `(bx, by)` for brick sprite `id`:
+/// - normal: none, a plain panel;
+/// - armored: a recessed plate held by four rivets;
+/// - armored, hit: the same plate, split by a crack;
+/// - indestructible: diagonal hatching.
+fn brick_mark(id: SpriteId, bx: f32, by: f32) -> Option<Mark> {
+    let (w, h) = (levels::BRICK_WIDTH, levels::BRICK_HEIGHT);
+    let rivet = || {
+        [RIVET_INSET.0, w - RIVET_INSET.0]
+            .iter()
+            .flat_map(|&rx| [(rx, RIVET_INSET.1), (rx, h - RIVET_INSET.1)])
+            .any(|(rx, ry)| (bx - rx).hypot(by - ry) <= RIVET_RADIUS)
+    };
+    let plate = || {
+        bx >= PLATE_INSET.0
+            && bx <= w - PLATE_INSET.0
+            && by >= PLATE_INSET.1
+            && by <= h - PLATE_INSET.1
+    };
+    match id {
+        SpriteId::BrickArmoredIntact | SpriteId::BrickArmoredHit => {
+            if id == SpriteId::BrickArmoredHit
+                && CRACK
+                    .windows(2)
+                    .any(|seg| distance_to_segment((bx, by), seg[0], seg[1]) <= CRACK_HALF_WIDTH)
+            {
+                Some(Mark::Darken(0.62))
+            } else if rivet() {
+                Some(Mark::Lighten(0.55))
+            } else if plate() {
+                Some(Mark::Darken(0.16))
+            } else {
+                None
+            }
+        }
+        SpriteId::BrickIndestructible => {
+            let inside = bx > 2.0 && bx < w - 2.0 && by > 2.0 && by < h - 2.0;
+            (inside && (bx + by).rem_euclid(HATCH_PERIOD) < HATCH_WIDTH)
+                .then_some(Mark::Lighten(0.22))
+        }
+        _ => None,
+    }
+}
+
+fn distance_to_segment(p: (f32, f32), a: (f32, f32), b: (f32, f32)) -> f32 {
+    let (abx, aby) = (b.0 - a.0, b.1 - a.1);
+    let t = (((p.0 - a.0) * abx + (p.1 - a.1) * aby) / (abx * abx + aby * aby)).clamp(0.0, 1.0);
+    (p.0 - (a.0 + t * abx)).hypot(p.1 - (a.1 + t * aby))
+}
+
+/// Applies `id`'s [`brick_mark`] to one cell of RGBA8 pixels in place: on
+/// the procedural panels and, at load time, on a pack's bricks.
+fn apply_brick_mark(id: SpriteId, rgba: &mut [u8]) {
+    for y in 0..CELL_SIZE {
+        for x in 0..CELL_SIZE {
+            let bx = (x as f32 + 0.5) * levels::BRICK_WIDTH / CELL_SIZE as f32;
+            let by = (y as f32 + 0.5) * levels::BRICK_HEIGHT / CELL_SIZE as f32;
+            let Some(mark) = brick_mark(id, bx, by) else {
+                continue;
+            };
+            let idx = ((y * CELL_SIZE + x) * 4) as usize;
+            let c = [
+                f32::from(rgba[idx]) / 255.0,
+                f32::from(rgba[idx + 1]) / 255.0,
+                f32::from(rgba[idx + 2]) / 255.0,
+            ];
+            let marked = match mark {
+                Mark::Lighten(a) => lighten(c, a),
+                Mark::Darken(a) => darken(c, a),
+            };
+            let [r, g, b, _] = to_rgba8(marked, 255);
+            rgba[idx..idx + 3].copy_from_slice(&[r, g, b]);
+        }
+    }
+}
+
+// -- capsule ---------------------------------------------------------------
+
+/// The capsule's on-screen size in field pixels (`render.rs` and
+/// `render3d` draw it at this size): a pill twice as wide as it is tall,
+/// wide enough to carry its letter.
+pub const CAPSULE_SIZE: (f32, f32) = (26.0, 13.0);
+
+/// A pill (stadium) in near-white, so the instance tint sets the hue:
+/// lit from above like the bricks, with a darker rim to separate it from
+/// whatever it falls past. The letter is not baked in; the HUD layer sets
+/// it in text, the same way in both renderers.
+fn capsule_pill() -> Vec<u8> {
+    let mut out = vec![0u8; (CELL_SIZE * CELL_SIZE * 4) as usize];
+    let (w, h) = CAPSULE_SIZE;
+    let r = h / 2.0;
+    for y in 0..CELL_SIZE {
+        for x in 0..CELL_SIZE {
+            // Work in capsule pixels so the round ends stay round.
+            let px = (x as f32 + 0.5) * w / CELL_SIZE as f32;
+            let py = (y as f32 + 0.5) * h / CELL_SIZE as f32;
+            let cx = px.clamp(r, w - r);
+            let d = (px - cx).hypot(py - r);
+            let alpha = (r - d + 0.5).clamp(0.0, 1.0);
+            if alpha <= 0.0 {
+                continue;
+            }
+            let v = py / h;
+            let mut color = scale([1.0, 1.0, 1.0], 0.97 - 0.10 * (v - 0.5).max(0.0) * 2.0);
+            if (0.12..0.30).contains(&v) {
+                color = lighten(color, 0.6);
+            }
+            if d > r - 1.2 {
+                color = darken(color, 0.35);
+            }
+            put_pixel(
+                &mut out,
+                x,
+                y,
+                to_rgba8(color, (alpha * 255.0).round() as u8),
+            );
+        }
+    }
+    out
+}
+
+// -- asteroid --------------------------------------------------------------
+
+/// Craters as `(x, y, radius)` in unit-disc coordinates.
+const CRATERS: [(f32, f32, f32); 4] = [
+    (-0.30, -0.20, 0.22),
+    (0.28, 0.25, 0.18),
+    (0.25, -0.38, 0.12),
+    (-0.15, 0.42, 0.10),
+];
+
+/// An irregular, cratered rock in light gray (tinted by the instance): a
+/// lumpy outline and pocked face, so a hazard is never read as a ball,
+/// which is round, smooth and bright.
+fn cratered_rock() -> Vec<u8> {
+    let mut out = vec![0u8; (CELL_SIZE * CELL_SIZE * 4) as usize];
+    let center = CELL_SIZE as f32 / 2.0;
+    for y in 0..CELL_SIZE {
+        for x in 0..CELL_SIZE {
+            let nx = (x as f32 + 0.5 - center) / center;
+            let ny = (y as f32 + 0.5 - center) / center;
+            let angle = ny.atan2(nx);
+            let edge = 0.86 + 0.07 * (3.0 * angle + 1.0).sin() + 0.05 * (5.0 * angle + 2.3).sin();
+            let dist = nx.hypot(ny);
+            let alpha = ((edge - dist) * center / 1.5).clamp(0.0, 1.0);
+            if alpha <= 0.0 {
+                continue;
+            }
+            let noise = hash_signed(x, y) * 0.06;
+            // Lit from the top-left, like the bricks' bevels.
+            let light = 0.78 - 0.22 * (nx + ny) / 2.0 + noise;
+            let mut color = scale([0.95, 0.95, 0.95], light);
+            for &(cx, cy, cr) in &CRATERS {
+                let d = (nx - cx).hypot(ny - cy);
+                if d < cr {
+                    // Shadowed on the lit side, lit on the far rim.
+                    let inner = (nx - cx + ny - cy) / cr;
+                    color = if inner < 0.0 {
+                        darken(color, 0.35)
+                    } else {
+                        darken(color, 0.12)
+                    };
+                }
+            }
+            if dist > edge - 0.08 {
+                color = darken(color, 0.3);
+            }
+            put_pixel(
+                &mut out,
+                x,
+                y,
+                to_rgba8(color, (alpha * 255.0).round() as u8),
+            );
+        }
+    }
+    out
+}
+
+/// The brushed-metal recipe's base (`palette::PADDLE`).
+fn paddle_base() -> Rgb {
+    palette::PADDLE.srgb()
+}
 /// Row-to-row brightness jitter amplitude: brushed metal's horizontal
 /// grain lines. Deliberately depends only on `y` (see
 /// [`brushed_metal_paddle`]), never `x`, so the streaks run horizontally
@@ -462,15 +707,17 @@ fn brushed_metal_paddle() -> Vec<u8> {
         for x in 0..CELL_SIZE {
             let grain = hash_signed(cell_x + x, cell_y + y) * PADDLE_GRAIN_AMPLITUDE;
             let brightness = 1.0 + streak + grain + band * PADDLE_GLOSS_STRENGTH;
-            let color = scale(PADDLE_BASE, brightness);
+            let color = scale(paddle_base(), brightness);
             put_pixel(&mut out, x, y, to_rgba8(color, 255));
         }
     }
     out
 }
 
-/// `render.rs`'s flat `BALL_COLOR` -- the specular ball recipe's base.
-const BALL_BASE: Rgb = [1.0, 0.78, 0.2];
+/// The specular ball recipe's base (`palette::BALL`).
+fn ball_base() -> Rgb {
+    palette::BALL.srgb()
+}
 /// Ball radius as a fraction of the cell's half-size, leaving a thin
 /// transparent margin so the round sprite doesn't touch the cell edge.
 const BALL_RADIUS_FRAC: f32 = 0.94;
@@ -484,7 +731,7 @@ const BALL_SPECULAR_RADIUS: f32 = 0.35;
 /// Peak brightness boost at the specular hotspot's center.
 const BALL_SPECULAR_STRENGTH: f32 = 0.9;
 /// How far the ball darkens from center to silhouette rim.
-const BALL_RIM_DARKEN: f32 = 0.55;
+const BALL_RIM_DARKEN: f32 = 0.40;
 
 /// Specular ball: a round (alpha-masked) sprite shaded darker toward its
 /// rim, with a bright specular highlight offset toward the top-left, the
@@ -512,7 +759,7 @@ fn specular_ball() -> Vec<u8> {
             let nx = dx / radius_px;
             let ny = dy / radius_px;
             let rim = (nx * nx + ny * ny).sqrt().min(1.0);
-            let mut color = darken(BALL_BASE, rim * BALL_RIM_DARKEN);
+            let mut color = darken(ball_base(), rim * BALL_RIM_DARKEN);
             let sx = nx - BALL_SPECULAR_OFFSET.0;
             let sy = ny - BALL_SPECULAR_OFFSET.1;
             let spec_dist = (sx * sx + sy * sy).sqrt();
@@ -633,6 +880,70 @@ mod tests {
         );
     }
 
+    /// The sprites a pack directory supplies.
+    fn packed() -> impl Iterator<Item = SpriteId> {
+        SpriteId::ALL
+            .into_iter()
+            .filter(|&id| pack_filename(id).is_some())
+    }
+
+    /// Every brick kind carries a mark the others lack, so the four are
+    /// told apart with color removed: compare the marked pixel sets.
+    #[test]
+    fn brick_kinds_differ_by_mark_not_only_by_color() {
+        let marks = |id| {
+            let mut cells = Vec::new();
+            for y in 0..CELL_SIZE {
+                for x in 0..CELL_SIZE {
+                    let bx = (x as f32 + 0.5) * levels::BRICK_WIDTH / CELL_SIZE as f32;
+                    let by = (y as f32 + 0.5) * levels::BRICK_HEIGHT / CELL_SIZE as f32;
+                    cells.push(brick_mark(id, bx, by));
+                }
+            }
+            cells
+        };
+        let all: Vec<_> = SpriteId::BRICKS.iter().map(|&id| marks(id)).collect();
+        for i in 0..all.len() {
+            for j in i + 1..all.len() {
+                assert_ne!(
+                    all[i],
+                    all[j],
+                    "{:?} vs {:?}",
+                    SpriteId::BRICKS[i],
+                    SpriteId::BRICKS[j]
+                );
+            }
+        }
+    }
+
+    /// A pack supplies the six original sprites only; the capsule and the
+    /// asteroid still come from the recipes, and the pack's bricks gain
+    /// their marks.
+    #[test]
+    fn pack_keeps_procedural_capsule_and_marks_its_bricks() {
+        let atlas = TextureSource::Pack(fixture_pack_dir()).load();
+        let procedural = TextureSource::Procedural.load();
+        let cell = |a: &Atlas, id| {
+            let (x, y, w, h) = Atlas::cell_rect(id);
+            (y..y + h)
+                .flat_map(|row| {
+                    let start = ((row * a.width + x) * 4) as usize;
+                    a.pixels[start..start + (w * 4) as usize].to_vec()
+                })
+                .collect::<Vec<u8>>()
+        };
+        assert_eq!(
+            cell(&atlas, SpriteId::Capsule),
+            cell(&procedural, SpriteId::Capsule)
+        );
+        let armored = cell(&atlas, SpriteId::BrickArmoredIntact);
+        let flat = fixture_pixel(SpriteId::BrickArmoredIntact);
+        assert!(
+            armored.chunks(4).any(|px| px != flat),
+            "no mark drawn on the pack brick"
+        );
+    }
+
     /// A fresh, unique scratch directory under the OS temp dir -- these
     /// pack-loader tests are the one place in this module that touches
     /// the filesystem, so each test gets its own directory (PID + an
@@ -658,15 +969,15 @@ mod tests {
     #[test]
     fn pack_loads_a_distinct_pixel_per_sprite_from_disk() {
         let dir = make_temp_dir("valid");
-        for id in SpriteId::ALL {
+        for id in packed() {
             let pixel = image::Rgba([id as u8 * 10, 20, 30, 255]);
             image::RgbaImage::from_pixel(10, 10, pixel)
-                .save(dir.join(pack_filename(id)))
+                .save(dir.join(pack_filename(id).unwrap()))
                 .expect("failed to write test sprite PNG");
         }
 
         let atlas = TextureSource::Pack(dir.clone()).load();
-        for id in SpriteId::ALL {
+        for id in packed() {
             let (x, y, _, _) = Atlas::cell_rect(id);
             let idx = ((y * atlas.width + x) * 4) as usize;
             assert_eq!(
@@ -705,10 +1016,10 @@ mod tests {
     fn generate_fixture_pack_pngs() {
         let dir = fixture_pack_dir();
         std::fs::create_dir_all(&dir).expect("failed to create tests/fixtures/pack");
-        for id in SpriteId::ALL {
+        for id in packed() {
             let [r, g, b, a] = fixture_pixel(id);
             image::RgbaImage::from_pixel(6, 6, image::Rgba([r, g, b, a]))
-                .save(dir.join(pack_filename(id)))
+                .save(dir.join(pack_filename(id).unwrap()))
                 .expect("failed to write fixture sprite PNG");
         }
     }
@@ -731,6 +1042,7 @@ mod tests {
             SpriteId::BrickArmoredIntact => [100, 110, 120, 255],
             SpriteId::BrickArmoredHit => [130, 140, 150, 255],
             SpriteId::BrickIndestructible => [160, 170, 180, 255],
+            SpriteId::Capsule | SpriteId::Asteroid => unreachable!("never in a pack"),
         }
     }
 
@@ -779,8 +1091,8 @@ mod tests {
     #[test]
     fn pack_falls_back_to_procedural_on_malformed_sprite() {
         let dir = make_temp_dir("malformed");
-        for id in SpriteId::ALL {
-            std::fs::write(dir.join(pack_filename(id)), b"not a png file")
+        for id in packed() {
+            std::fs::write(dir.join(pack_filename(id).unwrap()), b"not a png file")
                 .expect("failed to write malformed test file");
         }
 

@@ -1,4 +1,9 @@
 # See https://prek.j178.dev for more information.
+# Vendored third-party content is kept byte-for-byte as upstream ships it:
+# the Impeccable skill (Apache-2.0) has files over the 500 KB limit and its
+# own whitespace conventions; the JetBrains Mono license text (OFL.txt) has
+# trailing spaces upstream.
+exclude: ^(\.claude/skills/impeccable/|assets/fonts/)
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

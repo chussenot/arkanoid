@@ -20,8 +20,6 @@
 //! have something to shade. Nothing about *where* an entity is on the board
 //! changes -- it's `render.rs`'s own layout, just given a third dimension.
 
-mod atlas;
-
 use std::collections::VecDeque;
 use std::f32::consts::PI;
 use std::mem::size_of;
@@ -35,14 +33,16 @@ use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
+use crate::assets::{Atlas, SpriteId, UvRect, CAPSULE_SIZE};
 use crate::events::{GameEvent, PowerUpKind};
 use crate::game::{
     Ball, Brick, Game, GunKind, Paddle, ASTEROID_RADIUS, GATE_REACH_ABOVE_PADDLE, PLAYFIELD_HEIGHT,
     PLAYFIELD_WIDTH,
 };
+use crate::hud::{self, Hud, BAND_HEIGHT};
 use crate::levels::BrickKind;
+use crate::palette;
 use crate::render::RenderState;
-use atlas::{Atlas, SpriteId};
 
 // -- entity extrusion / placement constants --------------------------------
 
@@ -56,9 +56,11 @@ const PADDLE_THICKNESS: f32 = 18.0;
 /// just the playfield edges `resolve_wall_collisions` bounces off).
 const WALL_THICKNESS: f32 = 20.0;
 const WALL_HEIGHT: f32 = 46.0;
-/// Matches `render.rs`'s `POWERUP_HALF_SIZE` (private to that module, so
-/// re-declared here rather than shared cross-module for one constant).
-const POWERUP_HALF: f32 = 9.0;
+/// Capsule size relative to `assets::CAPSULE_SIZE`: the perspective camera
+/// shows the field at about two thirds of its 2D size, so this restores it.
+const CAPSULE_SCALE_3D: f32 = 1.5;
+/// Gap between a falling capsule and the floor, so it reads as airborne.
+const CAPSULE_LIFT: f32 = 4.0;
 
 const MAX_BRICKS: usize = 14 * 8;
 const MAX_POWERUPS: usize = 16;
@@ -92,32 +94,39 @@ fn world_xz(px: f32, py: f32) -> (f32, f32) {
 
 // -- colors -----------------------------------------------------------------
 //
-// Same palette `render.rs` uses (its constants are private to that module,
-// so duplicated here rather than exposed cross-module for one caller each).
+// Every color is `palette`'s, the same one `render.rs` draws with: one game,
+// two lenses. Converted to linear here because the shader lights in linear
+// space and writes to an sRGB surface.
 
-const PADDLE_COLOR: [f32; 4] = [0.80, 0.85, 0.95, 1.0];
-/// The paddle while Glue is active, tinted toward the Glue capsule's color
-/// so the player can tell a hit will stick.
-const GLUE_PADDLE_COLOR: [f32; 4] = [0.95, 0.65, 0.80, 1.0];
-const ASTEROID_COLOR: [f32; 4] = [0.85, 0.45, 0.25, 1.0];
-const BALL_COLOR: [f32; 4] = [1.0, 0.78, 0.2, 1.0];
-const NORMAL_BRICK_COLOR: [f32; 4] = [0.85, 0.25, 0.25, 1.0];
-const ARMORED_BRICK_COLOR: [f32; 4] = [0.30, 0.45, 0.68, 1.0];
-const ARMORED_BRICK_COLOR_HIT: [f32; 4] = [0.90, 0.60, 0.15, 1.0];
-const INDESTRUCTIBLE_BRICK_COLOR: [f32; 4] = [0.25, 0.25, 0.28, 1.0];
-const WALL_COLOR: [f32; 4] = [0.16, 0.18, 0.24, 1.0];
-const POWERUP_WIDEN_COLOR: [f32; 4] = [0.35, 0.85, 0.40, 1.0];
-const POWERUP_SLOW_COLOR: [f32; 4] = [0.35, 0.55, 0.95, 1.0];
-const POWERUP_MULTIBALL_COLOR: [f32; 4] = [0.80, 0.35, 0.90, 1.0];
-const POWERUP_GLUE_COLOR: [f32; 4] = [0.95, 0.45, 0.65, 1.0];
-const POWERUP_LASER_COLOR: [f32; 4] = [0.95, 0.25, 0.20, 1.0];
-const POWERUP_SUPER_LASER_COLOR: [f32; 4] = [0.30, 0.95, 0.95, 1.0];
-const POWERUP_TINY_COLOR: [f32; 4] = [0.55, 0.55, 0.58, 1.0];
-const POWERUP_PLAYER_COLOR: [f32; 4] = BALL_COLOR;
-const POWERUP_BREAK_COLOR: [f32; 4] = [1.0, 0.55, 0.10, 1.0];
-/// The paddle while it carries a gun, tinted toward its capsule's color.
-const LASER_PADDLE_COLOR: [f32; 4] = [0.95, 0.55, 0.50, 1.0];
-const SUPER_LASER_PADDLE_COLOR: [f32; 4] = [0.60, 0.95, 0.95, 1.0];
+/// How strongly a capsule's hue tints the paddle while its effect lasts
+/// (same mix as `render.rs`'s `PADDLE_TINT_STRENGTH`).
+const PADDLE_TINT_STRENGTH: f32 = 0.45;
+
+/// The paddle's color: brushed metal, tinted toward the capsule whose
+/// effect it carries (a gun shows over Glue: it changes what Space does).
+fn paddle_color(curr: &Game) -> [f32; 4] {
+    let tint = match curr.gun.map(|g| g.kind) {
+        Some(GunKind::Laser) => Some(palette::CAPSULE_LASER),
+        Some(GunKind::SuperLaser) => Some(palette::CAPSULE_SUPER_LASER),
+        None if curr.glue_timer > 0.0 => Some(palette::CAPSULE_GLUE),
+        None => None,
+    };
+    let base = palette::PADDLE.linear();
+    match tint {
+        None => base,
+        Some(c) => {
+            let c = c.linear();
+            let k = PADDLE_TINT_STRENGTH;
+            [
+                base[0] * (1.0 - k) + c[0] * k,
+                base[1] * (1.0 - k) + c[1] * k,
+                base[2] * (1.0 - k) + c[2] * k,
+                1.0,
+            ]
+        }
+    }
+}
+
 /// Bolts are thin glowing bars at ball height. Their glow is kept low:
 /// emissive adds white, and a hit flash's would wash out the color that
 /// tells a Laser bolt from a Super laser one.
@@ -130,12 +139,7 @@ const BOLT_EMISSIVE: f32 = 0.25;
 /// has no live `&Brick` to read a color off of, only the event's copied
 /// fields).
 fn brick_color_for(kind: BrickKind, hits_remaining: u8) -> [f32; 4] {
-    match kind {
-        BrickKind::Normal => NORMAL_BRICK_COLOR,
-        BrickKind::Armored if hits_remaining >= 2 => ARMORED_BRICK_COLOR,
-        BrickKind::Armored => ARMORED_BRICK_COLOR_HIT,
-        BrickKind::Indestructible => INDESTRUCTIBLE_BRICK_COLOR,
-    }
+    palette::brick(kind, hits_remaining).linear()
 }
 
 fn brick_color(brick: &Brick) -> [f32; 4] {
@@ -156,17 +160,7 @@ fn sprite_for_brick(brick: &Brick) -> SpriteId {
 }
 
 fn powerup_color(kind: PowerUpKind) -> [f32; 4] {
-    match kind {
-        PowerUpKind::Widen => POWERUP_WIDEN_COLOR,
-        PowerUpKind::Slow => POWERUP_SLOW_COLOR,
-        PowerUpKind::Multiball => POWERUP_MULTIBALL_COLOR,
-        PowerUpKind::Glue => POWERUP_GLUE_COLOR,
-        PowerUpKind::Laser => POWERUP_LASER_COLOR,
-        PowerUpKind::SuperLaser => POWERUP_SUPER_LASER_COLOR,
-        PowerUpKind::Tiny => POWERUP_TINY_COLOR,
-        PowerUpKind::Player => POWERUP_PLAYER_COLOR,
-        PowerUpKind::Break => POWERUP_BREAK_COLOR,
-    }
+    palette::capsule(kind).linear()
 }
 
 // -- camera -------------------------------------------------------------
@@ -203,6 +197,20 @@ fn camera_view_proj(aspect: f32, eye: Vec3, target: Vec3) -> [f32; 16] {
     let view_mat = view::look_at_mat4(eye, target, Vec3::Y);
     let proj = directx::perspective(FOV_Y_RADIANS, aspect, NEAR, FAR);
     (proj * view_mat).to_cols_array()
+}
+
+/// Projects world point `p` through `view_proj` into canvas pixels (the
+/// field's rect, offset by the HUD band). `None` behind the camera.
+fn project_to_canvas(view_proj: &[f32; 16], p: Vec3) -> Option<(f32, f32)> {
+    let clip = glam::Mat4::from_cols_array(view_proj) * p.extend(1.0);
+    if clip.w <= 0.0 {
+        return None;
+    }
+    let (nx, ny) = (clip.x / clip.w, clip.y / clip.w);
+    Some((
+        (nx + 1.0) / 2.0 * PLAYFIELD_WIDTH,
+        BAND_HEIGHT + (1.0 - ny) / 2.0 * PLAYFIELD_HEIGHT,
+    ))
 }
 
 #[repr(C)]
@@ -280,7 +288,7 @@ impl Instance3D {
     /// Same as `new`, but with a nonzero-area atlas UV rect so the
     /// shader's front face samples `uv_rect` instead of `color` (see
     /// `Vertex3D::uv`'s doc comment and `SHADER_SRC`'s `fs_main`).
-    fn textured(center: [f32; 3], scale: [f32; 3], color: [f32; 4], uv: atlas::UvRect) -> Self {
+    fn textured(center: [f32; 3], scale: [f32; 3], color: [f32; 4], uv: UvRect) -> Self {
         Self {
             uv_rect: [uv.u0, uv.v0, uv.u1, uv.v1],
             ..Self::new(center, scale, color)
@@ -345,7 +353,10 @@ const CUBE_VERTICES: [Vertex3D; 24] = [
         normal: [-1.0, 0.0, 0.0],
         uv: [0.0, 0.0],
     },
-    // +Y (untextured)
+    // +Y: textured like +Z. The top is the face the camera sees most, so
+    // a brick's pattern (`assets::brick_mark`) must be on it too. Mapped
+    // as the 2D renderer maps its quad: world -Z (the field's top) is the
+    // sprite's top row.
     Vertex3D {
         position: [-1.0, 1.0, -1.0],
         normal: [0.0, 1.0, 0.0],
@@ -354,17 +365,17 @@ const CUBE_VERTICES: [Vertex3D; 24] = [
     Vertex3D {
         position: [-1.0, 1.0, 1.0],
         normal: [0.0, 1.0, 0.0],
-        uv: [0.0, 0.0],
+        uv: [0.0, 1.0],
     },
     Vertex3D {
         position: [1.0, 1.0, 1.0],
         normal: [0.0, 1.0, 0.0],
-        uv: [0.0, 0.0],
+        uv: [1.0, 1.0],
     },
     Vertex3D {
         position: [1.0, 1.0, -1.0],
         normal: [0.0, 1.0, 0.0],
-        uv: [0.0, 0.0],
+        uv: [1.0, 0.0],
     },
     // -Y (untextured)
     Vertex3D {
@@ -517,9 +528,8 @@ struct Camera {
 };
 @group(0) @binding(0) var<uniform> camera: Camera;
 
-// Brick front-face atlas (see `Renderer3D::new`'s atlas/texture setup and
-// `render3d::atlas`'s module doc comment for where these pixels come
-// from). Nothing else this pipeline draws samples this texture -- see
+// Brick face atlas: the session's `assets::Atlas`, shared with `render.rs`
+// (see `Renderer3D::new`'s atlas/texture setup). Nothing else this pipeline draws samples this texture -- see
 // `fs_main`'s `has_sprite` check below.
 @group(1) @binding(0) var atlas_tex: texture_2d<f32>;
 @group(1) @binding(1) var atlas_samp: sampler;
@@ -600,7 +610,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let diffuse = max(dot(n, l), 0.0);
     let spec = pow(max(dot(n, h), 0.0), SHININESS) * SPEC_STRENGTH;
 
-    // Front-face-only texturing (bricks' +Z side -- see `Instance3D`'s
+    // Front- and top-face texturing (bricks' +Z and +Y sides -- see `Instance3D`'s
     // doc comment): a nonzero-area `uv_rect` means "this instance carries
     // an atlas sprite," and `n.z` close to 1 means "this fragment belongs
     // to that unrotated cube's +Z face" (no rotation ever happens here,
@@ -611,7 +621,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // requirement for a texture sample inside this per-fragment branch.
     let has_sprite = (in.uv_rect.z - in.uv_rect.x) > 0.0;
     var albedo = in.color.rgb;
-    if has_sprite && n.z > 0.9 {
+    if has_sprite && (n.z > 0.9 || n.y > 0.9) {
         let atlas_uv = vec2<f32>(
             mix(in.uv_rect.x, in.uv_rect.z, in.uv.x),
             mix(in.uv_rect.y, in.uv_rect.w, in.uv.y)
@@ -818,7 +828,7 @@ impl TumbleGhost {
             y_offset: 0.0,
             vy: TUMBLE_LAUNCH_SPEED,
             half_extent: [radius * 0.8; 3],
-            color: ASTEROID_COLOR,
+            color: palette::ASTEROID.linear(),
             axis: tumble_axis(x, y),
             spin_dir: if x >= 0.0 { 1.0 } else { -1.0 },
             elapsed: 0.0,
@@ -915,8 +925,8 @@ pub struct Renderer3D {
     depth_view: wgpu::TextureView,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    /// Brick front-face atlas sprite lookup (see `sprite_for_brick` and
-    /// `atlas::Atlas::uv_rect`). The pixels themselves are uploaded once
+    /// Brick face atlas sprite lookup (see `sprite_for_brick` and
+    /// `Atlas::uv_rect`): the same atlas the 2D renderer draws with. The pixels themselves are uploaded once
     /// into `texture_bind_group`'s texture at construction time; this is
     /// kept around only for its cheap per-frame `uv_rect` arithmetic.
     atlas: Atlas,
@@ -958,6 +968,11 @@ pub struct Renderer3D {
     /// `[0, 2*PI)` each frame so it never grows unbounded over a long
     /// session.
     powerup_spin_angle: f32,
+    /// The band, state screens and capsule letters (`hud.rs`), shared
+    /// with the 2D renderer.
+    hud: Hud,
+    /// `--autopilot` is playing; the HUD says so.
+    autopilot: bool,
 }
 
 impl Renderer3D {
@@ -967,7 +982,7 @@ impl Renderer3D {
     /// its own module, and this renderer must stay independently
     /// constructible since only one of the two is ever selected at a
     /// time, per `--renderer`).
-    pub fn new(window: Arc<Window>) -> Self {
+    pub fn new(window: Arc<Window>, atlas: Atlas, autopilot: bool) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::default();
         let surface = instance
@@ -1043,18 +1058,7 @@ impl Renderer3D {
             }],
         });
 
-        // Brick front-face atlas -- see `render3d::atlas`'s module doc
-        // comment for why this is a local copy of Workstream B's real
-        // `epic/textures:src/assets.rs` recipe rather than an import of
-        // it, and why that's still "B's atlas" rather than an invented
-        // placeholder.
-        eprintln!(
-            "render3d: brick front faces textured via a LOCAL COPY of Workstream B's real \
-             atlas recipe (epic/textures src/assets.rs, beads b1/b2) -- hand-synced pending \
-             the cross-epic merge into master, see src/render3d/atlas.rs's doc comment. This \
-             is B's real beveled-brick-panel recipe, not an invented flat placeholder."
-        );
-        let atlas = Atlas::procedural_placeholder();
+        // Brick face atlas: the session's atlas, shared with `render.rs`.
         let atlas_texture_size = wgpu::Extent3d {
             width: atlas.width,
             height: atlas.height,
@@ -1066,7 +1070,8 @@ impl Renderer3D {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            // sRGB-encoded bytes, decoded on sampling (see `assets::Atlas`).
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -1237,6 +1242,8 @@ impl Renderer3D {
             mapped_at_creation: false,
         });
 
+        let hud = Hud::new(&device, &queue, config.format);
+
         Self {
             surface,
             device,
@@ -1263,6 +1270,8 @@ impl Renderer3D {
             last_frame_instant: Instant::now(),
             tumbling: Vec::new(),
             powerup_spin_angle: 0.0,
+            hud,
+            autopilot,
         }
     }
 
@@ -1332,12 +1341,14 @@ impl Renderer3D {
 
         self.powerup_spin_angle =
             (self.powerup_spin_angle + dt * POWERUP_SPIN_RATE).rem_euclid(2.0 * PI);
-        let powerup_rotation = Quat::from_rotation_y(self.powerup_spin_angle).to_array();
+        // Capsules roll about their long axis as they fall, so the pill
+        // reads as a pill and its letter (set flat by the HUD) stays put.
+        let powerup_rotation = Quat::from_rotation_x(self.powerup_spin_angle).to_array();
 
         let score_increased = curr.score > self.prev_score;
         self.prev_score = curr.score;
         self.shake_remaining = next_shake_remaining(self.shake_remaining, dt, score_increased);
-        let shake_offset = if self.shake_remaining > 0.0 {
+        let shake_offset = if self.shake_remaining > 0.0 && !hud::reduced_motion() {
             let amplitude = CAMERA_SHAKE_MAX_OFFSET * (self.shake_remaining / SHAKE_DURATION_SECS);
             Vec3::new(
                 rand::random_range(-amplitude..=amplitude),
@@ -1372,9 +1383,12 @@ impl Renderer3D {
         }
         self.tumbling.retain(TumbleGhost::alive);
 
-        let aspect = self.config.width as f32 / self.config.height as f32;
+        // The scene renders into the letterboxed field rect, whose aspect
+        // is always the field's own.
+        let aspect = PLAYFIELD_WIDTH / PLAYFIELD_HEIGHT;
+        let view_proj = camera_view_proj(aspect, eye, target);
         let camera_uniform = CameraUniform {
-            view_proj: camera_view_proj(aspect, eye, target),
+            view_proj,
             eye_pos: [eye.x, eye.y, eye.z, 0.0],
         };
         self.queue
@@ -1401,12 +1415,7 @@ impl Renderer3D {
                     PADDLE_THICKNESS / 2.0,
                     drawn.paddle.height / 2.0,
                 ],
-                match curr.gun.map(|g| g.kind) {
-                    Some(GunKind::Laser) => LASER_PADDLE_COLOR,
-                    Some(GunKind::SuperLaser) => SUPER_LASER_PADDLE_COLOR,
-                    None if curr.glue_timer > 0.0 => GLUE_PADDLE_COLOR,
-                    None => PADDLE_COLOR,
-                },
+                paddle_color(curr),
             ));
         }
 
@@ -1423,12 +1432,7 @@ impl Renderer3D {
             Instance3D::new(
                 [wx, radius, wz],
                 [radius; 3],
-                [
-                    BALL_COLOR[0],
-                    BALL_COLOR[1],
-                    BALL_COLOR[2],
-                    TRAIL_BASE_ALPHA * fade,
-                ],
+                palette::BALL.linear_alpha(TRAIL_BASE_ALPHA * fade),
             )
         }));
         push_trail(&mut self.ball_trail, &drawn.ball);
@@ -1441,19 +1445,23 @@ impl Renderer3D {
             sphere_instances.push(Instance3D::new(
                 [x, drawn.ball.radius, z],
                 [drawn.ball.radius; 3],
-                BALL_COLOR,
+                palette::BALL.linear(),
             ));
         }
         sphere_instances.extend(curr.extra_balls.iter().take(MAX_EXTRA_BALLS).map(|ball| {
             let (x, z) = world_xz(ball.x, ball.y);
-            Instance3D::new([x, ball.radius, z], [ball.radius; 3], BALL_COLOR)
+            Instance3D::new(
+                [x, ball.radius, z],
+                [ball.radius; 3],
+                palette::BALL.linear(),
+            )
         }));
         sphere_instances.extend(curr.asteroids.iter().take(MAX_ASTEROIDS).map(|asteroid| {
             let (x, z) = world_xz(asteroid.x, asteroid.y);
             Instance3D::new(
                 [x, asteroid.radius, z],
                 [asteroid.radius; 3],
-                ASTEROID_COLOR,
+                palette::ASTEROID.linear(),
             )
         }));
 
@@ -1489,8 +1497,8 @@ impl Renderer3D {
                 [x, BOLT_HEIGHT, z],
                 [bolt.half_size[0], BOLT_HEIGHT / 2.0, bolt.half_size[1]],
                 match bolt.kind {
-                    GunKind::Laser => POWERUP_LASER_COLOR,
-                    GunKind::SuperLaser => POWERUP_SUPER_LASER_COLOR,
+                    GunKind::Laser => palette::CAPSULE_LASER.linear(),
+                    GunKind::SuperLaser => palette::CAPSULE_SUPER_LASER.linear(),
                 },
             )
             .with_emissive(BOLT_EMISSIVE)
@@ -1501,17 +1509,30 @@ impl Renderer3D {
         // gravity for 0.5s"). See `TumbleGhost` and `ingest_tick_events`.
         cube_instances.extend(self.tumbling.iter().map(TumbleGhost::instance));
 
-        // Falling power-up capsules, colored by kind, slowly spinning
-        // around world-Y (spec: "power-up capsules rotate slowly").
-        cube_instances.extend(curr.powerups.iter().take(MAX_POWERUPS).map(|powerup| {
+        // Falling capsules: pill-proportioned boxes in their kind's hue,
+        // rolling slowly (spec: "power-up capsules rotate slowly"). Each
+        // one's center is projected to the canvas so the HUD can set its
+        // letter on it, exactly as in 2D.
+        let mut capsules = Vec::with_capacity(curr.powerups.len().min(MAX_POWERUPS));
+        for powerup in curr.powerups.iter().take(MAX_POWERUPS) {
             let (x, z) = world_xz(powerup.x, powerup.y);
-            Instance3D::new(
-                [x, POWERUP_HALF, z],
-                [POWERUP_HALF; 3],
-                powerup_color(powerup.kind),
-            )
-            .with_rotation(powerup_rotation)
-        }));
+            // Scaled so that, seen from the camera's distance, a capsule
+            // reads at about its 2D size and carries its letter.
+            let half = [
+                CAPSULE_SIZE.0 * CAPSULE_SCALE_3D / 2.0,
+                CAPSULE_SIZE.1 * CAPSULE_SCALE_3D / 2.0,
+                CAPSULE_SIZE.1 * CAPSULE_SCALE_3D / 2.0,
+            ];
+            let center = [x, CAPSULE_LIFT + half[1], z];
+            cube_instances.push(
+                Instance3D::new(center, half, powerup_color(powerup.kind))
+                    .with_rotation(powerup_rotation),
+            );
+            let label = Vec3::new(center[0], center[1] + half[1], center[2]);
+            if let Some((cx, cy)) = project_to_canvas(&view_proj, label) {
+                capsules.push((cx, cy, powerup.kind));
+            }
+        }
 
         // Three static boundary walls (left, right, top) -- see the
         // module-level constants' doc comments for why these exist despite
@@ -1521,17 +1542,17 @@ impl Renderer3D {
         cube_instances.push(Instance3D::new(
             [-half_w - WALL_THICKNESS / 2.0, WALL_HEIGHT / 2.0, 0.0],
             [WALL_THICKNESS / 2.0, WALL_HEIGHT / 2.0, half_h],
-            WALL_COLOR,
+            palette::WALL.linear(),
         ));
         cube_instances.push(Instance3D::new(
             [half_w + WALL_THICKNESS / 2.0, WALL_HEIGHT / 2.0, 0.0],
             [WALL_THICKNESS / 2.0, WALL_HEIGHT / 2.0, half_h],
-            WALL_COLOR,
+            palette::WALL.linear(),
         ));
         cube_instances.push(Instance3D::new(
             [0.0, WALL_HEIGHT / 2.0, -half_h - WALL_THICKNESS / 2.0],
             [half_w, WALL_HEIGHT / 2.0, WALL_THICKNESS / 2.0],
-            WALL_COLOR,
+            palette::WALL.linear(),
         ));
         // The open Break gate: a glowing slab over the right wall, from
         // just above the paddle to the bottom of the field.
@@ -1546,7 +1567,7 @@ impl Renderer3D {
                         WALL_HEIGHT / 2.0 + 1.0,
                         (PLAYFIELD_HEIGHT - top) / 2.0,
                     ],
-                    POWERUP_BREAK_COLOR,
+                    palette::CAPSULE_BREAK.linear(),
                 )
                 .with_emissive(BOLT_EMISSIVE),
             );
@@ -1563,11 +1584,46 @@ impl Renderer3D {
             bytemuck::cast_slice(&sphere_instances),
         );
 
+        self.hud.prepare(
+            &self.device,
+            &self.queue,
+            self.config.width,
+            self.config.height,
+            &hud::Frame {
+                game: curr,
+                autopilot: self.autopilot,
+                capsules: &capsules,
+            },
+        );
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("render3d frame encoder"),
             });
+        // Three passes: the HUD's backdrop (band and field ground) under a
+        // letterbox clear, the scene in the field's rect with its own depth
+        // buffer, then the HUD over it. The HUD pipeline has no depth
+        // state, so it cannot share the scene's pass.
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("render3d backdrop pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(clear_color),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            self.hud.draw_backdrop(&mut pass);
+        }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("render3d pass"),
@@ -1576,7 +1632,7 @@ impl Renderer3D {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(clear_color),
+                        load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -1592,6 +1648,8 @@ impl Renderer3D {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            let (x, y, w, h) = self.hud.letterbox().field_viewport();
+            pass.set_viewport(x, y, w, h, 0.0, 1.0);
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
             pass.set_bind_group(1, &self.texture_bind_group, &[]);
@@ -1617,7 +1675,27 @@ impl Renderer3D {
                 0..sphere_instances.len() as u32,
             );
         }
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("render3d hud pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            self.hud.draw_overlay(&mut pass);
+        }
         self.queue.submit(std::iter::once(encoder.finish()));
+        self.hud.trim();
     }
 
     /// Acquires the swapchain's current frame and draws into it via
@@ -1869,7 +1947,7 @@ mod tests {
 
         // A plain (non-textured) instance keeps the zero-area rect the
         // shader reads as "no sprite, use flat color everywhere."
-        let flat = Instance3D::new([0.0; 3], [1.0; 3], PADDLE_COLOR);
+        let flat = Instance3D::new([0.0; 3], [1.0; 3], palette::PADDLE.linear());
         assert_eq!(flat.uv_rect, [0.0; 4]);
     }
 
@@ -1935,19 +2013,19 @@ mod tests {
 
     #[test]
     fn new_instance_carries_identity_rotation_and_no_emissive() {
-        let inst = Instance3D::new([0.0; 3], [1.0; 3], PADDLE_COLOR);
+        let inst = Instance3D::new([0.0; 3], [1.0; 3], palette::PADDLE.linear());
         assert_eq!(inst.rotation, ROTATION_IDENTITY);
         assert_eq!(inst.emissive, 0.0);
     }
 
     #[test]
     fn with_rotation_and_with_emissive_override_only_their_own_field() {
-        let inst = Instance3D::new([0.0; 3], [1.0; 3], PADDLE_COLOR)
+        let inst = Instance3D::new([0.0; 3], [1.0; 3], palette::PADDLE.linear())
             .with_rotation([0.1, 0.2, 0.3, 0.9])
             .with_emissive(0.5);
         assert_eq!(inst.rotation, [0.1, 0.2, 0.3, 0.9]);
         assert_eq!(inst.emissive, 0.5);
-        assert_eq!(inst.color, PADDLE_COLOR);
+        assert_eq!(inst.color, palette::PADDLE.linear());
     }
 
     #[test]
