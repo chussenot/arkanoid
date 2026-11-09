@@ -11,6 +11,7 @@ mod levels;
 mod levelset;
 mod menu;
 mod palette;
+mod rally;
 mod record;
 mod render;
 mod render3d;
