@@ -73,23 +73,28 @@ Otherwise the deterministic pick stands: the lane with the most exposed and
 remaining bricks, nearest the middle on a tie. After four paddle hits in a
 row with no brick broken, the shot is looping (typically between
 indestructible bricks and the paddle). The autopilot then overrides the
-model and rotates lanes until something breaks. The consequence: the game
-plays the same with no key, no network, or a slow model. The model can only
-change where the shots go.
+model's lane, sets its answers aside until a brick breaks, and rotates lanes
+until something does. Setting the answers aside matters on level 3, whose
+bricks are reached only through a gate in its indestructible floor. A model
+that keeps naming a lane behind the wall would otherwise put the shot back
+into the loop on its very next answer. The consequence: the game plays the
+same with no key, no network, or a slow model. The model can only change
+where the shots go.
 
 ## Measured
 
-| Run | Levels 1+2 cleared in | Lives lost | Consultations |
+| Run | Three built-in levels won in | Lives lost | Consultations |
 |---|---|---|---|
-| Heuristic, seeds 1/3/5/7/9/11/42 | 195–251 s of game time | 0–1 | — |
-| `jev-latest`, seed 42, blocking | 256 s | 1 | 141: 102 used, 39 below the bar, 0 failed |
-| Heuristic, seed 42 | 207 s | 0 | — |
+| Heuristic, seeds 1/2/3/5/7/9/11/42 | 348–626 s of game time | 0–2 | — |
+| Heuristic, seed 42 | 510 s | 2 | — |
+| `jev-latest`, seed 42, blocking | 403 s | 0 | 277: 146 used, 32 below the bar, 111 set aside while looping, 0 failed; 139 ms mean |
 
 Read this as a working integration, not as proof that the model plays
-better. On one seed, the model-steered run was slower than the heuristic.
-This game's strategy space is small and the heuristic already sees what
-matters. To actually compare them, run both over many seeds and look at the
-spread, not one run each. The live test below is the harness for that.
+better. On this seed the model-steered run won faster and without losing a
+life. But it's one run, and 111 of its answers named a lane the shot could
+not reach through level 3's gate, which the loop override caught. To
+compare them properly, run both over many seeds and look at the spread.
+The live test below is the harness for that.
 
 ## Tests
 
@@ -99,10 +104,11 @@ Every test is headless and runs in CI. The `typesafe` ones use
 - `pilot.rs`: intercept prediction through walls and the ceiling, aim
   checked against the simulation's own angle mapping, steering deadband.
 - `board.rs`: lane counts, exposure behind indestructible bricks, the map.
-- `mod.rs`: the heuristic clears built-in levels 1 and 2 on three seeds and
-  wins the whole fixture levelset. A confident model lane is used; a model
-  below the bar never is; a silent model delays serves but never stops the
-  game; `--autopilot-every` spaces out consultations.
+- `mod.rs`: the heuristic wins the three built-in levels on three seeds and
+  the whole fixture levelset. A confident model lane is used, and a model
+  stuck on an unreachable lane is set aside while it loops; a model below
+  the bar never is; a silent model delays serves but never stops the game;
+  `--autopilot-every` spaces out consultations.
 - `advisor.rs`: the question's shape and lane order, the state, a `Fake`
   answer read back, an off-list lane being an error, the worker thread, and
   a full game through the real advisor.
@@ -112,12 +118,3 @@ Against the real API, by hand (needs `TYPESAFE_API_KEY`):
 ```bash
 cargo test --features typesafe -- --ignored --nocapture live_
 ```
-
-## Known limit: built-in level 3 can't be cleared
-
-Level 3's breakable bricks sit inside a closed box of indestructible ones:
-the top and bottom rows are all `X`, and every row in between starts and
-ends with `X`. No shot can get in, autopilot or human. So the tests hold
-the autopilot to levels 1 and 2 plus a whole external set. Opening a gap in
-level 3 means changing `levels.rs` and the spec's level design, which is a
-separate decision.
