@@ -78,6 +78,74 @@ const SLOW_MULTIPLIER: f32 = 0.7;
 /// overlapped -- three ball-shaped stacks moving as one -- for the rest of
 /// the level.
 const MULTIBALL_SPREAD_DEG: f32 = 20.0;
+/// How long Glue stays active once caught. Like Widen, re-catching it while
+/// active resets the timer rather than adding to it.
+const GLUE_DURATION_SECS: f32 = 15.0;
+/// Longest a ball stays stuck to the paddle before it releases on its own,
+/// so a held ball can never stall the game.
+pub const GLUE_HOLD_SECS: f32 = 3.0;
+
+// -- stalls ---------------------------------------------------------------
+
+/// Seconds of flight without any ball touching the paddle, breaking or
+/// denting a brick, or blowing up an asteroid, after which the shot counts
+/// as stalled: a ball can settle into a closed orbit among indestructible
+/// bricks (level 3's box is one place) that no input can reach.
+const STALL_SECS: f32 = 10.0;
+/// While stalled, each wall or indestructible-brick bounce turns the ball
+/// by this much, alternating direction, until something gives.
+const STALL_NUDGE_DEG: f32 = 7.0;
+/// A nudge never leaves the ball flatter than this from the horizontal,
+/// so it cannot turn a stall into a ball skimming sideways forever.
+const STALL_MIN_ANGLE_DEG: f32 = 20.0;
+
+// -- asteroids ------------------------------------------------------------
+
+/// Asteroids alive at once, at most.
+const MAX_ASTEROIDS: usize = 3;
+pub const ASTEROID_RADIUS: f32 = 10.0;
+/// Downward drift: slow enough that an asteroid crosses the field in about
+/// fifteen seconds, spending most of it in the ball's lanes.
+const ASTEROID_FALL_SPEED: f32 = 40.0;
+/// Sideways speed: a base drift that flips at the walls, plus a wobble.
+const ASTEROID_DRIFT_SPEED: f32 = 30.0;
+const ASTEROID_WOBBLE_SPEED: f32 = 45.0;
+/// Seconds of play (ball in flight) before a level's first asteroid, then
+/// between spawns: uniformly in this range.
+const ASTEROID_FIRST_SPAWN_SECS: f32 = 4.0;
+const ASTEROID_SPAWN_SECS: std::ops::Range<f32> = 5.0..10.0;
+/// Points for blowing one up, with the ball or the paddle.
+const ASTEROID_SCORE: u32 = 100;
+
+/// Gameplay added after the v1 spec. Each can be switched off, so v1's
+/// rules (and its pinned replay hash) stay reproducible: `--classic` plays
+/// with none of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Features {
+    /// The Glue power-up: a ball hitting the paddle sticks to it until
+    /// Space releases it, aimed by where it landed.
+    pub glue: bool,
+    /// Asteroids drifting in from the top, blowing up when a ball or the
+    /// paddle hits them.
+    pub asteroids: bool,
+}
+
+impl Features {
+    pub const ALL: Self = Self {
+        glue: true,
+        asteroids: true,
+    };
+    pub const V1: Self = Self {
+        glue: false,
+        asteroids: false,
+    };
+}
+
+impl Default for Features {
+    fn default() -> Self {
+        Self::ALL
+    }
+}
 
 /// Top-level application state. Spec: "explicit enum-driven machine ...
 /// no ad-hoc booleans for state." `Menu` and `Paused` join `Playing`/
@@ -145,6 +213,36 @@ pub struct Ball {
     /// Resting on the paddle, waiting for Space to launch. While true the
     /// ball rides the paddle and `vx`/`vy` are ignored.
     pub attached: bool,
+    /// Stuck to the paddle by Glue. Unlike `attached` (the serve), the ball
+    /// keeps the exit velocity its paddle hit gave it and leaves with it on
+    /// release; the rest of the fleet keeps moving meanwhile.
+    pub glued: Option<Glued>,
+}
+
+/// A ball held by Glue.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Glued {
+    /// Ball center minus paddle center, in pixels, where it landed.
+    pub offset: f32,
+    /// Seconds held so far (released at `GLUE_HOLD_SECS`).
+    pub held: f32,
+}
+
+/// An asteroid: drifts in from the top through the bricks, and blows up
+/// when a ball (which bounces off it) or the paddle touches it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Asteroid {
+    pub x: f32,
+    pub y: f32,
+    /// Velocity over the last tick, for the autopilot and renderers.
+    pub vx: f32,
+    pub vy: f32,
+    pub radius: f32,
+    /// Base sideways drift, flipped by the walls.
+    drift: f32,
+    /// Wobble phase (radians) and rate (radians per second).
+    phase: f32,
+    wobble_rate: f32,
 }
 
 impl Ball {
@@ -157,6 +255,7 @@ impl Ball {
             vy: 0.0,
             radius: BALL_RADIUS,
             attached: true,
+            glued: None,
         }
     }
 
@@ -441,6 +540,22 @@ pub struct Game {
     /// stayed held. Not part of the `GameState` machine itself — purely
     /// input debouncing for the one control that toggles it.
     pause_was_held: bool,
+    /// Edge-detects `Input::space` for releasing a glued ball, the way
+    /// `pause_was_held` does for Pause: held Space serves (v1), a press
+    /// releases.
+    space_was_held: bool,
+    /// Seconds left on an active Glue; 0 means inactive.
+    pub glue_timer: f32,
+    /// Asteroids currently drifting.
+    pub asteroids: Vec<Asteroid>,
+    /// Seconds of play until the next asteroid may spawn.
+    asteroid_timer: f32,
+    /// Which post-v1 additions are on.
+    pub features: Features,
+    /// Seconds of flight since the last progress (see `STALL_SECS`).
+    stall_secs: f32,
+    /// Stall nudges so far; its parity alternates their direction.
+    stall_nudges: u32,
     /// Source of randomness for the one non-deterministic simulation
     /// decision (`maybe_drop_powerup`'s drop chance/kind). `new()` seeds
     /// from OS entropy for normal play; `with_seed` seeds deterministically
@@ -448,6 +563,9 @@ pub struct Game {
     /// see the `deterministic_replay` test module for the property this
     /// exists to support.
     rng: StdRng,
+    /// Asteroid spawns and wobble draw from their own stream, so turning
+    /// asteroids on or off leaves every power-up drop where it was.
+    asteroid_rng: StdRng,
 }
 
 impl Default for Game {
@@ -458,7 +576,16 @@ impl Default for Game {
 
 impl Game {
     pub fn new() -> Self {
-        Self::new_with_rng(StdRng::from_rng(&mut rand::rng()))
+        Self::new_with_rng(
+            StdRng::from_rng(&mut rand::rng()),
+            StdRng::from_rng(&mut rand::rng()),
+        )
+    }
+
+    /// Plays with only `features` of the post-v1 additions.
+    pub fn with_features(mut self, features: Features) -> Self {
+        self.features = features;
+        self
     }
 
     /// Same as `new()`, but with a deterministic RNG seed instead of OS
@@ -469,7 +596,10 @@ impl Game {
     /// `pub` item still reads as dead code outside `#[cfg(test)]`.
     #[cfg(test)]
     pub fn with_seed(seed: u64) -> Self {
-        Self::new_with_rng(StdRng::seed_from_u64(seed))
+        Self::new_with_rng(
+            StdRng::seed_from_u64(seed),
+            StdRng::seed_from_u64(seed ^ 0x9E37_79B9_7F4A_7C15),
+        )
     }
 
     /// Switches level progression to an externally-loaded level set
@@ -497,6 +627,7 @@ impl Game {
         self.ball = Ball::attached_to(&self.paddle);
         self.extra_balls.clear();
         self.powerups.clear();
+        self.reset_asteroids();
     }
 
     /// Bricks for whatever `self.level` currently refers to: the loaded
@@ -519,7 +650,7 @@ impl Game {
         }
     }
 
-    fn new_with_rng(rng: StdRng) -> Self {
+    fn new_with_rng(rng: StdRng, asteroid_rng: StdRng) -> Self {
         let paddle = Paddle::new();
         let ball = Ball::attached_to(&paddle);
         Self {
@@ -536,7 +667,15 @@ impl Game {
             powerups: Vec::new(),
             widen_timer: 0.0,
             pause_was_held: false,
+            space_was_held: false,
+            glue_timer: 0.0,
+            asteroids: Vec::new(),
+            asteroid_timer: ASTEROID_FIRST_SPAWN_SECS,
+            features: Features::default(),
+            stall_secs: 0.0,
+            stall_nudges: 0,
             rng,
+            asteroid_rng,
         }
     }
 
@@ -547,6 +686,8 @@ impl Game {
     pub fn tick(&mut self, input: &Input, dt_fixed: f32) {
         let pause_pressed = input.pause && !self.pause_was_held;
         self.pause_was_held = input.pause;
+        let space_pressed = input.space && !self.space_was_held;
+        self.space_was_held = input.space;
 
         match self.state {
             GameState::Menu => {
@@ -569,15 +710,18 @@ impl Game {
                     self.state = GameState::Paused;
                     return;
                 }
-                self.tick_playing(input, dt_fixed);
+                self.tick_playing(input, space_pressed, dt_fixed);
             }
         }
     }
 
     /// The actual gameplay tick, run only while `state == Playing`.
-    fn tick_playing(&mut self, input: &Input, dt_fixed: f32) {
+    fn tick_playing(&mut self, input: &Input, space_pressed: bool, dt_fixed: f32) {
         if self.widen_timer > 0.0 {
             self.widen_timer = (self.widen_timer - dt_fixed).max(0.0);
+        }
+        if self.glue_timer > 0.0 {
+            self.glue_timer = (self.glue_timer - dt_fixed).max(0.0);
         }
         self.paddle.width = if self.widen_timer > 0.0 {
             PADDLE_WIDTH * WIDEN_MULTIPLIER
@@ -597,8 +741,13 @@ impl Game {
             return;
         }
 
+        self.stall_secs += dt_fixed;
+        self.hold_glued_balls(space_pressed, dt_fixed);
         self.advance_balls(dt_fixed);
         self.update_powerups(dt_fixed);
+        if self.state == GameState::Playing && !self.ball.attached {
+            self.update_asteroids(dt_fixed);
+        }
     }
 
     /// Moves every ball in play (`ball` plus `extra_balls`) through one
@@ -666,11 +815,20 @@ impl Game {
     ///
     /// Returns `true` if `ball` is now past the bottom edge (lost).
     fn step_ball(&mut self, ball: &mut Ball, sub_dt: f32) -> bool {
+        if ball.glued.is_some() {
+            return false; // Rides the paddle (`hold_glued_balls`).
+        }
         ball.x += ball.vx * sub_dt;
         ball.y += ball.vy * sub_dt;
 
+        let before = (ball.vx, ball.vy);
         resolve_wall_collisions(ball);
-        self.resolve_brick_collisions(ball);
+        let off_a_wall = (ball.vx, ball.vy) != before;
+        let off_indestructible = self.resolve_brick_collisions(ball);
+        if (off_a_wall || off_indestructible) && self.stall_secs >= STALL_SECS {
+            self.nudge_stalled(ball);
+        }
+        self.resolve_asteroid_collision(ball);
         self.resolve_paddle_collision(ball);
 
         ball.y - ball.radius > PLAYFIELD_HEIGHT
@@ -722,6 +880,13 @@ impl Game {
         // re-collide next tick.
         ball.y = self.paddle.top() - ball.radius;
         self.events.push(GameEvent::PaddleHit);
+        self.stall_secs = 0.0;
+        if self.features.glue && self.glue_timer > 0.0 {
+            ball.glued = Some(Glued {
+                offset: ball.x - self.paddle.x,
+                held: 0.0,
+            });
+        }
     }
 
     /// AABB-vs-circle collision against every brick, resolved against the
@@ -729,26 +894,30 @@ impl Game {
     /// per ball) -- two bricks occupying the same few square pixels of
     /// ball travel within one substep isn't a real scenario at these
     /// speeds/sizes.
-    fn resolve_brick_collisions(&mut self, ball: &mut Ball) {
+    ///
+    /// Returns whether the ball bounced off an indestructible brick (the
+    /// one kind of brick hit that is not progress; see `STALL_SECS`).
+    fn resolve_brick_collisions(&mut self, ball: &mut Ball) -> bool {
         let Some(index) = self
             .bricks
             .iter()
             .position(|brick| ball_hits_brick(ball, brick))
         else {
-            return;
+            return false;
         };
 
         reflect_off_brick_face(ball, &self.bricks[index]);
 
         if self.bricks[index].kind == BrickKind::Indestructible {
-            return;
+            return true;
         }
+        self.stall_secs = 0.0;
 
         self.bricks[index].hits_remaining = self.bricks[index].hits_remaining.saturating_sub(1);
         if self.bricks[index].hits_remaining > 0 {
             // Armored brick's first hit: state changed (2 -> 1 hit left),
             // not destroyed yet -- no score, no event.
-            return;
+            return false;
         }
 
         let brick = self.bricks.remove(index);
@@ -762,6 +931,7 @@ impl Game {
             kind: brick.kind,
         });
         self.maybe_drop_powerup(brick.x, brick.y);
+        false
     }
 
     /// Spec: 15% of destroyed bricks drop one of the three power-ups,
@@ -770,11 +940,23 @@ impl Game {
         if !self.rng.random_bool(POWERUP_DROP_CHANCE) {
             return;
         }
-        let kind = match self.rng.random_range(0..3) {
-            0 => PowerUpKind::Widen,
-            1 => PowerUpKind::Slow,
-            _ => PowerUpKind::Multiball,
+        let kinds: &[PowerUpKind] = if self.features.glue {
+            &[
+                PowerUpKind::Widen,
+                PowerUpKind::Slow,
+                PowerUpKind::Multiball,
+                PowerUpKind::Glue,
+            ]
+        } else {
+            &[
+                PowerUpKind::Widen,
+                PowerUpKind::Slow,
+                PowerUpKind::Multiball,
+            ]
         };
+        // An `i32` range, as v1 drew it: the same draw over 0..3 keeps
+        // `Features::V1` runs drop for drop identical to v1.
+        let kind = kinds[self.rng.random_range(0..kinds.len() as i32) as usize];
         self.powerups.push(PowerUp { x, y, kind });
         self.events.push(GameEvent::PowerUpSpawned(kind));
     }
@@ -802,6 +984,7 @@ impl Game {
         self.ball = Ball::attached_to(&self.paddle);
         self.extra_balls.clear();
         self.powerups.clear();
+        self.reset_asteroids();
     }
 
     /// Spends one life. Callers only reach this once the whole fleet is
@@ -816,6 +999,7 @@ impl Game {
         self.ball = Ball::attached_to(&self.paddle);
         self.extra_balls.clear();
         self.powerups.clear();
+        self.reset_asteroids();
 
         if self.lives == 0 {
             self.state = GameState::GameOver;
@@ -859,6 +1043,9 @@ impl Game {
             PowerUpKind::Widen => {
                 self.widen_timer = WIDEN_DURATION_SECS;
             }
+            PowerUpKind::Glue => {
+                self.glue_timer = GLUE_DURATION_SECS;
+            }
             PowerUpKind::Slow => {
                 for ball in std::iter::once(&mut self.ball).chain(self.extra_balls.iter_mut()) {
                     let speed = ball.speed();
@@ -881,6 +1068,248 @@ impl Game {
             }
         }
     }
+
+    /// Glued balls ride the paddle at their offset until Space is pressed,
+    /// Glue runs out, or they have been held `GLUE_HOLD_SECS`; then they
+    /// leave with the exit velocity their paddle hit already gave them.
+    fn hold_glued_balls(&mut self, space_pressed: bool, dt_fixed: f32) {
+        let release_all = space_pressed || self.glue_timer <= 0.0;
+        let paddle = self.paddle;
+        for ball in std::iter::once(&mut self.ball).chain(self.extra_balls.iter_mut()) {
+            let Some(glued) = &mut ball.glued else {
+                continue;
+            };
+            glued.held += dt_fixed;
+            if release_all || glued.held >= GLUE_HOLD_SECS {
+                ball.glued = None;
+                continue;
+            }
+            let half = paddle.width / 2.0;
+            ball.x = (paddle.x + glued.offset.clamp(-half, half))
+                .clamp(ball.radius, PLAYFIELD_WIDTH - ball.radius);
+            ball.y = paddle.top() - ball.radius;
+        }
+    }
+
+    /// No asteroid on a fresh serve: a level start or a lost life clears
+    /// them and restarts the countdown to the first.
+    fn reset_asteroids(&mut self) {
+        self.stall_secs = 0.0;
+        self.asteroids.clear();
+        self.asteroid_timer = ASTEROID_FIRST_SPAWN_SECS;
+    }
+
+    /// Spawns, moves and retires asteroids for one tick of play. Paddle
+    /// contact blows one up; one past the paddle just leaves.
+    fn update_asteroids(&mut self, dt_fixed: f32) {
+        if !self.features.asteroids {
+            return;
+        }
+        self.asteroid_timer -= dt_fixed;
+        if self.asteroid_timer <= 0.0 {
+            self.asteroid_timer = self.asteroid_rng.random_range(ASTEROID_SPAWN_SECS);
+            if self.asteroids.len() < MAX_ASTEROIDS {
+                let x = self
+                    .asteroid_rng
+                    .random_range(ASTEROID_RADIUS * 4.0..PLAYFIELD_WIDTH - ASTEROID_RADIUS * 4.0);
+                let drift = if self.asteroid_rng.random_bool(0.5) {
+                    ASTEROID_DRIFT_SPEED
+                } else {
+                    -ASTEROID_DRIFT_SPEED
+                };
+                self.asteroids.push(Asteroid {
+                    x,
+                    y: -ASTEROID_RADIUS,
+                    vx: drift,
+                    vy: ASTEROID_FALL_SPEED,
+                    radius: ASTEROID_RADIUS,
+                    drift,
+                    phase: self.asteroid_rng.random_range(0.0..std::f32::consts::TAU),
+                    wobble_rate: self.asteroid_rng.random_range(1.0..2.5),
+                });
+                self.events.push(GameEvent::AsteroidSpawned);
+            }
+        }
+
+        let paddle = self.paddle;
+        let mut asteroids = std::mem::take(&mut self.asteroids);
+        asteroids.retain_mut(|a| {
+            a.advance(dt_fixed);
+            if circle_touches_rect(a.x, a.y, a.radius, &paddle) {
+                self.explode_asteroid(a.x, a.y);
+                return false;
+            }
+            a.y - a.radius <= paddle.bottom()
+        });
+        self.asteroids = asteroids;
+    }
+
+    /// A ball touching an asteroid blows it up and bounces off it like off
+    /// a round obstacle: its velocity is mirrored about the line between
+    /// the two centers, its speed unchanged.
+    fn resolve_asteroid_collision(&mut self, ball: &mut Ball) {
+        let Some(index) = self
+            .asteroids
+            .iter()
+            .position(|a| ball_touches_asteroid(ball, a))
+        else {
+            return;
+        };
+        let asteroid = self.asteroids.remove(index);
+        bounce_off_asteroid(ball, &asteroid);
+        self.explode_asteroid(asteroid.x, asteroid.y);
+    }
+
+    fn explode_asteroid(&mut self, x: f32, y: f32) {
+        self.stall_secs = 0.0;
+        self.score += ASTEROID_SCORE;
+        self.events.push(GameEvent::AsteroidExploded { x, y });
+    }
+
+    /// Turns a stalled ball by `STALL_NUDGE_DEG`, alternating direction,
+    /// or the other way if that would leave it flatter than
+    /// `STALL_MIN_ANGLE_DEG`. Speed is unchanged.
+    fn nudge_stalled(&mut self, ball: &mut Ball) {
+        self.stall_nudges += 1;
+        let sign = if self.stall_nudges.is_multiple_of(2) {
+            1.0
+        } else {
+            -1.0
+        };
+        let min_vy = ball.speed() * STALL_MIN_ANGLE_DEG.to_radians().sin();
+        let (vx, vy) = rotate_velocity(ball.vx, ball.vy, sign * STALL_NUDGE_DEG);
+        (ball.vx, ball.vy) = if vy.abs() >= min_vy {
+            (vx, vy)
+        } else {
+            rotate_velocity(ball.vx, ball.vy, -sign * STALL_NUDGE_DEG)
+        };
+    }
+}
+
+impl Asteroid {
+    /// One tick of drift: down, sideways with a wobble, the sideways drift
+    /// (and the wobble) flipping at a wall.
+    fn advance(&mut self, dt_fixed: f32) {
+        self.phase += self.wobble_rate * dt_fixed;
+        self.vx = self.drift + ASTEROID_WOBBLE_SPEED * self.phase.sin();
+        self.vy = ASTEROID_FALL_SPEED;
+        self.x += self.vx * dt_fixed;
+        self.y += self.vy * dt_fixed;
+        if self.x < self.radius || self.x > PLAYFIELD_WIDTH - self.radius {
+            self.x = self.x.clamp(self.radius, PLAYFIELD_WIDTH - self.radius);
+            self.drift = -self.drift;
+            self.phase += std::f32::consts::PI; // Flip the wobble too.
+        }
+    }
+}
+
+fn ball_touches_asteroid(ball: &Ball, asteroid: &Asteroid) -> bool {
+    let (dx, dy) = (ball.x - asteroid.x, ball.y - asteroid.y);
+    let reach = ball.radius + asteroid.radius;
+    dx * dx + dy * dy <= reach * reach
+}
+
+/// A ball bounces off an asteroid like off a round obstacle: its velocity
+/// mirrored about the line between the two centers, its speed unchanged,
+/// and it is pushed back out to touching distance.
+fn bounce_off_asteroid(ball: &mut Ball, asteroid: &Asteroid) {
+    let (dx, dy) = (ball.x - asteroid.x, ball.y - asteroid.y);
+    let distance = (dx * dx + dy * dy).sqrt();
+    if distance <= f32::EPSILON {
+        return;
+    }
+    let (nx, ny) = (dx / distance, dy / distance);
+    let along = ball.vx * nx + ball.vy * ny;
+    if along < 0.0 {
+        ball.vx -= 2.0 * along * nx;
+        ball.vy -= 2.0 * along * ny;
+    }
+    let reach = ball.radius + asteroid.radius;
+    ball.x = asteroid.x + nx * reach;
+    ball.y = asteroid.y + ny * reach;
+}
+
+/// Where a ball will next reach a line on its way down, simulated tick by
+/// tick with the game's own rules: walls, bricks (which break, or lose a
+/// hit, as they would), and asteroids (which drift and blow up as they
+/// would). See [`forecast_crossing`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Forecast {
+    /// Ball center where it reaches the line.
+    pub x: f32,
+    /// Ticks from now until it does.
+    pub ticks: u32,
+    /// Ball center after each tick, from now (`path[0]` is where it is) up
+    /// to the crossing. A caller replays this to tell when the ball has
+    /// left the forecast (a paddle hit, a new asteroid) and a new one is
+    /// needed.
+    pub path: Vec<(f32, f32)>,
+}
+
+/// [`Forecast`] for `ball` against `bricks` and `asteroids`, down to
+/// `line_y` (the paddle's contact line; the paddle itself is left out, as
+/// is anything random: no asteroid spawns, no level clear). `None` if the
+/// ball is resting on the paddle, held by Glue, or still above the line
+/// after `max_ticks`.
+///
+/// It runs the same per-substep sequence `step_ball` does, through the
+/// same functions, so it reproduces the game exactly for as long as
+/// nothing it leaves out happens.
+pub fn forecast_crossing(
+    ball: &Ball,
+    bricks: &[Brick],
+    asteroids: &[Asteroid],
+    line_y: f32,
+    dt_fixed: f32,
+    max_ticks: u32,
+) -> Option<Forecast> {
+    if ball.attached || ball.glued.is_some() {
+        return None;
+    }
+    let mut ball = *ball;
+    let mut bricks = bricks.to_vec();
+    let mut asteroids = asteroids.to_vec();
+    let mut path = Vec::with_capacity(max_ticks as usize + 1);
+    path.push((ball.x, ball.y));
+    for tick in 1..=max_ticks {
+        let substeps = substep_count(ball.speed(), BALL_RADIUS, dt_fixed);
+        let sub_dt = dt_fixed / substeps as f32;
+        for _ in 0..substeps {
+            ball.x += ball.vx * sub_dt;
+            ball.y += ball.vy * sub_dt;
+            resolve_wall_collisions(&mut ball);
+            if let Some(index) = bricks.iter().position(|b| ball_hits_brick(&ball, b)) {
+                reflect_off_brick_face(&mut ball, &bricks[index]);
+                let brick = &mut bricks[index];
+                if brick.kind != BrickKind::Indestructible {
+                    brick.hits_remaining = brick.hits_remaining.saturating_sub(1);
+                    if brick.hits_remaining == 0 {
+                        bricks.remove(index);
+                    }
+                }
+            }
+            if let Some(index) = asteroids
+                .iter()
+                .position(|a| ball_touches_asteroid(&ball, a))
+            {
+                let asteroid = asteroids.remove(index);
+                bounce_off_asteroid(&mut ball, &asteroid);
+            }
+            if ball.vy > 0.0 && ball.y >= line_y {
+                path.push((ball.x, ball.y));
+                return Some(Forecast {
+                    x: ball.x,
+                    ticks: tick,
+                    path,
+                });
+            }
+        }
+        for asteroid in &mut asteroids {
+            asteroid.advance(dt_fixed);
+        }
+        path.push((ball.x, ball.y));
+    }
+    None
 }
 
 /// Bounce off the left/right/top playfield edges (bottom is handled
@@ -898,6 +1327,14 @@ fn resolve_wall_collisions(ball: &mut Ball) {
         ball.y = ball.radius;
         ball.vy = ball.vy.abs();
     }
+}
+
+/// Circle vs the paddle's rect: the closest point on the rect within the
+/// radius.
+fn circle_touches_rect(x: f32, y: f32, radius: f32, paddle: &Paddle) -> bool {
+    let dx = x - x.clamp(paddle.left(), paddle.right());
+    let dy = y - y.clamp(paddle.top(), paddle.bottom());
+    dx * dx + dy * dy <= radius * radius
 }
 
 #[cfg(test)]
@@ -1189,6 +1626,7 @@ mod tests {
             vy: -300.0,
             radius: BALL_RADIUS,
             attached: false,
+            glued: None,
         }
     }
 
@@ -1476,6 +1914,7 @@ mod tests {
                 vy: dy * BALL_SPEED_CAP,
                 radius: BALL_RADIUS,
                 attached: false,
+                glued: None,
             };
 
             // Enough ticks to cross well past the brick if it were never
@@ -1507,18 +1946,16 @@ mod tests {
     // -- power-ups: drop chance -------------------------------------------
 
     #[test]
-    fn brick_destruction_drops_one_of_the_three_powerups_about_15_percent_of_the_time() {
+    fn brick_destruction_drops_a_powerup_about_15_percent_of_the_time() {
         let mut game = playing_game();
         let mut spawned = 0;
+        let mut glue = 0;
         for _ in 0..2000 {
             game.powerups.clear();
             game.maybe_drop_powerup(400.0, 300.0);
             if let Some(powerup) = game.powerups.first() {
                 spawned += 1;
-                assert!(matches!(
-                    powerup.kind,
-                    PowerUpKind::Widen | PowerUpKind::Slow | PowerUpKind::Multiball
-                ));
+                glue += usize::from(powerup.kind == PowerUpKind::Glue);
             }
         }
         // Loose bounds around the spec'd 15% of 2000 (expect ~300, std
@@ -1528,6 +1965,348 @@ mod tests {
             (200..=400).contains(&spawned),
             "expected roughly 15% of 2000 destroyed bricks to drop a power-up, got {spawned}"
         );
+        // A quarter of the drops are Glue (expect ~75).
+        assert!(
+            (30..=130).contains(&glue),
+            "{glue} Glue drops out of {spawned}"
+        );
+    }
+
+    #[test]
+    fn v1_rules_never_drop_glue() {
+        let mut game = playing_game().with_features(Features::V1);
+        for _ in 0..2000 {
+            game.powerups.clear();
+            game.maybe_drop_powerup(400.0, 300.0);
+            if let Some(powerup) = game.powerups.first() {
+                assert!(matches!(
+                    powerup.kind,
+                    PowerUpKind::Widen | PowerUpKind::Slow | PowerUpKind::Multiball
+                ));
+            }
+        }
+    }
+
+    // -- power-ups: Glue ----------------------------------------------------
+
+    /// A playing game with Glue active and its ball falling straight onto
+    /// the paddle, `offset` px off center, one tick from contact.
+    fn glued_drop(offset: f32) -> Game {
+        let mut game = playing_game();
+        game.apply_powerup(PowerUpKind::Glue);
+        game.ball = Ball {
+            x: game.paddle.x + offset,
+            y: game.paddle.top() - BALL_RADIUS - 1.0,
+            vx: 0.0,
+            vy: 300.0,
+            radius: BALL_RADIUS,
+            attached: false,
+            glued: None,
+        };
+        game.tick(&Input::default(), DT);
+        game
+    }
+
+    #[test]
+    fn with_glue_a_paddle_hit_sticks_the_ball_where_it_landed() {
+        let game = glued_drop(20.0);
+        let glued = game.ball.glued.expect("the ball sticks");
+        assert!((glued.offset - 20.0).abs() < 1.0);
+        assert!(game.events.contains(&GameEvent::PaddleHit));
+    }
+
+    #[test]
+    fn a_glued_ball_rides_the_paddle_and_leaves_on_a_space_press_at_its_offset_angle() {
+        let mut game = glued_drop(25.0);
+        let offset = game.ball.glued.unwrap().offset;
+        for _ in 0..30 {
+            game.tick(&held(|i| i.left = true), DT);
+        }
+        assert!(
+            (game.ball.x - (game.paddle.x + offset)).abs() < 1e-3,
+            "rides along"
+        );
+        assert!(game.ball.glued.is_some());
+
+        game.tick(&held(|i| i.space = true), DT);
+        assert!(game.ball.glued.is_none(), "a press releases it");
+        let angle = (-game.ball.vy).atan2(game.ball.vx).to_degrees();
+        let expected = offset_to_exit_angle_deg(offset / (game.paddle.width / 2.0));
+        assert!((angle - expected).abs() < 0.5, "{angle} vs {expected}");
+        assert!(game.ball.vy < 0.0);
+    }
+
+    #[test]
+    fn holding_space_does_not_release_a_glued_ball_only_a_press_does() {
+        let mut game = glued_drop(0.0);
+        game.tick(&held(|i| i.space = true), DT); // the press: released
+        assert!(game.ball.glued.is_none());
+
+        let mut game = glued_drop(0.0);
+        game.space_was_held = true; // Space was already down when it stuck
+        game.tick(&held(|i| i.space = true), DT);
+        assert!(game.ball.glued.is_some(), "a held key is not a press");
+    }
+
+    #[test]
+    fn a_glued_ball_lets_go_by_itself_after_the_hold_limit() {
+        let mut game = glued_drop(0.0);
+        let ticks = (GLUE_HOLD_SECS / DT).ceil() as usize;
+        for _ in 0..ticks - 2 {
+            game.tick(&Input::default(), DT);
+        }
+        assert!(game.ball.glued.is_some());
+        game.tick(&Input::default(), DT);
+        game.tick(&Input::default(), DT);
+        assert!(game.ball.glued.is_none());
+    }
+
+    #[test]
+    fn glue_running_out_releases_a_held_ball_and_stops_catching() {
+        let mut game = glued_drop(0.0);
+        game.glue_timer = DT / 2.0;
+        game.tick(&Input::default(), DT);
+        assert!(game.ball.glued.is_none());
+        assert_eq!(game.glue_timer, 0.0);
+    }
+
+    #[test]
+    fn glue_timer_refreshes_on_recatch_instead_of_stacking() {
+        let mut game = playing_game();
+        game.apply_powerup(PowerUpKind::Glue);
+        game.glue_timer = 2.0;
+        game.apply_powerup(PowerUpKind::Glue);
+        assert_eq!(game.glue_timer, GLUE_DURATION_SECS);
+    }
+
+    #[test]
+    fn without_the_glue_feature_a_paddle_hit_never_sticks() {
+        let mut game = playing_game().with_features(Features::V1);
+        game.glue_timer = GLUE_DURATION_SECS; // even if set by hand
+        game.ball = Ball {
+            x: game.paddle.x,
+            y: game.paddle.top() - BALL_RADIUS - 1.0,
+            vx: 0.0,
+            vy: 300.0,
+            radius: BALL_RADIUS,
+            attached: false,
+            glued: None,
+        };
+        game.tick(&Input::default(), DT);
+        assert!(game.ball.glued.is_none());
+        assert!(game.ball.vy < 0.0);
+    }
+
+    // -- asteroids ----------------------------------------------------------
+
+    /// A playing game with its ball launched and kept in flight high up,
+    /// away from the paddle and the bricks' reach, for `seconds`.
+    fn fly(game: &mut Game, seconds: f32) {
+        game.ball.attached = false;
+        for _ in 0..(seconds / DT) as usize {
+            game.ball.x = 400.0;
+            game.ball.y = 300.0;
+            game.ball.vx = 0.0;
+            game.ball.vy = -1.0;
+            game.tick(&Input::default(), DT);
+        }
+    }
+
+    fn test_asteroid(x: f32, y: f32) -> Asteroid {
+        Asteroid {
+            x,
+            y,
+            vx: 0.0,
+            vy: ASTEROID_FALL_SPEED,
+            radius: ASTEROID_RADIUS,
+            drift: 0.0,
+            phase: 0.0,
+            wobble_rate: 0.0,
+        }
+    }
+
+    #[test]
+    fn asteroids_start_coming_once_the_ball_is_in_flight_and_never_on_the_serve() {
+        let mut game = Game::with_seed(7);
+        game.state = GameState::Playing;
+        for _ in 0..(ASTEROID_FIRST_SPAWN_SECS * 3.0 / DT) as usize {
+            game.tick(&Input::default(), DT); // ball still on the paddle
+        }
+        assert!(game.asteroids.is_empty(), "nothing during a serve");
+
+        fly(&mut game, ASTEROID_FIRST_SPAWN_SECS + 0.1);
+        assert_eq!(game.asteroids.len(), 1);
+        assert!(
+            game.asteroids[0].y < ASTEROID_RADIUS * 2.0,
+            "enters at the top"
+        );
+    }
+
+    #[test]
+    fn there_are_never_more_than_three_asteroids() {
+        let mut game = Game::with_seed(9);
+        game.state = GameState::Playing;
+        fly(&mut game, 12.0);
+        let mut most = 0;
+        for _ in 0..60 {
+            fly(&mut game, 1.0);
+            // Keep them up high so none leaves the field.
+            for asteroid in &mut game.asteroids {
+                asteroid.y = 200.0;
+            }
+            most = most.max(game.asteroids.len());
+        }
+        assert_eq!(most, MAX_ASTEROIDS);
+    }
+
+    #[test]
+    fn asteroids_drift_down_and_bounce_off_the_side_walls() {
+        let mut asteroid = test_asteroid(ASTEROID_RADIUS + 1.0, 100.0);
+        asteroid.drift = -ASTEROID_DRIFT_SPEED;
+        for _ in 0..60 {
+            asteroid.advance(DT);
+            assert!(asteroid.x >= ASTEROID_RADIUS);
+        }
+        assert!(asteroid.drift > 0.0, "the wall flipped its drift");
+        assert!(asteroid.y > 100.0 + ASTEROID_FALL_SPEED * 0.4);
+    }
+
+    #[test]
+    fn a_ball_blows_up_an_asteroid_and_bounces_off_it_at_the_same_speed() {
+        let mut game = playing_game();
+        game.bricks.clear();
+        game.bricks
+            .push(test_brick_at(60.0, 70.0, BrickKind::Normal, 1, 10));
+        game.ball = Ball {
+            x: 400.0,
+            y: 280.0,
+            vx: 0.0,
+            vy: 300.0,
+            radius: BALL_RADIUS,
+            attached: false,
+            glued: None,
+        };
+        game.asteroids.push(test_asteroid(404.0, 300.0));
+        let score = game.score;
+        for _ in 0..10 {
+            game.tick(&Input::default(), DT);
+            if game.asteroids.is_empty() {
+                break;
+            }
+        }
+        assert!(game.asteroids.is_empty(), "blown up");
+        assert_eq!(game.score, score + ASTEROID_SCORE);
+        assert!(game.ball.vy < 0.0, "bounced back up");
+        assert!(game.ball.vx < 0.0, "off the asteroid's left side");
+        assert!((game.ball.speed() - 300.0).abs() < 1e-2);
+        assert!(game
+            .events
+            .iter()
+            .any(|e| matches!(e, GameEvent::AsteroidExploded { .. })));
+    }
+
+    #[test]
+    fn the_paddle_blows_up_an_asteroid_it_touches() {
+        let mut game = playing_game();
+        game.ball.attached = false;
+        game.ball.x = 100.0;
+        game.ball.y = 300.0;
+        game.ball.vy = -300.0;
+        let paddle = game.paddle;
+        game.asteroids.push(test_asteroid(
+            paddle.x,
+            paddle.top() - ASTEROID_RADIUS - 0.1,
+        ));
+        game.tick(&Input::default(), DT);
+        assert!(game.asteroids.is_empty());
+        assert_eq!(game.score, ASTEROID_SCORE);
+        assert_eq!(game.lives, STARTING_LIVES, "no harm done");
+    }
+
+    #[test]
+    fn an_asteroid_past_the_paddle_just_leaves() {
+        let mut game = playing_game();
+        game.ball.attached = false;
+        game.ball.x = 100.0;
+        game.ball.y = 300.0;
+        game.ball.vy = -300.0;
+        game.asteroids.push(test_asteroid(
+            700.0,
+            game.paddle.bottom() + ASTEROID_RADIUS - 0.1,
+        ));
+        game.tick(&Input::default(), DT);
+        assert!(game.asteroids.is_empty());
+        assert_eq!(game.score, 0, "no points for one that got away");
+    }
+
+    #[test]
+    fn a_lost_life_clears_the_asteroids() {
+        let mut game = playing_game();
+        game.asteroids.push(test_asteroid(400.0, 300.0));
+        game.lose_life();
+        assert!(game.asteroids.is_empty());
+    }
+
+    #[test]
+    fn without_the_asteroids_feature_none_ever_comes() {
+        let mut game = Game::with_seed(7).with_features(Features::V1);
+        game.state = GameState::Playing;
+        fly(&mut game, 30.0);
+        assert!(game.asteroids.is_empty());
+    }
+
+    // -- stalls -------------------------------------------------------------
+
+    #[test]
+    fn a_ball_with_no_progress_for_ten_seconds_is_turned_on_its_next_bounce() {
+        // No asteroids: one drifting by would deflect the ball first.
+        let mut game = playing_game().with_features(Features {
+            asteroids: false,
+            ..Features::ALL
+        });
+        // Straight up and down between the ceiling and an indestructible
+        // brick: a closed orbit no paddle can reach.
+        game.bricks = vec![test_brick_at(400.0, 300.0, BrickKind::Indestructible, 1, 0)];
+        game.bricks
+            .push(test_brick_at(60.0, 70.0, BrickKind::Normal, 1, 10));
+        game.ball = Ball {
+            x: 400.0,
+            y: 200.0,
+            vx: 0.0,
+            vy: -300.0,
+            radius: BALL_RADIUS,
+            attached: false,
+            glued: None,
+        };
+        for _ in 0..((STALL_SECS - 0.5) / DT) as usize {
+            game.tick(&Input::default(), DT);
+        }
+        assert_eq!(game.ball.vx, 0.0, "untouched before the stall limit");
+        for _ in 0..(2.0 / DT) as usize {
+            game.tick(&Input::default(), DT);
+        }
+        assert!(game.ball.vx != 0.0, "turned once stalled");
+        let angle = (game.ball.vy.abs()).atan2(game.ball.vx.abs()).to_degrees();
+        assert!(angle >= STALL_MIN_ANGLE_DEG);
+        assert!((game.ball.speed() - 300.0).abs() < 1e-2, "speed kept");
+    }
+
+    #[test]
+    fn hitting_the_paddle_is_progress_and_restarts_the_stall_clock() {
+        let mut game = playing_game();
+        game.ball = Ball {
+            x: game.paddle.x,
+            y: game.paddle.top() - BALL_RADIUS - 1.0,
+            vx: 0.0,
+            vy: 300.0,
+            radius: BALL_RADIUS,
+            attached: false,
+            glued: None,
+        };
+        game.stall_secs = STALL_SECS - 1.0;
+        game.tick(&Input::default(), DT);
+        assert!(game.events.contains(&GameEvent::PaddleHit));
+        assert_eq!(game.stall_secs, 0.0);
     }
 
     // -- power-ups: Widen (refresh, not stack) -----------------------------
@@ -1777,7 +2556,13 @@ mod tests {
     /// property actually covers the one non-deterministic decision
     /// `game.rs` makes. Both tests below replay this same script.
     fn run_scripted_replay(seed: u64) -> u64 {
-        let mut game = Game::with_seed(seed);
+        run_scripted_replay_with(seed, Features::V1)
+    }
+
+    /// The same script with any `features`: v1's rules for the pinned
+    /// baseline, every addition for the determinism check below.
+    fn run_scripted_replay_with(seed: u64, features: Features) -> u64 {
+        let mut game = Game::with_seed(seed).with_features(features);
         game.state = GameState::Playing;
         game.tick(&held(|i| i.space = true), DT);
         for _ in 0..(120 * 25) {
@@ -1792,6 +2577,14 @@ mod tests {
             run_scripted_replay(42),
             run_scripted_replay(42),
             "same seed + same scripted input must reproduce the exact same state"
+        );
+    }
+
+    #[test]
+    fn deterministic_replay_with_every_addition_also_matches() {
+        assert_eq!(
+            run_scripted_replay_with(42, Features::ALL),
+            run_scripted_replay_with(42, Features::ALL),
         );
     }
 

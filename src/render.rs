@@ -20,8 +20,10 @@ use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
 use crate::assets::{Atlas, SpriteId, UvRect};
-use crate::events::PowerUpKind;
-use crate::game::{Ball, Brick, Game, GameState, Paddle, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH};
+use crate::events::{GameEvent, PowerUpKind};
+use crate::game::{
+    Ball, Brick, Game, GameState, Paddle, ASTEROID_RADIUS, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
+};
 use crate::levels::BrickKind;
 
 /// One corner of the shared unit quad every entity is drawn from. Kept in
@@ -129,6 +131,10 @@ const MAX_LIFE_ICONS: usize = 10;
 /// gameplay limit; `.take(N)` at the draw site is the enforcement.
 const MAX_EXTRA_BALLS: usize = 16;
 const MAX_POWERUPS: usize = 16;
+/// `game.rs` keeps at most 3 asteroids; these bound the instance buffer
+/// the same defensive way, explosions included (several can overlap).
+const MAX_ASTEROIDS: usize = 8;
+const MAX_EXPLOSIONS: usize = 8;
 
 /// Falling power-up capsules are square, smaller than a brick but bigger
 /// than the ball -- big enough to read as "catch me" at a glance.
@@ -156,7 +162,9 @@ const MAX_QUADS: usize = 2
     + 1
     + MAX_LIFE_ICONS
     + MAX_EXTRA_BALLS
-    + MAX_POWERUPS;
+    + MAX_POWERUPS
+    + MAX_ASTEROIDS
+    + MAX_EXPLOSIONS;
 
 /// Flat fallback color kept only for quads that don't carry a sprite of
 /// their own (ball trail, life icons) -- the paddle and ball's own quads
@@ -166,6 +174,19 @@ const BALL_COLOR: [f32; 4] = [1.0, 0.78, 0.2, 1.0];
 const POWERUP_WIDEN_COLOR: [f32; 4] = [0.35, 0.85, 0.40, 1.0];
 const POWERUP_SLOW_COLOR: [f32; 4] = [0.35, 0.55, 0.95, 1.0];
 const POWERUP_MULTIBALL_COLOR: [f32; 4] = [0.80, 0.35, 0.90, 1.0];
+const POWERUP_GLUE_COLOR: [f32; 4] = [0.95, 0.45, 0.65, 1.0];
+
+/// Asteroids reuse the ball's round sprite, tinted rock-orange, at their
+/// own radius: round without a sprite of their own.
+const ASTEROID_TINT: [f32; 4] = [0.85, 0.45, 0.25, 1.0];
+/// A blown-up asteroid: the same round sprite, hot and growing as it fades.
+const EXPLOSION_TINT: [f32; 3] = [1.0, 0.75, 0.3];
+const EXPLOSION_SECS: f32 = 0.35;
+/// Radius at the end of an explosion, as a multiple of the asteroid's.
+const EXPLOSION_GROWTH: f32 = 3.0;
+/// The paddle while Glue is active: the same sprite, tinted the Glue
+/// capsule's color so the player can tell a hit will stick.
+const GLUE_PADDLE_TINT: [f32; 4] = [1.0, 0.7, 0.85, 1.0];
 
 /// One distinct color per `PowerUpKind` so a falling capsule reads as
 /// "which power-up" at a glance, no icon/text needed.
@@ -174,7 +195,46 @@ fn powerup_color(kind: PowerUpKind) -> [f32; 4] {
         PowerUpKind::Widen => POWERUP_WIDEN_COLOR,
         PowerUpKind::Slow => POWERUP_SLOW_COLOR,
         PowerUpKind::Multiball => POWERUP_MULTIBALL_COLOR,
+        PowerUpKind::Glue => POWERUP_GLUE_COLOR,
     }
+}
+
+/// One asteroid explosion playing out, render-side only: spawned from a
+/// `GameEvent::AsteroidExploded` (the asteroid is already gone from `Game`
+/// by then, so its spot comes from the event), aged by wall-clock time.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Explosion {
+    x: f32,
+    y: f32,
+    age: f32,
+}
+
+impl Explosion {
+    /// Radius and alpha at its current age: grows out, fades away.
+    fn look(&self) -> (f32, f32) {
+        let t = (self.age / EXPLOSION_SECS).clamp(0.0, 1.0);
+        let radius = ASTEROID_RADIUS * (1.0 + (EXPLOSION_GROWTH - 1.0) * t);
+        (radius, 1.0 - t)
+    }
+}
+
+/// Adds one explosion per `AsteroidExploded` in `events`, up to the cap.
+fn ingest_explosions(explosions: &mut Vec<Explosion>, events: &[GameEvent]) {
+    for event in events {
+        if let GameEvent::AsteroidExploded { x, y } = *event {
+            if explosions.len() < MAX_EXPLOSIONS {
+                explosions.push(Explosion { x, y, age: 0.0 });
+            }
+        }
+    }
+}
+
+/// Ages every explosion by `dt` seconds and drops the finished ones.
+fn step_explosions(explosions: &mut Vec<Explosion>, dt: f32) {
+    for explosion in explosions.iter_mut() {
+        explosion.age += dt;
+    }
+    explosions.retain(|e| e.age < EXPLOSION_SECS);
 }
 
 /// Picks a brick's sprite from its kind and remaining hits. Armored bricks
@@ -484,6 +544,7 @@ impl RenderState {
                     vy: curr.ball.vy,
                     radius: lerp(prev.ball.radius, curr.ball.radius, alpha),
                     attached: curr.ball.attached,
+                    glued: curr.ball.glued,
                 }
             },
         }
@@ -539,6 +600,8 @@ pub struct Renderer {
     /// real elapsed `dt` the shake timer decays by (frames don't map 1:1 to
     /// fixed simulation ticks, so a tick-count-based timer would drift).
     last_frame_instant: Instant,
+    /// Asteroid explosions still playing; see `Explosion`.
+    explosions: Vec<Explosion>,
 }
 
 impl Renderer {
@@ -709,6 +772,7 @@ impl Renderer {
             prev_score: 0,
             shake_remaining: 0.0,
             last_frame_instant: Instant::now(),
+            explosions: Vec::new(),
         }
     }
 
@@ -837,6 +901,14 @@ impl Renderer {
     /// interpolation -- a level transition (bricks cleared, the next
     /// level's grid loaded) is just `curr.bricks` already being a different
     /// `Vec` by the time this runs; there's no separate state to reconcile.
+    /// Reads one tick's events before `main.rs` drains them. The rest of
+    /// this renderer's juice is diffed from `Game` state (see the
+    /// "-- juice --" comment), but an exploded asteroid leaves no state
+    /// behind to diff: it is only in the event.
+    pub fn ingest_tick_events(&mut self, events: &[GameEvent]) {
+        ingest_explosions(&mut self.explosions, events);
+    }
+
     pub fn render(
         &mut self,
         clear_color: wgpu::Color,
@@ -853,6 +925,7 @@ impl Renderer {
         let now = Instant::now();
         let dt = now.duration_since(self.last_frame_instant).as_secs_f32();
         self.last_frame_instant = now;
+        step_explosions(&mut self.explosions, dt);
 
         let score_increased = curr.score > self.prev_score;
         self.prev_score = curr.score;
@@ -895,13 +968,20 @@ impl Renderer {
                 + 1
                 + MAX_LIFE_ICONS
                 + curr.extra_balls.len().min(MAX_EXTRA_BALLS)
-                + curr.powerups.len().min(MAX_POWERUPS),
+                + curr.powerups.len().min(MAX_POWERUPS)
+                + curr.asteroids.len().min(MAX_ASTEROIDS)
+                + self.explosions.len(),
         );
+        let paddle_tint = if curr.glue_timer > 0.0 {
+            GLUE_PADDLE_TINT
+        } else {
+            WHITE_TINT
+        };
         instances.push(QuadInstance::new_textured(
             shaken(drawn.paddle.x, drawn.paddle.y),
             [drawn.paddle.width / 2.0, drawn.paddle.height / 2.0],
             self.sprite_atlas.uv_rect(SpriteId::Paddle),
-            WHITE_TINT,
+            paddle_tint,
         ));
 
         // Ball's fading trail: up to `TRAIL_LEN` quads at its last few
@@ -979,6 +1059,30 @@ impl Renderer {
                 shaken(powerup.x, powerup.y),
                 [POWERUP_HALF_SIZE, POWERUP_HALF_SIZE],
                 powerup_color(powerup.kind),
+            )
+        }));
+
+        // Asteroids, read straight off `curr` like the power-ups.
+        instances.extend(curr.asteroids.iter().take(MAX_ASTEROIDS).map(|asteroid| {
+            QuadInstance::new_textured(
+                shaken(asteroid.x, asteroid.y),
+                [asteroid.radius, asteroid.radius],
+                ball_uv,
+                ASTEROID_TINT,
+            )
+        }));
+        instances.extend(self.explosions.iter().map(|explosion| {
+            let (radius, alpha) = explosion.look();
+            QuadInstance::new_textured(
+                shaken(explosion.x, explosion.y),
+                [radius, radius],
+                ball_uv,
+                [
+                    EXPLOSION_TINT[0],
+                    EXPLOSION_TINT[1],
+                    EXPLOSION_TINT[2],
+                    alpha,
+                ],
             )
         }));
 
@@ -1393,6 +1497,7 @@ mod tests {
             vy: 0.0,
             radius: 6.0,
             attached: true,
+            glued: None,
         };
 
         push_trail(&mut trail, &ball);
@@ -1430,6 +1535,7 @@ mod tests {
                 vy: 0.0,
                 radius: 6.0,
                 attached,
+                glued: None,
             },
         }
     }

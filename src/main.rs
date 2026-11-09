@@ -63,16 +63,15 @@ impl AnyRenderer {
         }
     }
 
-    /// Forwards one tick's `GameEvent`s to whichever renderer wants them,
-    /// before `about_to_wait` drains `Game::events` for that tick (see
-    /// events.rs's drain contract). Only `render3d`'s destroy-tumble effect
-    /// (arkanoid-v2-c3) needs this today -- `render.rs`'s classic
-    /// 2D renderer derives its own juice from frame-to-frame `Game` state
-    /// diffs instead (see that module's "-- juice --" comment), so this is
-    /// a no-op for `Classic`.
+    /// Forwards one tick's `GameEvent`s to the renderer before
+    /// `about_to_wait` drains `Game::events` for that tick (see events.rs's
+    /// drain contract). Both renderers need them for effects whose subject
+    /// is already gone from `Game` by then: a destroyed brick's tumble
+    /// (3D only) and an asteroid's explosion (both).
     fn ingest_tick_events(&mut self, events: &[GameEvent]) {
-        if let Self::ThreeD(r) = self {
-            r.ingest_tick_events(events);
+        match self {
+            Self::Classic(r) => r.ingest_tick_events(events),
+            Self::ThreeD(r) => r.ingest_tick_events(events),
         }
     }
 }
@@ -419,6 +418,9 @@ fn main() {
     let event_loop = EventLoop::new().expect("failed to create event loop");
     let mut app = App::new(atlas);
     app.renderer_kind = args.renderer;
+    if args.classic {
+        app.game = Game::new().with_features(game::Features::V1);
+    }
     // Feed a successfully-resolved `--levelset` load into `Game` before the
     // event loop starts driving frames (arkanoid-v2-a8's integration job --
     // see `Game::load_external_levels`'s doc comment). A `None` here (no

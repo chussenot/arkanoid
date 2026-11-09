@@ -14,7 +14,8 @@
 //! finding it on the event. The only payload carried here is what a reactor
 //! cannot otherwise recover — which power-up kind spawned or was caught.
 
-/// The three power-ups a brick can drop (spec: exactly these three, no more).
+/// The power-ups a brick can drop: v1's three, plus Glue (docs/spec.md,
+/// "Additions after v1"; off under `game::Features::V1`).
 ///
 /// ponytail: no code constructs these yet -- brick/power-up gameplay lands
 /// in M3/M4. `#[allow(dead_code)]` until then; drop it once `game.rs` emits
@@ -25,6 +26,7 @@ pub enum PowerUpKind {
     Widen,
     Slow,
     Multiball,
+    Glue,
 }
 
 /// Something the simulation did this tick.
@@ -41,6 +43,12 @@ pub enum GameEvent {
     /// counts these as rallies: each one is a point where a new shot is
     /// planned.
     PaddleHit,
+    /// An asteroid drifted in from the top.
+    AsteroidSpawned,
+    /// An asteroid was blown up by a ball or the paddle, at its last
+    /// position: it is gone from `Game::asteroids` by the time this fires,
+    /// so the renderers' explosion effect reads its spot from here.
+    AsteroidExploded { x: f32, y: f32 },
     /// A ball fell below the bottom edge. Fires once per ball, including
     /// during multiball — see `LifeLost` for the life-loss rule.
     BallLost,

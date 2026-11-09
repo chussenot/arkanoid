@@ -34,7 +34,9 @@ use std::fmt;
 use std::time::Duration;
 
 use crate::events::GameEvent;
-use crate::game::{Ball, Game, GameState, Input, Paddle, POWERUP_FALL_SPEED};
+use crate::game::{
+    forecast_crossing, Ball, Forecast, Game, GameState, Input, Paddle, POWERUP_FALL_SPEED,
+};
 use board::{Board, LANES};
 
 /// Lowest confidence at which a model's lane is used over the heuristic.
@@ -56,6 +58,10 @@ const SERVE_WAIT_SECS: f32 = 1.5;
 /// its very next answer.
 const LOOP_OVERRIDE_RALLIES: u32 = 4;
 
+/// How far ahead a forecast looks, in ticks (three seconds). A ball still
+/// up among the bricks past that gets the straight-line guess instead.
+const FORECAST_TICKS: u32 = 360;
+
 /// Shortens a power-up catch's return trip estimate: a rising ball's
 /// predicted landing is coarse until it has bounced off whatever it hits.
 const CATCH_RETURN_MARGIN: f32 = 0.6;
@@ -76,6 +82,8 @@ pub struct Situation {
     pub lives: u32,
     pub level: usize,
     pub rallies_without_progress: u32,
+    /// Asteroid centers.
+    pub asteroids: Vec<(f32, f32)>,
 }
 
 /// A strategist's answer: the lane to attack and how sure it is.
@@ -188,6 +196,21 @@ pub struct Autopilot {
     since_consulted: u32,
     log: bool,
     stats: Stats,
+    /// Space as held on the last tick. Releasing a glued ball takes a
+    /// press, so a release is a false-to-true edge, never a held key.
+    space_held: bool,
+    /// One forecast per ball in the fleet (`game.ball` first), replayed a
+    /// tick at a time while the ball stays on it, so a new one is computed
+    /// only when something the forecast left out happens: the paddle, a
+    /// new asteroid, another ball breaking a brick first.
+    forecasts: Vec<Option<Tracked>>,
+}
+
+/// A forecast and how many ticks of it have played out.
+#[derive(Debug, Clone)]
+struct Tracked {
+    forecast: Forecast,
+    step: usize,
 }
 
 impl Autopilot {
@@ -209,6 +232,8 @@ impl Autopilot {
             since_consulted: 0,
             log: false,
             stats: Stats::default(),
+            space_held: false,
+            forecasts: Vec::new(),
         }
     }
 
@@ -242,6 +267,7 @@ impl Autopilot {
             GameState::Playing => self.pilot(game, dt, &mut input),
             GameState::Paused | GameState::GameOver | GameState::Victory => {}
         }
+        self.space_held = input.space;
         input
     }
 
@@ -291,15 +317,37 @@ impl Autopilot {
         }
         self.serve = Serve::InPlay;
 
-        let balls = std::iter::once(&game.ball).chain(&game.extra_balls);
-        let Some(hit) = pilot::next_intercept(balls, paddle) else {
+        // A glued ball leaves with the velocity its paddle hit gave it, from
+        // wherever the paddle carries it: line it up with the target, then
+        // press Space. Not while another ball is in flight, though: the
+        // paddle is needed under that one, so the glued ball goes at once.
+        let fleet = || std::iter::once(&game.ball).chain(&game.extra_balls);
+        if let Some(ball) = fleet().find(|b| b.glued.is_some()) {
+            let offset = ball.glued.map_or(0.0, |g| g.offset);
+            let others_in_flight = fleet().any(|b| b.glued.is_none() && !b.attached);
+            let release_x = pilot::release_x_for(self.aim_point(&board), ball, offset, paddle);
+            let ready = match release_x {
+                Some(x) if !others_in_flight => {
+                    (input.left, input.right) = pilot::steer(paddle.x, x, dt);
+                    !input.left && !input.right
+                }
+                _ => true,
+            };
+            // A press is an edge: let go for a tick if Space is still down.
+            input.space = ready && !self.space_held;
+            if !others_in_flight {
+                return;
+            }
+        }
+
+        let Some(hit) = self.next_intercept(game, dt) else {
             return;
         };
         let line_y = pilot::contact_line(paddle, &game.ball);
         let safe_x = pilot::paddle_x_for(hit.x, 0.0, paddle);
         let offset = pilot::aim_offset(hit.x, line_y, self.aim_point(&board));
         let aimed_x = pilot::paddle_x_for(hit.x, offset, paddle);
-        let mut target_x = if pilot::reachable(paddle.x, aimed_x, hit.time) {
+        let mut target_x = if hit.exact && pilot::reachable(paddle.x, aimed_x, hit.time) {
             aimed_x
         } else {
             safe_x
@@ -327,16 +375,79 @@ impl Autopilot {
         (input.left, input.right) = pilot::steer(paddle.x, target_x, dt);
     }
 
+    /// The ball the paddle must deal with next, the one reaching its
+    /// contact line soonest, and where and when it gets there: from an exact
+    /// forecast when one reaches the line within `FORECAST_TICKS`, the
+    /// straight-line guess otherwise. Every other ball in a multiball is on
+    /// its own; the game only spends a life when the last one drops.
+    fn next_intercept(&mut self, game: &Game, dt: f32) -> Option<pilot::Intercept> {
+        let fleet: Vec<&Ball> = std::iter::once(&game.ball)
+            .chain(&game.extra_balls)
+            .collect();
+        self.forecasts.resize(fleet.len(), None);
+        let mut best: Option<pilot::Intercept> = None;
+        for (ball, tracked) in fleet.iter().zip(self.forecasts.iter_mut()) {
+            if ball.attached || ball.glued.is_some() {
+                *tracked = None;
+                continue;
+            }
+            let line_y = pilot::contact_line(&game.paddle, ball);
+            let on_track = tracked.as_mut().is_some_and(|t| {
+                t.step += 1;
+                t.forecast
+                    .path
+                    .get(t.step)
+                    .is_some_and(|&(x, y)| (x - ball.x).abs() < 1e-3 && (y - ball.y).abs() < 1e-3)
+            });
+            if !on_track {
+                *tracked = forecast_crossing(
+                    ball,
+                    &game.bricks,
+                    &game.asteroids,
+                    line_y,
+                    dt,
+                    FORECAST_TICKS,
+                )
+                .map(|forecast| Tracked { forecast, step: 0 });
+            }
+            let hit = match tracked {
+                Some(t) => pilot::Intercept {
+                    x: t.forecast.x,
+                    time: (t.forecast.ticks as usize).saturating_sub(t.step) as f32 * dt,
+                    exact: true,
+                },
+                None => match pilot::predict_intercept(ball, line_y) {
+                    Some(guess) => guess,
+                    None => continue,
+                },
+            };
+            if best.is_none_or(|b| hit.time < b.time) {
+                best = Some(hit);
+            }
+        }
+        best
+    }
+
     /// The point a shot is aimed at: the plan's lane target, nudged
     /// sideways while shots are not breaking anything so a looping
-    /// trajectory does not repeat exactly.
+    /// trajectory does not repeat exactly. Once the shot counts as looping
+    /// (`LOOP_OVERRIDE_RALLIES`), the nudge becomes a sweep of the whole
+    /// field: the bricks left at that point are often reachable only by a
+    /// bank shot no lane target describes, and an aim this precise would
+    /// otherwise replay the same few trajectories forever.
     fn aim_point(&self, board: &Board) -> (f32, f32) {
         let (x, y) = board.lanes[self.plan.lane].target;
         if self.fruitless < 2 {
             return (x, y);
         }
-        let nudge = ((self.fruitless * 23) % 40) as f32 - 20.0;
-        (x + nudge, y)
+        if self.fruitless < LOOP_OVERRIDE_RALLIES {
+            let nudge = ((self.fruitless * 23) % 40) as f32 - 20.0;
+            return (x + nudge, y);
+        }
+        // Golden-ratio steps: successive shots spread evenly over the
+        // width and never fall back into a short cycle.
+        let fraction = (self.fruitless as f32 * 0.618_034).fract();
+        (40.0 + fraction * (crate::game::PLAYFIELD_WIDTH - 80.0), y)
     }
 
     /// After a paddle hit: keep, replace or re-ask for the lane.
@@ -387,6 +498,7 @@ impl Autopilot {
                 lives: game.lives,
                 level: game.level,
                 rallies_without_progress: self.fruitless,
+                asteroids: game.asteroids.iter().map(|a| (a.x, a.y)).collect(),
             },
         );
     }
@@ -452,6 +564,7 @@ impl Autopilot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::GLUE_HOLD_SECS;
     use std::collections::VecDeque;
 
     const DT: f32 = 1.0 / 120.0;
@@ -626,11 +739,106 @@ mod tests {
     }
 
     #[test]
+    fn the_autopilot_aims_and_releases_glued_balls_itself() {
+        let mut game = Game::with_seed(1);
+        game.state = GameState::Playing;
+        let mut autopilot = Autopilot::new(None, 1);
+        let mut releases = Vec::new();
+        for _ in 0..ALL_LEVELS {
+            game.glue_timer = 10.0; // Glue all game long.
+            let held = game.ball.glued.map(|g| g.held);
+            let input = autopilot.input(&game, DT);
+            game.tick(&input, DT);
+            autopilot.observe(&game);
+            game.events.clear();
+            if let (Some(held), None) = (held, game.ball.glued) {
+                releases.push(held);
+            }
+            if releases.len() >= 20 || game.state != GameState::Playing {
+                break;
+            }
+        }
+        assert!(releases.len() >= 20, "only {} releases", releases.len());
+        let pressed = releases
+            .iter()
+            .filter(|&&h| h < GLUE_HOLD_SECS - DT)
+            .count();
+        assert!(
+            pressed * 10 >= releases.len() * 9,
+            "most releases are Space presses, not the hold limit: {releases:?}"
+        );
+    }
+
+    #[test]
     fn the_autopilot_starts_the_game_from_the_menu() {
         let mut game = Game::with_seed(1);
         let mut autopilot = Autopilot::new(None, 1);
         assert!(autopilot.input(&game, DT).space);
         game.tick(&autopilot.input(&game, DT), DT);
         assert_eq!(game.state, GameState::Playing);
+    }
+}
+
+/// Not part of `cargo test`: plays every feature set over twenty seeds and
+/// prints wins, lives lost and game time, the numbers in docs/autopilot.md.
+/// `cargo test --release -- --ignored --nocapture benchmark_`
+#[cfg(test)]
+mod benchmark {
+    use super::*;
+    use crate::game::Features;
+
+    #[test]
+    #[ignore = "a benchmark: about thirty seconds in release"]
+    fn benchmark_feature_sets() {
+        let sets = [
+            ("v1", Features::V1),
+            (
+                "glue",
+                Features {
+                    glue: true,
+                    asteroids: false,
+                },
+            ),
+            (
+                "asteroids",
+                Features {
+                    glue: false,
+                    asteroids: true,
+                },
+            ),
+            ("all", Features::ALL),
+        ];
+        for (name, features) in sets {
+            let (mut wins, mut lives_lost, mut total, mut longest) = (0, 0, 0, 0);
+            for seed in 1..=20 {
+                let mut game = Game::with_seed(seed).with_features(features);
+                let mut autopilot = Autopilot::new(None, 1);
+                let mut ticks = 0u32;
+                while ticks < 120 * 1800
+                    && !matches!(game.state, GameState::Victory | GameState::GameOver)
+                {
+                    let input = autopilot.input(&game, 1.0 / 120.0);
+                    game.tick(&input, 1.0 / 120.0);
+                    autopilot.observe(&game);
+                    game.events.clear();
+                    ticks += 1;
+                }
+                lives_lost += 3 - game.lives.min(3);
+                if game.state == GameState::Victory {
+                    wins += 1;
+                    total += ticks / 120;
+                    longest = longest.max(ticks / 120);
+                } else {
+                    println!(
+                        "  {name} seed {seed}: {:?} at level {}",
+                        game.state, game.level
+                    );
+                }
+            }
+            let mean = total.checked_div(wins).unwrap_or(0);
+            println!(
+                "{name}: {wins}/20 won, {lives_lost} lives lost, won in {mean} s on average, {longest} s at most"
+            );
+        }
     }
 }

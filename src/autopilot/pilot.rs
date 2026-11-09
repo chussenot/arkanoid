@@ -26,6 +26,10 @@ pub struct Intercept {
     pub x: f32,
     /// Seconds from now.
     pub time: f32,
+    /// From an exact forecast (`game::forecast_crossing`), as opposed to
+    /// the straight-line guess of [`predict_intercept`]. Only an exact one
+    /// is worth aiming on: a guess is wrong as soon as a brick is in the way.
+    pub exact: bool,
 }
 
 /// Folds an unbounded x back into `[lo, hi]` the way the side walls reflect
@@ -69,20 +73,11 @@ pub fn predict_intercept(ball: &Ball, line_y: f32) -> Option<Intercept> {
         ball.radius,
         PLAYFIELD_WIDTH - ball.radius,
     );
-    Some(Intercept { x, time })
-}
-
-/// The ball the paddle must deal with next: the one reaching the contact
-/// line soonest. Every other ball in a multiball is on its own; the game
-/// only spends a life when the last one drops.
-pub fn next_intercept<'a>(
-    balls: impl IntoIterator<Item = &'a Ball>,
-    paddle: &Paddle,
-) -> Option<Intercept> {
-    balls
-        .into_iter()
-        .filter_map(|ball| predict_intercept(ball, contact_line(paddle, ball)))
-        .min_by(|a, b| a.time.total_cmp(&b.time))
+    Some(Intercept {
+        x,
+        time,
+        exact: false,
+    })
 }
 
 /// Inverse of `offset_to_exit_angle_deg` on its linear part: the offset
@@ -120,6 +115,20 @@ pub fn serve_x_for(target: (f32, f32), ball: &Ball, paddle: &Paddle) -> f32 {
     (target_x - run).clamp(half, PLAYFIELD_WIDTH - half)
 }
 
+/// Paddle center from which a glued ball, released with the velocity its
+/// paddle hit gave it from `offset` pixels off the paddle's center,
+/// reaches `target`; kept inside the walls. `None` for a ball that would
+/// not leave upward.
+pub fn release_x_for(target: (f32, f32), ball: &Ball, offset: f32, paddle: &Paddle) -> Option<f32> {
+    if ball.vy >= 0.0 {
+        return None;
+    }
+    let (target_x, target_y) = target;
+    let run = (ball.y - target_y).max(0.0) * ball.vx / -ball.vy;
+    let half = paddle.width / 2.0;
+    Some((target_x - run - offset).clamp(half, PLAYFIELD_WIDTH - half))
+}
+
 /// Can the paddle travel from `from` to `to` in `time` seconds? A 10%
 /// margin covers the half-step deadband of [`steer`].
 pub fn reachable(from: f32, to: f32, time: f32) -> bool {
@@ -154,6 +163,7 @@ mod tests {
             vy,
             radius: 6.0,
             attached: false,
+            glued: None,
         }
     }
 
@@ -242,6 +252,23 @@ mod tests {
         assert!((landed - target.0).abs() < 1e-2);
         // Too far left for any serve: the leftmost one.
         assert_eq!(serve_x_for((60.0, 200.0), &b, &paddle), 50.0);
+    }
+
+    #[test]
+    fn release_x_for_lines_up_a_glued_ball_with_the_target() {
+        let paddle = Paddle {
+            x: 400.0,
+            y: 562.0,
+            width: 100.0,
+            height: 16.0,
+        };
+        // Leaving up and to the left at 45°, 20 px right of center.
+        let b = ball(420.0, 548.0, -300.0, -300.0);
+        let target = (200.0, 248.0);
+        let x = release_x_for(target, &b, 20.0, &paddle).unwrap();
+        let launch_x = x + 20.0;
+        assert!((launch_x - (b.y - target.1) - target.0).abs() < 1e-3);
+        assert!(release_x_for(target, &ball(400.0, 548.0, 0.0, 300.0), 0.0, &paddle).is_none());
     }
 
     #[test]
