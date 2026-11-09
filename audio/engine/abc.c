@@ -279,6 +279,13 @@ static void parse_extras(const char *val, AbcExtras *x)
         x->accents_marked = strncmp(accents + 8, "marked", 6) == 0;
         x->set |= 1u << 10;
     }
+    {
+        const char *bl = strstr(val, "bandlimit=");
+        if (bl) {
+            x->bandlimit = strncmp(bl + 10, "on", 2) == 0;
+            x->set |= 1u << 11;
+        }
+    }
 }
 
 /* BRYX: a voice takes each extra it did not set from its instrument. */
@@ -286,11 +293,13 @@ static void merge_extras(AbcExtras *voice, const AbcExtras *inst)
 {
     int *dst[] = { &voice->detune_cents, &voice->stack, &voice->pwm_depth, &voice->pwm_rate,
                    &voice->vibrato_rate, &voice->vibrato_delay_ms, &voice->accent_gain,
-                   &voice->pitch, &voice->pitch_time, &voice->noise, &voice->accents_marked };
+                   &voice->pitch, &voice->pitch_time, &voice->noise, &voice->accents_marked,
+                   &voice->bandlimit };
     const int *src[] = { &inst->detune_cents, &inst->stack, &inst->pwm_depth, &inst->pwm_rate,
                          &inst->vibrato_rate, &inst->vibrato_delay_ms, &inst->accent_gain,
-                         &inst->pitch, &inst->pitch_time, &inst->noise, &inst->accents_marked };
-    for (int i = 0; i < 11; i++) {
+                         &inst->pitch, &inst->pitch_time, &inst->noise, &inst->accents_marked,
+                         &inst->bandlimit };
+    for (int i = 0; i < 12; i++) {
         if (!(voice->set & (1u << i)) && (inst->set & (1u << i))) {
             *dst[i] = *src[i];
             voice->set |= 1u << i;
@@ -579,6 +588,9 @@ static void parse_numbered_effect_directive(AbcMusic *music, const char *val)
     bus->ladder_cutoff = parse_int_param(val, "ladder_cutoff=", bus->ladder_cutoff);
     bus->ladder_resonance = parse_int_param(val, "ladder_resonance=", bus->ladder_resonance);
     if (strstr(val, "mode=insert")) bus->insert = 1;
+    bus->reverb_mix = parse_int_param(val, "reverb=", bus->reverb_mix);
+    bus->reverb_size = parse_int_param(val, "reverb_size=", bus->reverb_size);
+    bus->reverb_damp = parse_int_param(val, "reverb_damp=", bus->reverb_damp);
     {
         const char *key = strstr(val, "sidechain_key=");
         if (key) sscanf(key + 14, "%31s", bus->sidechain_key);
@@ -1048,6 +1060,14 @@ int abc_load(const char *path, AbcMusic *music)
             continue;
         }
         /* BRYX: %%hold on, and %%master <percent of full gain> */
+        if (strncmp(line, "%%bandlimit", 11) == 0) {
+            music->bandlimit = strstr(line + 11, "on") != NULL;
+            continue;
+        }
+        if (strncmp(line, "%%loop", 6) == 0) {
+            music->loop = strstr(line + 6, "on") != NULL;
+            continue;
+        }
         if (strncmp(line, "%%hold", 6) == 0) {
             music->hold = strstr(line + 6, "on") != NULL;
             continue;
@@ -1212,40 +1232,43 @@ int abc_load_voices(const char *paths[], int path_count, AbcMusic *music)
     music->fx_sidechain_release_ms = ABC_DEFAULT_SIDECHAIN_RELEASE_MS;
     music->fx_bus_count = ABC_DEFAULT_FX_BUS_COUNT;
 
+    /* BRYX: on the heap, see audio_engine.c. */
+    AbcMusic *single = malloc(sizeof(*single));
+    if (!single) return -1;
     for (int i = 0; i < path_count && i < ABC_MAX_VOICES; i++) {
-        AbcMusic single;
-        if (abc_load(paths[i], &single) != 0) continue;
+        if (abc_load(paths[i], single) != 0) continue;
 
         /* copy first voice from each file */
-        if (single.voice_count > 0 && music->voice_count < ABC_MAX_VOICES) {
-            music->voices[music->voice_count] = single.voices[0];
+        if (single->voice_count > 0 && music->voice_count < ABC_MAX_VOICES) {
+            music->voices[music->voice_count] = single->voices[0];
             music->voice_count++;
         }
 
         /* use tempo from first file */
         if (i == 0) {
-            music->bpm = single.bpm;
-            music->step_ms = single.step_ms;
-            music->swing_pct = single.swing_pct;
-            music->instrument_count = single.instrument_count;
-            memcpy(music->instruments, single.instruments, sizeof(music->instruments));
-            music->pattern_count = single.pattern_count;
-            memcpy(music->patterns, single.patterns, sizeof(music->patterns));
-            music->arrangement_length = single.arrangement_length;
-            memcpy(music->arrangement, single.arrangement, sizeof(music->arrangement));
-            music->fx_bus_count = single.fx_bus_count;
-            memcpy(music->fx_buses, single.fx_buses, sizeof(music->fx_buses));
-            music->fx_delay_steps = single.fx_delay_steps;
-            music->fx_delay_feedback = single.fx_delay_feedback;
-            music->fx_delay_mix = single.fx_delay_mix;
-            music->fx_drive_amount = single.fx_drive_amount;
-            music->fx_lowpass_amount = single.fx_lowpass_amount;
-            music->fx_sidechain_amount = single.fx_sidechain_amount;
-            music->fx_sidechain_release_ms = single.fx_sidechain_release_ms;
-            snprintf(music->title, sizeof(music->title), "%s", single.title);
+            music->bpm = single->bpm;
+            music->step_ms = single->step_ms;
+            music->swing_pct = single->swing_pct;
+            music->instrument_count = single->instrument_count;
+            memcpy(music->instruments, single->instruments, sizeof(music->instruments));
+            music->pattern_count = single->pattern_count;
+            memcpy(music->patterns, single->patterns, sizeof(music->patterns));
+            music->arrangement_length = single->arrangement_length;
+            memcpy(music->arrangement, single->arrangement, sizeof(music->arrangement));
+            music->fx_bus_count = single->fx_bus_count;
+            memcpy(music->fx_buses, single->fx_buses, sizeof(music->fx_buses));
+            music->fx_delay_steps = single->fx_delay_steps;
+            music->fx_delay_feedback = single->fx_delay_feedback;
+            music->fx_delay_mix = single->fx_delay_mix;
+            music->fx_drive_amount = single->fx_drive_amount;
+            music->fx_lowpass_amount = single->fx_lowpass_amount;
+            music->fx_sidechain_amount = single->fx_sidechain_amount;
+            music->fx_sidechain_release_ms = single->fx_sidechain_release_ms;
+            snprintf(music->title, sizeof(music->title), "%s", single->title);
         }
     }
 
+    free(single);
     return (music->voice_count > 0) ? 0 : -1;
 }
 
@@ -1304,6 +1327,7 @@ int abc_build_seq_song(const AbcMusic *music, SeqSong *song)
             if (x->set & (1u << 7)) inst->pitch_env_cents = dsp_clampi(x->pitch, -48, 48) * 100;
             inst->pitch_env_ms = (x->set & (1u << 8)) ? dsp_clampi(x->pitch_time, 1, 2000) : 40;
             if (x->set & (1u << 9)) inst->noise_clock = dsp_clampi(x->noise, 0, 2);
+            inst->bandlimit = (x->set & (1u << 11)) ? x->bandlimit : music->bandlimit;
         }
         if (inst->waveform == DSP_WAVE_NOISE)
             inst->noise_mode = 1;
@@ -1330,6 +1354,9 @@ int abc_build_seq_song(const AbcMusic *music, SeqSong *song)
         /* BRYX: insert mode, and a sidechain keyed by a voice's name or its
          * instrument's. */
         dst->insert = src->insert ? 1 : 0;
+        dst->reverb_mix = dsp_clampi(src->reverb_mix, 0, 100);
+        dst->reverb_size = dsp_clampi(src->reverb_size > 0 ? src->reverb_size : 50, 0, 100);
+        dst->reverb_damp = dsp_clampi(src->reverb_damp > 0 ? src->reverb_damp : 50, 0, 100);
         dst->sidechain_key = 0;
         if (src->sidechain_key[0]) {
             for (int t = 0; t < track_count; t++) {
@@ -1342,6 +1369,7 @@ int abc_build_seq_song(const AbcMusic *music, SeqSong *song)
         }
     }
     song->master_permille = music->master_permille;
+    song->loop = music->loop;
     for (int t = 0; t < track_count && !song->chord_voices; t++)
         for (int n = 0; n < music->voices[t].note_count; n++)
             if (music->voices[t].freqs2[n] > 0.0) {
@@ -1356,6 +1384,7 @@ int abc_build_seq_song(const AbcMusic *music, SeqSong *song)
             { "ladder_cutoff", SEQ_RAMP_LADDER_CUTOFF }, { "ladder_resonance", SEQ_RAMP_LADDER_RESONANCE },
             { "lowpass", SEQ_RAMP_LOWPASS }, { "delay_mix", SEQ_RAMP_DELAY_MIX },
             { "drive", SEQ_RAMP_DRIVE }, { "mix", SEQ_RAMP_BUS_MIX }, { "duty", SEQ_RAMP_DUTY },
+            { "reverb", SEQ_RAMP_REVERB_MIX }, { "tempo", SEQ_RAMP_TEMPO },
         };
         const AbcRamp *src = &music->ramps[i];
         SeqRamp *dst = &song->ramps[song->ramp_count];
@@ -1368,7 +1397,9 @@ int abc_build_seq_song(const AbcMusic *music, SeqSong *song)
                 found = 1;
             }
         }
-        if (strncmp(src->target, "bus", 3) == 0 && dst->param != SEQ_RAMP_DUTY) {
+        if (dst->param == SEQ_RAMP_TEMPO) {
+            dst->bus = SEQ_MAX_FX_BUSES; /* the song itself: no bus, no track */
+        } else if (strncmp(src->target, "bus", 3) == 0 && dst->param != SEQ_RAMP_DUTY) {
             dst->bus = atoi(src->target + 3);
         } else if (dst->param == SEQ_RAMP_DUTY) {
             for (int t = 0; t < track_count; t++) {
@@ -1447,11 +1478,14 @@ int abc_build_seq_song(const AbcMusic *music, SeqSong *song)
 
 unsigned char *abc_generate_pcm(const AbcMusic *music, int *out_len)
 {
-    SeqSong song;
+    SeqSong *song;
+    unsigned char *pcm = NULL;
 
     if (!out_len) return NULL;
     *out_len = 0;
-    if (abc_build_seq_song(music, &song) != 0)
-        return NULL;
-    return audio_mix_render_song(&song, SAMPLE_RATE_ABC, out_len);
+    song = calloc(1, sizeof(*song)); /* BRYX: heap, see audio_engine.c */
+    if (song && abc_build_seq_song(music, song) == 0)
+        pcm = audio_mix_render_song(song, SAMPLE_RATE_ABC, out_len);
+    free(song);
+    return pcm;
 }

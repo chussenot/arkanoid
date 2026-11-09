@@ -52,6 +52,33 @@ void dsp_osc_set_pulse_width_percent(DspOscillator *osc, int duty_percent)
     osc->pulse_width = u32_from_fraction((double)duty_percent / 100.0);
 }
 
+/* BRYX: the PolyBLEP residual for a step at phase 0, t and dt as
+ * fractions of a cycle. */
+static double poly_blep(double t, double dt)
+{
+    if (t < dt) {
+        t /= dt;
+        return t + t - t * t - 1.0;
+    }
+    if (t > 1.0 - dt) {
+        t = (t - 1.0) / dt;
+        return t * t + t + t + 1.0;
+    }
+    return 0.0;
+}
+
+static int bandlimited_pulse(const DspOscillator *osc, uint32_t width)
+{
+    double t = (double)osc->phase / DSP_PHASE_SCALE_U32;
+    double dt = (double)osc->increment / DSP_PHASE_SCALE_U32;
+    double pw = (double)width / DSP_PHASE_SCALE_U32;
+    double v = (t < pw) ? 1.0 : -1.0;
+    double t2 = t - pw;
+    if (t2 < 0.0) t2 += 1.0;
+    v += poly_blep(t, dt) - poly_blep(t2, dt);
+    return (int)lrint(v * osc->amplitude);
+}
+
 int dsp_osc_next(DspOscillator *osc)
 {
     int sample = 0;
@@ -59,10 +86,12 @@ int dsp_osc_next(DspOscillator *osc)
 
     switch (osc->waveform) {
         case DSP_WAVE_SQUARE:
-            sample = (phase < 0x80000000u) ? osc->amplitude : -osc->amplitude;
+            sample = osc->bandlimit ? bandlimited_pulse(osc, 0x80000000u)
+                                    : ((phase < 0x80000000u) ? osc->amplitude : -osc->amplitude);
             break;
         case DSP_WAVE_PULSE:
-            sample = (phase < osc->pulse_width) ? osc->amplitude : -osc->amplitude;
+            sample = osc->bandlimit ? bandlimited_pulse(osc, osc->pulse_width)
+                                    : ((phase < osc->pulse_width) ? osc->amplitude : -osc->amplitude);
             break;
         case DSP_WAVE_TRIANGLE: {
             uint32_t p = phase >> 16;

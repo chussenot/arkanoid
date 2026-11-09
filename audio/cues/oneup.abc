@@ -6,6 +6,7 @@ L:1/16
 Q:1/4=360
 K:C
 %%hold on
+%%bandlimit on
 %%master 107.5
 %%instrument horn wave=pulse amp=43 duty=25 attack=4 decay=80 sustain=70 release=160 gate=85 vibrato=6 fx=0
 %%instrument sub wave=triangle amp=36 attack=2 decay=90 sustain=60 release=160 gate=85 fx=0

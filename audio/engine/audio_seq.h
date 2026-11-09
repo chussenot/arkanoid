@@ -4,11 +4,12 @@
 #include <stdint.h>
 #include "audio_dsp.h"
 
+/* BRYX: 12 tracks and 64 patterns of 64 steps (256 bars), from 8 and 16. */
 #define SEQ_MAX_STEPS        64
-#define SEQ_MAX_TRACKS       8
-#define SEQ_MAX_PATTERNS     16
-#define SEQ_MAX_ARRANGEMENT  16
-#define SEQ_MAX_INSTRUMENTS  8
+#define SEQ_MAX_TRACKS       12
+#define SEQ_MAX_PATTERNS     64
+#define SEQ_MAX_ARRANGEMENT  64
+#define SEQ_MAX_INSTRUMENTS  12
 #define SEQ_MAX_FX_BUSES     4
 #define SEQ_MAX_TIMELINE_STEPS (SEQ_MAX_STEPS * SEQ_MAX_ARRANGEMENT)
 
@@ -31,6 +32,9 @@ typedef struct {
     int insert;            /* 1: the bus replaces its voices' dry signal instead of adding to it */
     int sidechain_key;     /* track index + 1 whose note-ons trigger this bus's sidechain; the
                               keyed sidechain ducks this bus only, never the master */
+    int reverb_mix;        /* BRYX: reverb added to the bus, 0..100 (0 = none) */
+    int reverb_size;       /* BRYX: room size 0..100 */
+    int reverb_damp;       /* BRYX: high-frequency damping 0..100 */
 } SeqFxBus;
 
 typedef struct {
@@ -52,6 +56,7 @@ typedef struct {
     int pitch_env_cents;   /* BRYX: a note starts this far off its pitch and sweeps home... */
     int pitch_env_ms;      /* BRYX: ...over this long (a chip kick, a tom, a zap) */
     int noise_clock;       /* BRYX: 0 white, 1 long LFSR, 2 metal LFSR (see DspOscillator) */
+    int bandlimit;         /* BRYX: PolyBLEP square and pulse (see DspOscillator) */
 } SeqInstrument;
 
 typedef struct {
@@ -87,7 +92,9 @@ typedef enum {
     SEQ_RAMP_DELAY_MIX,
     SEQ_RAMP_DRIVE,
     SEQ_RAMP_BUS_MIX,
-    SEQ_RAMP_DUTY            /* a track's pulse width, taken at each note-on */
+    SEQ_RAMP_DUTY,           /* a track's pulse width, taken at each note-on */
+    SEQ_RAMP_REVERB_MIX,     /* BRYX phase 3 */
+    SEQ_RAMP_TEMPO           /* BRYX phase 3: the song's BPM, step by step (the timeline) */
 } SeqRampParam;
 
 #define SEQ_MAX_RAMPS 32
@@ -117,6 +124,8 @@ typedef struct {
     SeqFxBus fx_buses[SEQ_MAX_FX_BUSES];
     int master_permille;   /* BRYX: output gain in 1/1000ths; 0 means 1000 (unity) */
     int chord_voices;      /* BRYX: 1 when any track writes chords (more voices per track) */
+    int loop;              /* BRYX: %%loop on: render twice, keep the second pass, so the
+                              seam carries the end's tails into the start */
     int ramp_count;        /* BRYX */
     SeqRamp ramps[SEQ_MAX_RAMPS];
 } SeqSong;

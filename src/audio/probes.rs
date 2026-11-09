@@ -182,3 +182,81 @@ fn a_quiet_voice_keeps_its_shape() {
     levels.dedup();
     assert!(levels.len() > 500, "{} levels", levels.len());
 }
+
+#[test]
+fn band_limiting_removes_the_aliases_and_keeps_the_note() {
+    // A7 (3,520 Hz) as a square: its 5th, 7th and 9th harmonics fold back
+    // below Nyquist at 4,450, 2,590 and 9,630 Hz, none a harmonic of A7.
+    let b = probe("bandlimit");
+    let (hard, smooth) = (steps(&b, 1.0, 7.0), steps(&b, 17.0, 23.0));
+    for alias in [4450.0, 2590.0, 9630.0] {
+        let (h, s) = (tone(hard, alias), tone(smooth, alias));
+        assert!(
+            s < h / 10.0,
+            "alias at {alias} Hz: hard {h:.0}, band-limited {s:.0}"
+        );
+    }
+    let (h, s) = (tone(hard, 3520.0), tone(smooth, 3520.0));
+    assert!(
+        s > 0.85 * h,
+        "the note itself: hard {h:.0}, band-limited {s:.0}"
+    );
+}
+
+#[test]
+fn the_reverb_rings_after_the_note() {
+    let r = probe("reverb");
+    let (note, tail) = (rms(steps(&r, 0.0, 2.0)), rms(steps(&r, 6.0, 10.0)));
+    assert!(
+        tail > 0.05 * note,
+        "note {note:.0}, tail half a second later {tail:.0}"
+    );
+    assert!(
+        tail < 0.5 * note,
+        "the tail decays: {tail:.0} against {note:.0}"
+    );
+}
+
+#[test]
+fn a_tempo_ramp_shortens_the_steps() {
+    // Sixteen steps ramping 120 -> 240 BPM, the engine's integer ramp.
+    let t = probe("tempo");
+    let expected: f64 = (0..16)
+        .map(|s| {
+            let bpm = if s >= 15 { 240 } else { 120 + 120 * s / 15 };
+            RATE * 60.0 / f64::from(bpm) / 4.0
+        })
+        .sum();
+    let got = t.len() as f64;
+    assert!(
+        (got - expected).abs() < 0.01 * expected,
+        "{got} samples, {expected:.0} expected"
+    );
+}
+
+#[test]
+fn a_loop_carries_its_end_into_its_start() {
+    // The only note is on the last step; under %%loop the render's first
+    // samples are its release tail, and the length is still one pass.
+    let l = probe("loop");
+    assert_eq!(l.len(), (16.0 * STEP) as usize);
+    assert!(rms(&l[..2000]) > 1000.0, "start {:.0}", rms(&l[..2000]));
+}
+
+#[test]
+fn twelve_voices_hold_through_seventy_bars() {
+    let w = probe("wide");
+    assert_eq!(w.len(), (70.0 * 16.0 * RATE * 60.0 / 960.0 / 4.0) as usize);
+    let mid = &w[100_000..140_000];
+    let notes = [
+        261.63, 293.66, 329.63, 349.23, 392.0, 440.0, 493.88, 523.25, 587.33, 659.26, 698.46,
+        783.99,
+    ];
+    let levels: Vec<f64> = notes.iter().map(|&f| tone(mid, f)).collect();
+    let off = tone(mid, 370.0).max(tone(mid, 415.3));
+    let (lo, hi) = levels
+        .iter()
+        .fold((f64::MAX, 0.0f64), |(lo, hi), &l| (lo.min(l), hi.max(l)));
+    assert!(lo > 50.0 * off.max(1.0), "{levels:?}, off-note {off:.0}");
+    assert!(hi / lo < 1.1, "{levels:?}");
+}

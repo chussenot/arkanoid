@@ -1,0 +1,45 @@
+X:1
+M:4/4
+L:1/16
+Q:1/4=960
+K:C
+% Twelve voices (the old limit was eight), each holding one pitch for 70 bars
+% (the old limit was 64): one note across seventeen 64-step patterns.
+% 960 BPM keeps the probe small.
+%%hold on
+%%instrument v0 wave=triangle amp=20 attack=0 decay=0 sustain=100 release=1 gate=100 fx=0
+%%instrument v1 wave=triangle amp=20 attack=0 decay=0 sustain=100 release=1 gate=100 fx=0
+%%instrument v2 wave=triangle amp=20 attack=0 decay=0 sustain=100 release=1 gate=100 fx=0
+%%instrument v3 wave=triangle amp=20 attack=0 decay=0 sustain=100 release=1 gate=100 fx=0
+%%instrument v4 wave=triangle amp=20 attack=0 decay=0 sustain=100 release=1 gate=100 fx=0
+%%instrument v5 wave=triangle amp=20 attack=0 decay=0 sustain=100 release=1 gate=100 fx=0
+%%instrument v6 wave=triangle amp=20 attack=0 decay=0 sustain=100 release=1 gate=100 fx=0
+%%instrument v7 wave=triangle amp=20 attack=0 decay=0 sustain=100 release=1 gate=100 fx=0
+%%instrument v8 wave=triangle amp=20 attack=0 decay=0 sustain=100 release=1 gate=100 fx=0
+%%instrument v9 wave=triangle amp=20 attack=0 decay=0 sustain=100 release=1 gate=100 fx=0
+%%instrument v10 wave=triangle amp=20 attack=0 decay=0 sustain=100 release=1 gate=100 fx=0
+%%instrument v11 wave=triangle amp=20 attack=0 decay=0 sustain=100 release=1 gate=100 fx=0
+V:v0 instrument=v0
+C1120
+V:v1 instrument=v1
+D1120
+V:v2 instrument=v2
+E1120
+V:v3 instrument=v3
+F1120
+V:v4 instrument=v4
+G1120
+V:v5 instrument=v5
+A1120
+V:v6 instrument=v6
+B1120
+V:v7 instrument=v7
+c1120
+V:v8 instrument=v8
+d1120
+V:v9 instrument=v9
+e1120
+V:v10 instrument=v10
+f1120
+V:v11 instrument=v11
+g1120

@@ -126,6 +126,28 @@ under its loudest, against 9.8 before. Every track still masters to
 -19.0 dBFS, and the in-game mix measures as before. Nine probe tests in
 `src/audio/probes.rs` check the fork's features on what it renders.
 
+**Phase 3: room, tempo and the seam.**
+- **Seamless loops.** Every track was rendered once, from silence, so at
+  each loop restart its echoes, reverb and release tails were cut and the
+  first bar played dry. Measured against the same music played
+  continuously, the seam was only 10–19 dB under the signal. `%%loop`
+  renders twice and keeps the second pass, and the seam now matches
+  continuous playback exactly (bit for bit on Warm-up and Bridges, 79 dB
+  under on Fortress).
+- **Band-limited oscillators.** PolyBLEP on every square and pulse in the
+  score cuts the inharmonic aliasing of high notes by 25–42 dB.
+- **Reverb.** A small room on the melody bus: light on the clean tracks,
+  larger on the space tracks, opening in the break; the machine tracks
+  stay dry.
+- **Tempo.** Funnel and Rocket push forward through B and settle back in
+  the break. Game Over slows into its last E; Victory broadens into its
+  major chord.
+- **Toms.** A ninth voice, past the old limit of eight: the rolls into
+  the recap end on toms, high to low.
+
+Rebalanced against phase 2, every voice lands within about 2 dB, except
+Vault's lead (+3 dB, mostly reverb on a busy line).
+
 **Storage: mu-law.** Linear 8-bit storage would throw the 16-bit render
 away again: in the score's quietest bars (median -28 dBFS) it leaves the
 signal 25 dB above its noise. G.711 mu-law spends the same byte
@@ -191,9 +213,10 @@ track for track ([`music.md`](music.md)).
 - **Longer forms.** Each level loops a 16-bar track of 27–36 s. A longer
   form, or a B-side per level, would cost about 0.7 MB of binary per
   track.
-- **Phase 3 of the engine.** Tempo ramps (Funnel's acceleration), tuplets,
-  higher limits (eight tracks are all in use; 64 bars), band-limited
-  oscillators, and a small reverb.
+- **Tuplets.** The engine's grid is the sixteenth note, so a triplet
+  would need a finer grid for the whole song (`audio/engine/PROVENANCE.md`).
+- **Longer forms.** The engine now reaches 256 bars a track. What a longer
+  form costs is binary size, about 0.7 MB per 16 bars per track.
 - **A listening pass.** Every level and loudness figure here was measured
   in a headless environment with no speakers. Please play it on real
   speakers and headphones; the mix constants live in `mixer.rs` and

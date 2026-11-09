@@ -235,6 +235,67 @@ int audio_fx_sidechain_process(AudioSidechain *sc, int input, int trigger, int *
     return input;
 }
 
+/* BRYX: the reverb. Comb and allpass lengths are Freeverb's (at 44.1 kHz),
+ * scaled to the sample rate; mutually prime-ish, so the echoes never line up. */
+static void reverb_free(AudioReverb *rv)
+{
+    for (int i = 0; i < FX_REVERB_COMBS; i++) free(rv->comb[i]);
+    for (int i = 0; i < FX_REVERB_ALLPASSES; i++) free(rv->allpass[i]);
+    memset(rv, 0, sizeof(*rv));
+}
+
+static int reverb_init(AudioReverb *rv, int sample_rate, int mix, int size, int damp)
+{
+    static const int comb_44k[FX_REVERB_COMBS] = { 1116, 1188, 1277, 1356 };
+    static const int allpass_44k[FX_REVERB_ALLPASSES] = { 556, 441 };
+    memset(rv, 0, sizeof(*rv));
+    if (mix <= 0) return 0;
+    rv->enabled = 1;
+    rv->mix_percent = dsp_clampi(mix, 0, 100);
+    /* Feedback 0.70..0.98 by size, damping 0..0.4 by damp, as Freeverb. */
+    rv->feedback_q15 = (int)((0.70 + 0.28 * dsp_clampi(size, 0, 100) / 100.0) * FX_Q15_ONE);
+    rv->damp_q15 = (int)(0.4 * dsp_clampi(damp, 0, 100) / 100.0 * FX_Q15_ONE);
+    for (int i = 0; i < FX_REVERB_COMBS; i++) {
+        rv->comb_len[i] = (int)((int64_t)comb_44k[i] * sample_rate / 44100);
+        if (rv->comb_len[i] < 1) rv->comb_len[i] = 1;
+        rv->comb[i] = calloc((size_t)rv->comb_len[i], sizeof(int));
+        if (!rv->comb[i]) { reverb_free(rv); return -1; }
+    }
+    for (int i = 0; i < FX_REVERB_ALLPASSES; i++) {
+        rv->allpass_len[i] = (int)((int64_t)allpass_44k[i] * sample_rate / 44100);
+        if (rv->allpass_len[i] < 1) rv->allpass_len[i] = 1;
+        rv->allpass[i] = calloc((size_t)rv->allpass_len[i], sizeof(int));
+        if (!rv->allpass[i]) { reverb_free(rv); return -1; }
+    }
+    return 0;
+}
+
+/* The input plus the reverb's wet output at its mix. */
+static int reverb_process(AudioReverb *rv, int input)
+{
+    int64_t wet = 0;
+    int x;
+    if (!rv->enabled) return input;
+    x = input / 16; /* the combs ring up to ~1/(1-feedback): keep them inside the buffer clamp */
+    for (int i = 0; i < FX_REVERB_COMBS; i++) {
+        int out = rv->comb[i][rv->comb_idx[i]];
+        rv->comb_store[i] = (int)(((int64_t)out * (FX_Q15_ONE - rv->damp_q15) +
+                                   (int64_t)rv->comb_store[i] * rv->damp_q15) / FX_Q15_ONE);
+        rv->comb[i][rv->comb_idx[i]] = clamp_sample(
+            x + (int)(((int64_t)rv->comb_store[i] * rv->feedback_q15) / FX_Q15_ONE), FX_BUFFER_CLAMP);
+        if (++rv->comb_idx[i] >= rv->comb_len[i]) rv->comb_idx[i] = 0;
+        wet += out;
+    }
+    for (int i = 0; i < FX_REVERB_ALLPASSES; i++) {
+        int buffered = rv->allpass[i][rv->allpass_idx[i]];
+        int out = buffered - (int)wet;
+        rv->allpass[i][rv->allpass_idx[i]] = clamp_sample((int)wet + buffered / 2, FX_BUFFER_CLAMP);
+        if (++rv->allpass_idx[i] >= rv->allpass_len[i]) rv->allpass_idx[i] = 0;
+        wet = out;
+    }
+    return input + (int)((wet * 4 * rv->mix_percent) / 100);
+}
+
 int audio_fx_bus_init(AudioFxBusState *state, const SeqFxBus *bus,
                       int sample_rate, int tempo_bpm, int steps_per_beat)
 {
@@ -253,6 +314,11 @@ int audio_fx_bus_init(AudioFxBusState *state, const SeqFxBus *bus,
         memset(state, 0, sizeof(*state));
         return -1;
     }
+    if (reverb_init(&state->reverb, sample_rate, bus->reverb_mix, bus->reverb_size, bus->reverb_damp) != 0) {
+        audio_fx_delay_free(&state->delay);
+        memset(state, 0, sizeof(*state));
+        return -1;
+    }
     return 0;
 }
 
@@ -260,6 +326,7 @@ void audio_fx_bus_free(AudioFxBusState *state)
 {
     if (!state) return;
     audio_fx_delay_free(&state->delay);
+    reverb_free(&state->reverb);
     memset(state, 0, sizeof(*state));
 }
 
@@ -277,6 +344,7 @@ int audio_fx_bus_process(AudioFxBusState *state, int input, int trigger, int *ou
     sample = audio_fx_lowpass_process(&state->lowpass, sample);
     sample = audio_fx_moog_ladder_process(&state->ladder, sample);
     sample = audio_fx_delay_process(&state->delay, sample);
+    sample = reverb_process(&state->reverb, sample);
     sample = audio_fx_sidechain_process(&state->sidechain, sample, trigger, &env_q15);
     sample = (int)(((int64_t)sample * state->mix_percent) / 100);
 
@@ -333,7 +401,12 @@ void audio_fx_bus_set_param(AudioFxBusState *state, SeqRampParam param, int valu
         case SEQ_RAMP_BUS_MIX:
             state->mix_percent = dsp_clampi(value, 0, 100);
             break;
+        case SEQ_RAMP_REVERB_MIX:
+            if (state->reverb.enabled)
+                state->reverb.mix_percent = dsp_clampi(value, 0, 100);
+            break;
         case SEQ_RAMP_DUTY:
+        case SEQ_RAMP_TEMPO:
             break;
     }
 }

@@ -106,6 +106,30 @@ have read the `f` of `!f!` as the note F.
 Every file that uses none of these renders byte-for-byte as it did after
 phase 1: checked on all 52 cues.
 
+### Phase 3: room, tempo, and the seam
+
+| Directive | Effect |
+|---|---|
+| `%%loop on` | The song renders twice, and only the second pass is kept. Its start carries the end's echoes, reverb and release tails, so a looped track has no seam. Without it, a loop restarted from silence. |
+| `%%bandlimit on`, or `bandlimit=on` per instrument | Square and pulse edges are smoothed with PolyBLEP, so high notes stop folding their harmonics back as inharmonic noise. Off, the edges stay hard as before. |
+| `%%effect N ... reverb=<mix> reverb_size=<0..100> reverb_damp=<0..100>` | A small mono reverb on the bus, after its delay: Freeverb's four damped combs and two allpasses, in fixed point. |
+| `%%ramp song tempo <from> <to> <start> <end>` | The tempo moves step by step: an accelerando or a ritardando. |
+| `%%ramp busN reverb ...` | The reverb's mix, as a ramp. |
+
+**Limits.** 12 voices and instruments (from 8), 4,096 steps a voice (from
+1,024: 256 bars), and 64 patterns and arrangement slots (from 16 and 32).
+The parsed music and the song are now megabytes, so they live on the heap,
+not on a thread's stack (a Windows main thread has 1 MB).
+
+Every file that uses none of these renders byte-for-byte as it did after
+phase 2: checked on the 52 cues and the phase 1 and 2 probes. The check
+caught one regression while this was written: the tempo code clamped
+every song to 400 BPM, which changed the seven effects written at 480.
+
+**Not done: tuplets.** The engine quantizes to sixteenth-note steps, so a
+true triplet needs a finer grid for the whole song (swing, delays and
+ramps all count steps). Faking one by rounding would be worse than none.
+
 ## Probes
 
 `audio/probes/` holds one small ABC per feature. `build.rs` renders them,
@@ -117,7 +141,12 @@ and `src/audio/probes.rs` measures each in CI:
 - that the noise color follows the note and metal repeats;
 - that a ramp closes a filter;
 - that the keyed sidechain ducks;
-- that a quiet voice keeps its shape.
+- that a quiet voice keeps its shape;
+- that band-limiting cuts the aliases by more than 20 dB and keeps the note;
+- that the reverb rings and decays;
+- that a tempo ramp shortens its steps by the right amount;
+- that a loop's first samples carry its last note's tail;
+- that twelve voices hold one note each through 70 bars.
 
 `docs/design/audio.md` says why each change was made, and what it measured.
 
