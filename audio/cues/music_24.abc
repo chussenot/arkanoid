@@ -1,0 +1,38 @@
+X:1
+T:BRYX 24 Funnel
+C:BRYX (audio/compose.py)
+M:4/4
+L:1/16
+Q:1/4=134
+K:C
+% Narrowing: Spark ratchets up a step a bar, Ascent doubles its speed, and a V-to-i pours into the next act.
+% mode E harmonic, progression cadence, form intro(2) A(4) B(4) break(2) A2(4)
+% A=spark_seq B=ascent_dim counter=wall_hi
+%%instrument kick wave=triangle amp=44 attack=0 decay=70 sustain=0 release=40 gate=60 fx=0
+%%instrument snare wave=noise amp=14 attack=0 decay=60 sustain=0 release=70 gate=50 fx=0
+%%instrument hat wave=noise amp=10 attack=0 decay=12 sustain=0 release=14 gate=20 fx=0
+%%instrument bass wave=pulse amp=22 duty=38 attack=1 decay=60 sustain=70 release=70 gate=80 fx=0
+%%instrument arp wave=pulse amp=10 duty=14 attack=0 decay=30 sustain=40 release=50 gate=50 fx=2
+%%instrument pad wave=triangle amp=10 attack=120 decay=200 sustain=80 release=300 gate=98 fx=1
+%%instrument lead wave=pulse amp=14 duty=25 attack=4 decay=120 sustain=70 release=180 gate=88 vibrato=6 fx=1
+%%instrument counter wave=triangle amp=10 attack=8 decay=120 sustain=70 release=200 gate=86 fx=1
+%%effect 0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=12 lowpass=20 mix=100
+%%effect 1 delay_steps=3 delay_feedback=34 delay_mix=26 drive=0 lowpass=30 mix=80
+%%effect 2 delay_steps=2 delay_feedback=24 delay_mix=18 drive=0 lowpass=40 sidechain=34 sidechain_release=160 mix=80
+%%effect 3 delay_steps=0 delay_feedback=0 delay_mix=0 drive=20 lowpass=20 mix=100
+V:kick instrument=kick
+| z16 | E,, z z E,, z z z z E,, z z E,, z z z z | E,, z z E,, z z z z E,, z z E,, z z z z | E,, z z E,, z z z z E,, z z E,, z z z z | E,, z z E,, z z z z E,, z z E,, z z z z | E,, z z E,, z z z z E,, z z E,, z z z z | E,, z z E,, z z z z E,, z z E,, z z z z | E,, z z E,, z z z z E,, z z E,, z z z z | E,, z z E,, z z z z E,, z z E,, z z z z | E,, z z E,, z z z z E,, z z E,, z z z z | z16 | z16 | E,, z z E,, z z z z E,, z z E,, z z z z | E,, z z E,, z z z z E,, z z E,, z z z z | E,, z z E,, z z z z E,, z z E,, z z z z | E,, z z E,, z z z z E,, z z E,, z z z z |
+V:snare instrument=snare
+| z z z z z z z z z z z z z z z z | z z z z z z z z z z z z z z c c | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c c z c | z z z z c z z z z z z z c c z c | z z z z z z z z z z z z z z z z | z z z z c z z z c z c z c c c c | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z z z | z z z z c z z z z z z z c z c c |
+V:hat instrument=hat
+| c z c c c z c c c z c c c z c c | c z c c c z c c c z c c c z c c | c z c c c z c c c z c c c z c c | c z c c c z c c c z c c c z c c | c z c c c z c c c z c c c z c c | c z c c c z c c c z c c c z c c | c z c c c z c c c z c c c z c c | c z c c c z c c c z c c c z c c | c z c c c z c c c z c c c z c c | c z c c c z c c c z c c c z c c | z16 | c z c c c z c c c z c c z z z z | c z c c c z c c c z c c c z c c | c z c c c z c c c z c c c z c c | c z c c c z c c c z c c c z c c | c z c c c z c c c z c c c z c c |
+V:bass instrument=bass
+| E,,2 z6 E,,2 z6 | A,,2 A,, A,, A,,2 A,, A,, A,,2 A,, A,, A,,2 A,, E,, | E,,2 E,, E,, E,,2 E,, E,, E,,2 E,, E,, E,,2 E,, A,, | A,,2 A,, A,, A,,2 A,, A,, A,,2 A,, A,, A,,2 A,, C, | C,2 C, C, C,2 C, C, A,,2 A,, A,, A,,2 A,, B,, | B,,2 B,, B,, B,,2 B,, B,, B,,2 B,, B,, B,,2 B,, C, | C,3 C, z2 C,2 G,3 C, C2 C,2 | C,3 C, z2 C,2 G,3 C, C2 C,2 | A,,3 A,, z2 A,,2 E,3 A,, A,2 A,,2 | B,,3 B,, z2 B,,2 ^F,3 B,, B,2 B,,2 | E,,2 z14 | A,,2 z6 A,,2 z2 A,,2 A,, E,, | E,,2 E,, E,, E,,2 E,, E,, E,,2 E,, E,, E,,2 E,, A,, | A,,2 A,, A,, A,,2 A,, A,, A,,2 A,, A,, A,,2 A,, C, | C,2 C, C, C,2 C, C, A,,2 A,, A,, A,,2 A,, B,, | B,,2 B,, B,, B,,2 B,, B,, B,,2 B,, B,, B,,2 B,, E,, |
+V:arp instrument=arp
+| E e B e E e B e E e B e E e B e | A a e a A a e a A a e a A a e a | E e B e E e B e E e B e E e B e | A a e a A a e a A a e a A a e a | c c' g c' c c' g c' A a e a A a e a | B b ^f b B b ^f b B b ^f b B b ^f b | c c' g c' c c' g c' c c' g c' c c' g c' | c c' g c' c c' g c' c c' g c' c c' g c' | A a e a A a e a A a e a A a e a | B b ^f b B b ^f b B b ^f b B b ^f b | z16 | z16 | E e B e E e B e E e B e E e B e | A a e a A a e a A a e a A a e a | c c' g c' c c' g c' A a e a A a e a | B b ^f b B b ^f b B b ^f b B b ^f b |
+V:pad instrument=pad
+| z16 | z16 | z16 | z16 | z16 | z16 | E,16 | E,16 | E,16 | ^F,16 | G,16 | A,16 | G,16 | A,16 | G,8 A,8 | B,16 |
+V:lead instrument=lead
+| e4 z12 | z16 | B z ^d e z g2 z a g e z ^d2 z2 | c z e ^f z a2 z b a ^f z e2 z2 | e z ^f g z b2 z c' b g z ^f2 z2 | ^f z g a z c'2 z a2 g2 ^f4 | E B e2 ^d B A B G A B2 ^d e g2 | G ^d g2 ^f ^d c ^d B c ^d2 ^f g b2 | c ^f b2 a ^f e ^f c ^f b2 a ^f e ^f | ^F B e2 ^d B A B A2 G2 ^F4 | B2 z2 ^d2 e2 z2 g4 z2 | z16 | B z ^d e z g2 z a g e z ^d2 z2 | c z e ^f z a2 z b a ^f z e2 z2 | e z ^f g z b2 z c' b g z ^f2 z2 | ^f z g a z c'2 z g2 ^f2 ^d4 |
+V:counter instrument=counter
+| z192 | B3 B c2 B2 B3 B G2 B2 | c3 B ^d2 c2 c3 c B2 c2 | c3 ^d e2 ^d2 c3 ^d B2 ^d2 | ^d3 e ^f2 e2 B2 G2 ^F4 | z |

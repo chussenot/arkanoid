@@ -58,8 +58,11 @@ BRYX's music and effects come from the
 are composed as ABC text in `audio/cues/` and rendered at build time, so
 the game runs no C at play time. Bricks broken in a rally climb the E minor
 pentatonic scale in time with the music, and every effect is panned to
-where it happened. Each act has its own loop, faster and fuller act by act.
-See [`docs/design/audio.md`](docs/design/audio.md).
+where it happened. Every campaign level has its own track: 32 in all,
+built on three recurring themes across four acts, with loaded levelsets
+playing them in a shuffled order. See
+[`docs/design/audio.md`](docs/design/audio.md) and the score's guide,
+[`docs/design/music.md`](docs/design/music.md).
 
 Building with sound (the default) needs a C compiler and, on Linux, the ALSA
 headers (`sudo apt install libasound2-dev`). `cargo run --release

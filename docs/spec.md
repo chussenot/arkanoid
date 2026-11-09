@@ -127,8 +127,9 @@ record.
   unmodified, C99), and the binary embeds the PCM: the game runs no C.
 - Playback goes through `cpal` (the default `audio` feature; justified in
   `Cargo.toml`) into BRYX's own mixer (`src/audio/`): panned effects,
-  pitched by playback rate; stingers that duck the music; one music loop
-  per act, crossfaded.
+  pitched by playback rate; stingers that duck the music; one music track
+  per campaign level (`audio/compose.py`, `docs/design/music.md`),
+  crossfaded, and a shuffled order for loaded levelsets.
 - Sound is presentation only. `src/audio/director.rs` reads each tick's
   events and the game's state, like the renderers, and never writes to
   them.

@@ -25,19 +25,12 @@ Four ideas shape everything below:
 3. **The paddle tightens with the ball.** Its knock rises up to a minor
    third as the ball climbs from 300 to 700 px/s, so the rally's pace is
    heard.
-4. **Music follows the campaign.** One loop per act, all on the same
-   original eight-bar progression (Em, C, G, D, Em, C, Am, B), each faster
-   and fuller than the last:
-
-   | Act | Tempo | Layers |
-   |---|---|---|
-   | I | 112 BPM | half-time kick, bass, arpeggio, pad |
-   | II | 118 BPM | adds hats and a four-on-the-floor kick |
-   | III | 124 BPM | swaps the pad for the lead melody |
-   | IV | 132 BPM | adds snare, driving bass, a counter-melody |
-
-   Stingers mark the moments (life lost, level cleared, Game Over,
-   Victory, 1UP) and duck the loop beneath them.
+4. **Music follows the campaign.** Every campaign level has its own track,
+   32 in all plus a menu theme, built from three recurring themes (Ascent,
+   the Wall, Spark) across four acts. The score has its own guide:
+   [`music.md`](music.md). Loaded levelsets play the score in a shuffled
+   order drawn each session. Stingers mark the moments (life lost, level
+   cleared, Game Over, Victory, 1UP) and duck the music beneath them.
 
 ## How it is built
 
@@ -91,21 +84,22 @@ flowchart LR
 | `ball_lost` | one ball of a multiball drops | a descending figure |
 | `warp` | leaving through the Break gate | a rising sweep |
 | `select`, `pause` | start, continue, resume; pause | two-note blips, up and down |
-| `life_lost`, `level_clear`, `game_over`, `victory` | stingers | phrases built from the act loops' material |
-| `music_menu`, `music_act1`–`4` | loops | see the act table above |
+| `life_lost`, `level_clear`, `game_over`, `victory` | stingers | the score's themes in miniature ([`music.md`](music.md#stingers)) |
+| `music_menu`, `music_01`–`32` | loops | the score: see [`music.md`](music.md) |
 
 ## Mix
 
 | | Level |
 |---|---|
-| Music | 0.36 under the effects; 0.3 of that while paused; 25% under a stinger |
+| Music | 0.52 under the effects; 0.3 of that while paused; 25% under a stinger |
 | Bricks, paddle | 0.6–0.65 |
 | Other effects | 0.3–0.7, by importance |
 | Master | 1.5 into the soft limiter |
 
-Measured on a 45 s autopilot soundtrack, rendered offline through the
-same director and mixer: about -18 dBFS RMS with peaks near -3 dBFS, the
-same in acts I and IV, and no sample at full scale.
+Measured on 40 s autopilot soundtracks, rendered offline through the same
+director and mixer: about -20 dBFS RMS with peaks near -4 dBFS, the same on
+levels 1 and 22, and no sample at full scale. The score itself is mastered
+to within 1.5 dB track to track ([`music.md`](music.md)).
 
 ## Player control and accessibility
 
@@ -127,8 +121,9 @@ same in acts I and IV, and no sample at full scale.
 - **Spatial depth.** Sound is panned left to right only. In the 3D
   renderer, a little low-pass for the far side of the field would add
   depth.
-- **Music variation within an act.** Each act loops one 15–17 s track.
-  The engine's jam generator could vary it; that was not vendored.
+- **Longer forms.** Each level loops a 16-bar track of 27–36 s. A longer
+  form, or a B-side per level, would cost about 0.7 MB of binary per
+  track.
 - **A listening pass.** Every level and loudness figure here was measured
   in a headless environment with no speakers. Please play it on real
   speakers and headphones; the mix constants live in `mixer.rs` and

@@ -5,12 +5,10 @@
 //! - **stingers**: effects that also *duck* the music while they play;
 //! - **music**: one looping track at a time, crossfaded on change.
 //!
-//! It is pure arithmetic over the cue bank, unit-tested without a device;
+//! It is pure arithmetic over the embedded cues, unit-tested without a device;
 //! `output.rs` only feeds it buffers.
 
-use std::sync::Arc;
-
-use super::cues::{Bank, Cue, CUE_SAMPLE_RATE};
+use super::cues::{pcm, sample, Cue, CUE_SAMPLE_RATE};
 
 /// What the sound director asks the mixer to do.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -36,7 +34,7 @@ pub enum Command {
 /// Voices that can sound at once; the oldest is stolen past this.
 const MAX_VOICES: usize = 32;
 /// The music's base level under the effects.
-const MUSIC_GAIN: f32 = 0.36;
+const MUSIC_GAIN: f32 = 0.52;
 /// The music's level while a stinger plays.
 const DUCK_LEVEL: f32 = 0.25;
 /// Crossfade between two music loops, and the music's fade in/out.
@@ -47,7 +45,7 @@ const DUCK_RELEASE_SECS: f32 = 0.5;
 const MASTER: f32 = 1.5;
 
 struct Voice {
-    data: Arc<[f32]>,
+    data: &'static [u8],
     pos: f64,
     step: f64,
     left: f32,
@@ -56,7 +54,7 @@ struct Voice {
 
 struct Loop {
     cue: Cue,
-    data: Arc<[f32]>,
+    data: &'static [u8],
     pos: f64,
     /// 0..1 crossfade level, moving toward `target`.
     level: f32,
@@ -64,7 +62,6 @@ struct Loop {
 }
 
 pub struct Mixer {
-    bank: Bank,
     /// Cue samples per output frame at pitch 1.
     rate_ratio: f64,
     output_rate: f32,
@@ -86,19 +83,19 @@ pub fn pan_gains(pan: f32) -> (f32, f32) {
     (angle.cos(), angle.sin())
 }
 
-/// Linear interpolation into `data` at fractional position `pos`.
-fn sample_at(data: &[f32], pos: f64) -> f32 {
+/// Linear interpolation into `data` (the engine's 8-bit samples, read in
+/// place) at fractional position `pos`. Past the end is silence.
+fn sample_at(data: &[u8], pos: f64) -> f32 {
     let i = pos as usize;
     let frac = (pos - i as f64) as f32;
-    let a = data.get(i).copied().unwrap_or(0.0);
-    let b = data.get(i + 1).copied().unwrap_or(0.0);
+    let a = data.get(i).map_or(0.0, |&b| sample(b));
+    let b = data.get(i + 1).map_or(0.0, |&b| sample(b));
     a + (b - a) * frac
 }
 
 impl Mixer {
-    pub fn new(bank: Bank, output_rate: u32) -> Self {
+    pub fn new(output_rate: u32) -> Self {
         Self {
-            bank,
             rate_ratio: f64::from(CUE_SAMPLE_RATE) / f64::from(output_rate.max(1)),
             output_rate: output_rate.max(1) as f32,
             voices: Vec::with_capacity(MAX_VOICES),
@@ -132,7 +129,7 @@ impl Mixer {
                 }
                 let (l, r) = pan_gains(pan);
                 self.voices.push(Voice {
-                    data: self.bank.get(cue),
+                    data: pcm(cue),
                     pos: 0.0,
                     step: self.rate_ratio * f64::from(pitch.max(0.05)),
                     left: gain * l,
@@ -157,7 +154,7 @@ impl Mixer {
                         0,
                         Loop {
                             cue,
-                            data: self.bank.get(cue),
+                            data: pcm(cue),
                             pos: 0.0,
                             level: 0.0,
                             target: 1.0,
@@ -185,7 +182,7 @@ impl Mixer {
             let (mut left, mut right) = (0.0f32, 0.0f32);
 
             for voice in &mut self.voices {
-                let s = sample_at(&voice.data, voice.pos);
+                let s = sample_at(voice.data, voice.pos);
                 left += s * voice.left;
                 right += s * voice.right;
                 voice.pos += voice.step;
@@ -211,7 +208,7 @@ impl Mixer {
                 if track.data.is_empty() {
                     continue;
                 }
-                let s = sample_at(&track.data, track.pos) * track.level * music_gain;
+                let s = sample_at(track.data, track.pos) * track.level * music_gain;
                 left += s;
                 right += s;
                 track.pos += self.rate_ratio;
@@ -276,15 +273,15 @@ mod tests {
 
     #[test]
     fn interpolation_reads_between_samples() {
-        let data = [0.0, 1.0];
-        assert!((sample_at(&data, 0.5) - 0.5).abs() < 1e-6);
+        let data = [128u8, 255];
+        assert!((sample_at(&data, 0.5) - 127.0 / 256.0).abs() < 1e-6);
         assert_eq!(sample_at(&data, 5.0), 0.0, "past the end is silence");
     }
 
     #[cfg(feature = "audio")]
     #[test]
     fn an_effect_plays_through_and_frees_its_voice() {
-        let mut mixer = Mixer::new(Bank::load(), 44_100);
+        let mut mixer = Mixer::new(44_100);
         mixer.apply(play(Cue::Brick));
         assert_eq!(mixer.voice_count(), 1);
         let mut out = vec![0.0f32; 2 * 4_096];
@@ -301,7 +298,7 @@ mod tests {
     #[test]
     fn a_doubled_pitch_finishes_in_half_the_time() {
         let frames_until_silent = |pitch: f32| {
-            let mut mixer = Mixer::new(Bank::load(), 22_050);
+            let mut mixer = Mixer::new(22_050);
             mixer.apply(Command::Play {
                 cue: Cue::Brick,
                 gain: 1.0,
@@ -325,7 +322,7 @@ mod tests {
     #[cfg(feature = "audio")]
     #[test]
     fn voices_are_capped_by_stealing_the_oldest() {
-        let mut mixer = Mixer::new(Bank::load(), 44_100);
+        let mut mixer = Mixer::new(44_100);
         for _ in 0..(MAX_VOICES + 10) {
             mixer.apply(play(Cue::Explosion));
         }
@@ -335,14 +332,14 @@ mod tests {
     #[cfg(feature = "audio")]
     #[test]
     fn music_switches_by_crossfade_and_a_repeat_request_is_ignored() {
-        let mut mixer = Mixer::new(Bank::load(), 22_050);
-        mixer.apply(Command::Music(Some(Cue::MusicAct1)));
-        mixer.apply(Command::Music(Some(Cue::MusicAct1)));
+        let mut mixer = Mixer::new(22_050);
+        mixer.apply(Command::Music(Some(Cue::Level(1))));
+        mixer.apply(Command::Music(Some(Cue::Level(1))));
         assert_eq!(mixer.music.len(), 1, "same track: no restart");
         let mut out = vec![0.0f32; 2 * 22_050];
         mixer.render(&mut out, 2);
-        mixer.apply(Command::Music(Some(Cue::MusicAct2)));
-        assert_eq!(mixer.music_track(), Some(Cue::MusicAct2));
+        mixer.apply(Command::Music(Some(Cue::Level(2))));
+        assert_eq!(mixer.music_track(), Some(Cue::Level(2)));
         assert_eq!(mixer.music.len(), 2, "the old loop fades out");
         mixer.render(&mut out, 2);
         mixer.render(&mut out, 2);
@@ -354,7 +351,7 @@ mod tests {
     #[cfg(feature = "audio")]
     #[test]
     fn effects_off_silences_effects_and_keeps_music() {
-        let mut mixer = Mixer::new(Bank::load(), 22_050);
+        let mut mixer = Mixer::new(22_050);
         mixer.apply(Command::Enable {
             effects: false,
             music: true,

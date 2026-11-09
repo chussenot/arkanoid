@@ -1,0 +1,38 @@
+X:1
+T:BRYX 30 Bulwark
+C:BRYX (audio/compose.py)
+M:4/4
+L:1/16
+Q:1/4=132
+K:C
+% Massive and slow-feeling at speed: half-time drums, the Wall in long notes, a bulwark.
+% mode E phrygian, progression pedal, form A(4) B(4) A2(4) break(2) turn(2)
+% A=wall_aug B=ascent_aug counter=wall
+%%instrument kick wave=triangle amp=63 attack=0 decay=70 sustain=0 release=40 gate=60 fx=0
+%%instrument snare wave=noise amp=21 attack=0 decay=60 sustain=0 release=70 gate=50 fx=0
+%%instrument hat wave=noise amp=10 attack=0 decay=12 sustain=0 release=14 gate=20 fx=0
+%%instrument bass wave=square amp=24 attack=1 decay=50 sustain=74 release=60 gate=78 fx=3
+%%instrument arp wave=pulse amp=10 duty=22 attack=0 decay=24 sustain=50 release=40 gate=46 fx=2
+%%instrument pad wave=pulse amp=9 duty=40 attack=60 decay=200 sustain=80 release=240 gate=98 fx=3
+%%instrument lead wave=square amp=16 attack=2 decay=90 sustain=74 release=140 gate=86 vibrato=5 fx=1
+%%instrument counter wave=pulse amp=10 duty=12 attack=2 decay=100 sustain=60 release=160 gate=80 fx=1
+%%effect 0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=26 lowpass=24 mix=100
+%%effect 1 delay_steps=2 delay_feedback=30 delay_mix=22 drive=12 lowpass=30 mix=80
+%%effect 2 delay_steps=1 delay_feedback=20 delay_mix=14 drive=10 lowpass=36 sidechain=50 sidechain_release=140 mix=80
+%%effect 3 delay_steps=0 delay_feedback=0 delay_mix=0 drive=30 lowpass=10 ladder=70 ladder_cutoff=34 ladder_resonance=58 mix=100
+V:kick instrument=kick
+| E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | E,, z z z z z z z E,, z z z z z z z | z16 | z16 | z16 | E,, z z z z z z z E,, z z z z z z z |
+V:snare instrument=snare
+| z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z c z c | z z z z z z z z c z z z z c z c | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z c c | z z z z z z z z z z z z z z z z | z z z z z z z z z z z z z z z z | z z z z z z z z c z z z z z z z | z z z z z z z z c z z z z z c c |
+V:hat instrument=hat
+| c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | z16 | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z | c z c z c z c z c z c z c z c z |
+V:bass instrument=bass
+| E,,6 E,,2 B,,4 E,4 | E,,6 E,,2 B,,4 E,4 | C,6 C,2 G,4 C4 | F,,6 F,,2 C,4 F,4 | F,,4 C,4 F,4 C,2 A,,2 | F,,4 C,4 F,4 C,2 A,,2 | C,4 G,4 C4 G,2 E,2 | D,4 A,4 F,4 C,2 A,,2 | E,,6 E,,2 B,,4 E,4 | E,,6 E,,2 B,,4 E,4 | C,6 C,2 G,4 C4 | F,,6 F,,2 C,4 F,4 | E,,2 z14 | E,,2 z6 E,,2 z2 E,,2 E,,2 | z16 | F,,6 F,,2 C,4 F,4 |
+V:arp instrument=arp
+| E z B z e z3 E z B z e z3 | E z B z e z3 E z B z e z3 | c z g z c' z3 c z g z c' z3 | F z c z f z3 F z c z f z3 | F z c z f z3 F z c z f z3 | F z c z f z3 F z c z f z3 | c z g z c' z3 c z g z c' z3 | d z a z d' z3 F z c z f z3 | E z B z e z3 E z B z e z3 | E z B z e z3 E z B z e z3 | c z g z c' z3 c z g z c' z3 | F z c z f z3 F z c z f z3 | z16 | z16 | z16 | F z c z f z3 F z c z f z3 |
+V:pad instrument=pad
+| z16 | z16 | z16 | z16 | A,16 | A,16 | G,16 | F,8 F,8 | E,16 | E,16 | E,16 | F,16 | E,16 | E,16 | E,16 | F,16 |
+V:lead instrument=lead
+| e6 e2 f4 e4 | e6 e2 d4 e4 | e6 e2 f4 e4 | f6 e2 e2 f6 | F4 c4 f8 | c4 B4 A4 A4 | G4 G4 c8 | d4 d4 A2 G2 F4 | e6 e2 f4 e4 | g6 g2 f4 g4 | e6 e2 f4 e4 | f6 e2 e2 f6 | e12 e4 | z16 | e6 e2 z8 | z8 a2 g2 f4 |
+V:counter instrument=counter
+| z128 | E3 E F2 E2 E3 E D2 E2 | E3 F G2 F2 E3 F E2 F2 | G3 G A2 G2 G3 G F2 G2 | A3 A B2 A2 A2 G2 F4 | z64 |

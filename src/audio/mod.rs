@@ -51,7 +51,8 @@ impl Audio {
             }
         };
         Self {
-            director: director::Director::default(),
+            // Seeds the levelset playlist: a fresh order each session.
+            director: director::Director::new(rand::random()),
             mode,
             #[cfg(feature = "audio")]
             output,

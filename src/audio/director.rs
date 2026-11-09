@@ -18,7 +18,7 @@ use crate::events::{GameEvent, PowerUpKind};
 use crate::game::{Game, GameState, GunKind, LevelSetKind, PLAYFIELD_WIDTH};
 use crate::levels::BrickKind;
 
-use super::cues::Cue;
+use super::cues::{Cue, LEVEL_TRACKS};
 use super::mixer::Command;
 
 /// The player's sound setting, cycled with M.
@@ -82,27 +82,41 @@ pub fn pan_for(x: f32) -> f32 {
     ((x / PLAYFIELD_WIDTH) * 2.0 - 1.0).clamp(-1.0, 1.0) * PAN_WIDTH
 }
 
-/// The music for a state and level: the menu theme, an act's loop, or
-/// silence after a run ends (its stinger plays alone).
-pub fn music_for(game: &Game) -> Option<Cue> {
+/// The music for a state and level: the menu theme, the level's own
+/// track, or silence after a run ends (its stinger plays alone).
+///
+/// The campaign and `--classic` play each level's track (`audio/compose.py`
+/// wrote one per campaign level). A loaded levelset's levels have no track
+/// of their own, so they walk `playlist`, a shuffle of all 32 drawn once
+/// per session: every track before any repeats, a different order each
+/// time the game starts.
+pub fn music_for(game: &Game, playlist: &[u8]) -> Option<Cue> {
     match game.state {
         GameState::Menu => Some(Cue::MusicMenu),
         GameState::Playing | GameState::Paused => {
-            let act = match game.level_set() {
-                LevelSetKind::Classic => 0,
-                _ => (game.level - 1) / crate::game::LEVELS_PER_ACT % 4,
+            let track = match game.level_set() {
+                LevelSetKind::Loaded => playlist[(game.level - 1) % playlist.len()],
+                _ => (game.level.clamp(1, usize::from(LEVEL_TRACKS))) as u8,
             };
-            Some(
-                [
-                    Cue::MusicAct1,
-                    Cue::MusicAct2,
-                    Cue::MusicAct3,
-                    Cue::MusicAct4,
-                ][act],
-            )
+            Some(Cue::Level(track))
         }
         GameState::GameOver | GameState::Victory => None,
     }
+}
+
+/// The tracks 1..=32 in an order fixed by `seed` (Fisher-Yates over a
+/// xorshift stream: deterministic, so tests can name the order).
+pub fn shuffled_playlist(seed: u64) -> Vec<u8> {
+    let mut order: Vec<u8> = (1..=LEVEL_TRACKS).collect();
+    // Spread the seed over all 64 bits (and keep xorshift off zero).
+    let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+    for i in (1..order.len()).rev() {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        order.swap(i, (state % (i as u64 + 1)) as usize);
+    }
+    order
 }
 
 fn play(cue: Cue, gain: f32, x: f32) -> Command {
@@ -129,8 +143,10 @@ fn stinger(cue: Cue, gain: f32, duck: f32) -> Command {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Director {
+    /// The order loaded levelsets play the score in (`music_for`).
+    playlist: Vec<u8>,
     last_state: Option<GameState>,
     last_music: Option<Option<Cue>>,
     /// Bricks broken since the ball last left the paddle: the rally's
@@ -144,6 +160,19 @@ pub struct Director {
 }
 
 impl Director {
+    /// A director whose levelset playlist is shuffled by `seed`.
+    pub fn new(seed: u64) -> Self {
+        Self {
+            playlist: shuffled_playlist(seed),
+            last_state: None,
+            last_music: None,
+            combo: 0,
+            intact_armor: Vec::new(),
+            level: 0,
+            ball_attached: false,
+        }
+    }
+
     /// Commands for one simulation tick: its events, and any change of
     /// state or music since the last tick.
     pub fn observe(&mut self, game: &Game, events: &[GameEvent]) -> Vec<Command> {
@@ -152,7 +181,7 @@ impl Director {
         self.events(game, events, &mut out);
         self.armor(game, &mut out);
         self.launch(game, &mut out);
-        let music = music_for(game);
+        let music = music_for(game, &self.playlist);
         if self.last_music != Some(music) {
             out.push(Command::Music(music));
             self.last_music = Some(music);
@@ -331,7 +360,7 @@ mod tests {
     fn playing() -> (Director, Game) {
         let mut game = Game::new().with_campaign();
         game.state = GameState::Playing;
-        let mut director = Director::default();
+        let mut director = Director::new(1);
         director.observe(&game, &[]);
         (director, game)
     }
@@ -399,31 +428,62 @@ mod tests {
     }
 
     #[test]
-    fn music_follows_the_state_and_the_act() {
+    fn each_level_plays_its_own_track() {
+        let playlist = shuffled_playlist(9);
         let mut game = Game::new().with_campaign();
-        assert_eq!(music_for(&game), Some(Cue::MusicMenu));
+        assert_eq!(music_for(&game, &playlist), Some(Cue::MusicMenu));
         game.state = GameState::Playing;
-        for (level, cue) in [
-            (1, Cue::MusicAct1),
-            (9, Cue::MusicAct2),
-            (17, Cue::MusicAct3),
-            (32, Cue::MusicAct4),
-        ] {
+        for level in [1, 9, 17, 32] {
             game.level = level;
-            assert_eq!(music_for(&game), Some(cue), "level {level}");
+            assert_eq!(music_for(&game, &playlist), Some(Cue::Level(level as u8)));
         }
         game.state = GameState::GameOver;
-        assert_eq!(music_for(&game), None);
+        assert_eq!(music_for(&game, &playlist), None);
         let mut classic = Game::new();
         classic.state = GameState::Playing;
         classic.level = 3;
-        assert_eq!(music_for(&classic), Some(Cue::MusicAct1));
+        assert_eq!(music_for(&classic, &playlist), Some(Cue::Level(3)));
+    }
+
+    #[test]
+    fn a_levelset_walks_a_shuffle_of_the_whole_score() {
+        let playlist = shuffled_playlist(42);
+        let mut sorted = playlist.clone();
+        sorted.sort_unstable();
+        assert_eq!(
+            sorted,
+            (1..=LEVEL_TRACKS).collect::<Vec<_>>(),
+            "each track once"
+        );
+        assert_ne!(
+            playlist,
+            shuffled_playlist(43),
+            "the seed changes the order"
+        );
+        assert_ne!(playlist, sorted, "and it is shuffled");
+
+        let mut game = Game::new();
+        let level = crate::levelset::ExternalLevel {
+            author: String::new(),
+            name: String::new(),
+            bricks: Vec::new(),
+        };
+        game.load_external_levels(vec![level; 40]);
+        game.state = GameState::Playing;
+        let heard: Vec<_> = (1..=33)
+            .map(|level| {
+                game.level = level;
+                music_for(&game, &playlist)
+            })
+            .collect();
+        assert_eq!(heard[0], Some(Cue::Level(playlist[0])));
+        assert_eq!(heard[32], heard[0], "wraps after the whole score");
     }
 
     #[test]
     fn the_music_command_is_sent_once_per_change() {
         let mut game = Game::new().with_campaign();
-        let mut director = Director::default();
+        let mut director = Director::new(1);
         let music = |out: &[Command]| {
             out.iter()
                 .filter(|c| matches!(c, Command::Music(_)))
