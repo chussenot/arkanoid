@@ -122,7 +122,7 @@ static int default_steps_per_beat(int tempo_bpm, int step_ms)
 }
 
 static void fill_track_steps(SeqTrack *track, const AbcVoice *voice,
-                             int source_step_base, int length, int steps_per_beat)
+                             int source_step_base, int length, int steps_per_beat, int hold)
 {
     int gate_percent;
 
@@ -143,6 +143,10 @@ static void fill_track_steps(SeqTrack *track, const AbcVoice *voice,
         step->velocity = 88;
         step->accent = (uint8_t)((steps_per_beat > 0 && (s % steps_per_beat) == 0) ? 1 : 0);
         step->fx_trigger = step->accent;
+        /* BRYX: under %%hold, a step inside a written note continues it. */
+        if (hold && source_step > 0 && !voice->onset[source_step] &&
+            voice->freqs[source_step - 1] == voice->freqs[source_step])
+            step->tie = 1;
     }
 }
 
@@ -165,7 +169,8 @@ static int append_pattern_instance(SeqSong *song, const AbcMusic *music, int tra
     pattern->length = pattern_length;
     pattern->track_count = track_count;
     for (int t = 0; t < track_count; t++) {
-        fill_track_steps(&pattern->tracks[t], &music->voices[t], source_step_base, pattern_length, song->steps_per_beat);
+        fill_track_steps(&pattern->tracks[t], &music->voices[t], source_step_base, pattern_length,
+                         song->steps_per_beat, music->hold);
         pattern->tracks[t].instrument = t;
     }
 
@@ -235,8 +240,42 @@ static int validate_fx_bus(int fx_bus)
     return (fx_bus >= 0 && fx_bus < 4);  /* SEQ_MAX_FX_BUSES */
 }
 
+static int parse_int_param(const char *text, const char *key, int fallback);
+
+/* BRYX: the parameters in AbcExtras, from a %%instrument or V: line. */
+static void parse_extras(const char *val, AbcExtras *x)
+{
+    static const char *keys[] = { "detune=", "stack=", "pwm=", "pwm_rate=",
+                                  "vibrato_rate=", "vibrato_delay=", "accent=" };
+    int *fields[] = { &x->detune_cents, &x->stack, &x->pwm_depth, &x->pwm_rate,
+                      &x->vibrato_rate, &x->vibrato_delay_ms, &x->accent_gain };
+    for (int i = 0; i < 7; i++) {
+        int value = parse_int_param(val, keys[i], -1);
+        if (value >= 0) {
+            *fields[i] = value;
+            x->set |= 1u << i;
+        }
+    }
+}
+
+/* BRYX: a voice takes each extra it did not set from its instrument. */
+static void merge_extras(AbcExtras *voice, const AbcExtras *inst)
+{
+    int *dst[] = { &voice->detune_cents, &voice->stack, &voice->pwm_depth, &voice->pwm_rate,
+                   &voice->vibrato_rate, &voice->vibrato_delay_ms, &voice->accent_gain };
+    const int *src[] = { &inst->detune_cents, &inst->stack, &inst->pwm_depth, &inst->pwm_rate,
+                         &inst->vibrato_rate, &inst->vibrato_delay_ms, &inst->accent_gain };
+    for (int i = 0; i < 7; i++) {
+        if (!(voice->set & (1u << i)) && (inst->set & (1u << i))) {
+            *dst[i] = *src[i];
+            voice->set |= 1u << i;
+        }
+    }
+}
+
 static void parse_voice_directives(AbcVoice *v, const char *val)
 {
+    parse_extras(val, &v->extras);
     const char *instrument = strstr(val, "instrument=");
     const char *amp = strstr(val, "amp=");
     const char *wave = strstr(val, "wave=");
@@ -432,6 +471,7 @@ static void parse_instrument_directive(AbcMusic *music, const char *val)
         int fb = atoi(fx + 3);
         if (validate_fx_bus(fb)) inst->fx_bus = fb;
     }
+    parse_extras(val, &inst->extras);
     
     music->instrument_count++;
 }
@@ -513,6 +553,11 @@ static void parse_numbered_effect_directive(AbcMusic *music, const char *val)
     bus->ladder_amount = parse_int_param(val, "ladder=", bus->ladder_amount);
     bus->ladder_cutoff = parse_int_param(val, "ladder_cutoff=", bus->ladder_cutoff);
     bus->ladder_resonance = parse_int_param(val, "ladder_resonance=", bus->ladder_resonance);
+    if (strstr(val, "mode=insert")) bus->insert = 1;
+    {
+        const char *key = strstr(val, "sidechain_key=");
+        if (key) sscanf(key + 14, "%31s", bus->sidechain_key);
+    }
     
     /* Set default mix if not specified */
     if (bus->mix_percent == 0) bus->mix_percent = 100;
@@ -881,6 +926,16 @@ int abc_load(const char *path, AbcMusic *music)
             parse_swing_directive(music, line + 7);
             continue;
         }
+        /* BRYX: %%hold on, and %%master <percent of full gain> */
+        if (strncmp(line, "%%hold", 6) == 0) {
+            music->hold = strstr(line + 6, "on") != NULL;
+            continue;
+        }
+        if (strncmp(line, "%%master", 8) == 0) {
+            double pct = atof(line + 8);
+            music->master_permille = pct > 0.0 ? (int)(pct * 10.0 + 0.5) : 0;
+            continue;
+        }
 
         /* skip other %% directives */
         if (line[0] == '%') continue;
@@ -941,6 +996,7 @@ int abc_load(const char *path, AbcMusic *music)
                         rp += consumed;
                         for (int s = 0; s < steps && v->note_count < ABC_MAX_NOTES; s++) {
                             v->freqs[v->note_count] = freq;
+                            v->onset[v->note_count] = (s == 0);
                             v->note_count++;
                         }
                     }
@@ -973,6 +1029,7 @@ int abc_load(const char *path, AbcMusic *music)
 
             for (int s = 0; s < steps && v->note_count < ABC_MAX_NOTES; s++) {
                 v->freqs[v->note_count] = freq;
+                v->onset[v->note_count] = (s == 0);
                 v->note_count++;
             }
         }
@@ -1009,6 +1066,7 @@ int abc_load(const char *path, AbcMusic *music)
                     if (voice->vibrato_cents == 0) voice->vibrato_cents = inst->vibrato_cents;
                     if (voice->glide_ms == 0) voice->glide_ms = inst->glide_ms;
                     if (voice->fx_bus == 0) voice->fx_bus = inst->fx_bus;
+                    merge_extras(&voice->extras, &inst->extras);
                     break;
                 }
             }
@@ -1117,6 +1175,17 @@ int abc_build_seq_song(const AbcMusic *music, SeqSong *song)
         inst->glide_ms = dsp_clampi(v->glide_ms, 0, 500);
         inst->fx_send = dsp_clampi(v->fx_bus, 0, SEQ_MAX_FX_BUSES - 1);
         inst->accent_gain = 20;
+        {
+            /* BRYX: the extras ABC can now set. */
+            const AbcExtras *x = &v->extras;
+            if (x->set & (1u << 0)) inst->detune_cents = dsp_clampi(x->detune_cents, 0, 200);
+            if (x->set & (1u << 1)) inst->stacked_voices = dsp_clampi(x->stack, 1, 2);
+            if (x->set & (1u << 2)) inst->pwm_depth = dsp_clampi(x->pwm_depth, 0, 40);
+            if (x->set & (1u << 3)) inst->pwm_rate = dsp_clampi(x->pwm_rate, 0, 20000);
+            if (x->set & (1u << 4)) inst->vibrato_rate = dsp_clampi(x->vibrato_rate, 1, 20000);
+            if (x->set & (1u << 5)) inst->vibrato_delay_ms = dsp_clampi(x->vibrato_delay_ms, 0, 2000);
+            if (x->set & (1u << 6)) inst->accent_gain = dsp_clampi(x->accent_gain, 0, 100);
+        }
         if (inst->waveform == DSP_WAVE_NOISE)
             inst->noise_mode = 1;
     }
@@ -1139,7 +1208,21 @@ int abc_build_seq_song(const AbcMusic *music, SeqSong *song)
         dst->ladder_amount = dsp_clampi(src->ladder_amount, 0, 100);
         dst->ladder_cutoff = dsp_clampi(src->ladder_cutoff > 0 ? src->ladder_cutoff : 50, 1, 100);
         dst->ladder_resonance = dsp_clampi(src->ladder_resonance, 0, 100);
+        /* BRYX: insert mode, and a sidechain keyed by a voice's name or its
+         * instrument's. */
+        dst->insert = src->insert ? 1 : 0;
+        dst->sidechain_key = 0;
+        if (src->sidechain_key[0]) {
+            for (int t = 0; t < track_count; t++) {
+                if (strcmp(music->voices[t].name, src->sidechain_key) == 0 ||
+                    strcmp(music->voices[t].instrument_ref, src->sidechain_key) == 0) {
+                    dst->sidechain_key = t + 1;
+                    break;
+                }
+            }
+        }
     }
+    song->master_permille = music->master_permille;
 
     for (int t = 0; t < track_count; t++) {
         if (music->voices[t].note_count > max_steps)

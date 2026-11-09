@@ -1,7 +1,8 @@
 //! Sound (docs/design/audio.md).
 //!
 //! - `cues`: the sounds, rendered at build time from `audio/cues/*.abc` by
-//!   the vendored Electric Pulse engine (`build.rs`);
+//!   BRYX's fork of the Electric Pulse engine (`build.rs`), stored as
+//!   mu-law (`mulaw`);
 //! - `director`: which sound plays when, where and at what pitch: pure,
 //!   tested;
 //! - `mixer`: effects, stingers and music into one stereo stream: pure,
@@ -20,6 +21,7 @@ mod cues;
 mod director;
 #[cfg_attr(not(feature = "audio"), allow(dead_code))]
 mod mixer;
+mod mulaw;
 #[cfg(feature = "audio")]
 mod output;
 

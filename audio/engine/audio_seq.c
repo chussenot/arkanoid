@@ -108,6 +108,24 @@ int seq_compile_timeline(const SeqSong *song, int sample_rate, SeqTimeline *time
     return 0;
 }
 
+int seq_held_samples(const SeqSong *song, const SeqTimeline *timeline,
+                     int absolute_step, int track_index)
+{
+    int samples;
+
+    if (!song || !timeline || absolute_step < 0 || absolute_step >= timeline->total_steps)
+        return 0;
+    samples = timeline->steps[absolute_step].samples;
+    for (int s = absolute_step + 1; s < timeline->total_steps; s++) {
+        const SeqTimelineStep *ts = &timeline->steps[s];
+        const SeqPattern *pattern = &song->patterns[ts->pattern_index];
+        if (track_index >= pattern->track_count || !pattern->tracks[track_index].steps[ts->pattern_step].tie)
+            break;
+        samples += ts->samples;
+    }
+    return samples;
+}
+
 int seq_collect_step_events(const SeqSong *song, const SeqTimeline *timeline,
                             int absolute_step, SeqNoteEvent events[SEQ_MAX_STEP_EVENTS])
 {
@@ -130,7 +148,7 @@ int seq_collect_step_events(const SeqSong *song, const SeqTimeline *timeline,
 
         if (track->instrument < 0 || track->instrument >= song->instrument_count)
             continue;
-        if (step->note == SEQ_NOTE_REST || step->velocity <= 0)
+        if (step->note == SEQ_NOTE_REST || step->velocity <= 0 || step->tie)
             continue;
 
         instrument = &song->instruments[track->instrument];

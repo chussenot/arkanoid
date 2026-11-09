@@ -6,6 +6,8 @@ L:1/16
 Q:1/4=150
 K:C
 % Ascent's opening leaps turned upside down, falling; it stops on B, unresolved: keep going.
+%%hold on
+%%master 140.7
 %%instrument lead wave=pulse amp=33 duty=30 attack=4 decay=120 sustain=60 release=260 gate=85 vibrato=8 fx=0
 %%instrument low wave=triangle amp=38 attack=4 decay=200 sustain=60 release=300 gate=90 fx=0
 %%effect 0 delay_steps=3 delay_feedback=30 delay_mix=24 drive=0 lowpass=20 mix=100

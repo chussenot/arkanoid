@@ -27,6 +27,7 @@ Run it with python3 >= 3.8 and nothing else installed.
 
 from __future__ import annotations
 
+import math
 import pathlib
 
 OUT = pathlib.Path(__file__).resolve().parent / "cues"
@@ -502,40 +503,43 @@ def act_of(level: int) -> int:
 # ---------------------------------------------------------- palettes ---
 # Instruments per palette: name -> directive body. fx bus 0 = drums and
 # bass, 1 = melody (echo), 2 = arpeggio (pump), 3 = the ladder filter.
+# Amplitudes were rebalanced for the engine fork's held notes and insert
+# buses (docs/design/audio.md) so each voice keeps its level in the mix:
+# measured voice by voice, soloed, against the score as first written.
 
 DRUM_KIT = {
-    "kick": "wave=triangle amp=96 attack=0 decay=70 sustain=0 release=40 gate=60 fx=0",
-    "snare": "wave=noise amp=30 attack=0 decay=60 sustain=0 release=70 gate=50 fx=0",
-    "hat": "wave=noise amp=11 attack=0 decay=12 sustain=0 release=14 gate=20 fx=0",
+    "kick": "wave=triangle amp=67 attack=0 decay=70 sustain=0 release=40 gate=60 fx=0",
+    "snare": "wave=noise amp=22 attack=0 decay=60 sustain=0 release=70 gate=50 fx=0",
+    "hat": "wave=noise amp=10 attack=0 decay=12 sustain=0 release=14 gate=20 fx=0",
 }
 
 PALETTES = {
     "pulse": {
         "bass": "wave=pulse amp=46 duty=38 attack=1 decay=60 sustain=70 release=70 gate=80 fx=0",
-        "arp": "wave=pulse amp=20 duty=14 attack=0 decay=30 sustain=40 release=50 gate=50 fx=2",
+        "arp": "wave=pulse amp=34 duty=14 attack=0 decay=30 sustain=40 release=50 gate=50 fx=2",
         "pad": "wave=triangle amp=12 attack=120 decay=200 sustain=80 release=300 gate=98 fx=1",
-        "lead": "wave=pulse amp=30 duty=25 attack=4 decay=120 sustain=70 release=180 gate=88 vibrato=6 fx=1",
+        "lead": "wave=pulse amp=30 duty=25 pwm=10 pwm_rate=900 attack=4 decay=120 sustain=70 release=180 gate=88 vibrato=6 vibrato_delay=160 fx=1",
         "counter": "wave=triangle amp=22 attack=8 decay=120 sustain=70 release=200 gate=86 fx=1",
     },
     "glass": {
         "bass": "wave=triangle amp=58 attack=1 decay=80 sustain=70 release=90 gate=84 fx=0",
-        "arp": "wave=pulse amp=17 duty=8 attack=0 decay=40 sustain=30 release=90 gate=40 fx=2",
-        "pad": "wave=pulse amp=9 duty=46 attack=200 decay=240 sustain=84 release=420 gate=98 fx=1",
-        "lead": "wave=triangle amp=36 attack=10 decay=140 sustain=76 release=260 gate=90 vibrato=9 glide=14 fx=1",
+        "arp": "wave=pulse amp=29 duty=8 attack=0 decay=40 sustain=30 release=90 gate=40 fx=2",
+        "pad": "wave=pulse amp=23 duty=46 stack=2 detune=7 attack=200 decay=240 sustain=84 release=420 gate=98 fx=1",
+        "lead": "wave=triangle amp=36 attack=10 decay=140 sustain=76 release=260 gate=90 vibrato=9 vibrato_delay=200 glide=14 fx=1",
         "counter": "wave=pulse amp=15 duty=30 attack=6 decay=120 sustain=66 release=220 gate=84 fx=1",
     },
     "buzz": {
-        "bass": "wave=square amp=36 attack=1 decay=50 sustain=74 release=60 gate=78 fx=3",
-        "arp": "wave=pulse amp=18 duty=22 attack=0 decay=24 sustain=50 release=40 gate=46 fx=2",
-        "pad": "wave=pulse amp=9 duty=40 attack=60 decay=200 sustain=80 release=240 gate=98 fx=3",
-        "lead": "wave=square amp=24 attack=2 decay=90 sustain=74 release=140 gate=86 vibrato=5 fx=1",
-        "counter": "wave=pulse amp=16 duty=12 attack=2 decay=100 sustain=60 release=160 gate=80 fx=1",
+        "bass": "wave=square amp=64 attack=1 decay=50 sustain=74 release=60 gate=78 fx=3",
+        "arp": "wave=pulse amp=28 duty=22 attack=0 decay=24 sustain=50 release=40 gate=46 fx=2",
+        "pad": "wave=pulse amp=25 duty=40 attack=60 decay=200 sustain=80 release=240 gate=98 fx=3",
+        "lead": "wave=square amp=24 attack=2 decay=90 sustain=74 release=140 gate=86 vibrato=5 vibrato_delay=120 fx=1",
+        "counter": "wave=pulse amp=16 duty=12 pwm=6 pwm_rate=400 attack=2 decay=100 sustain=60 release=160 gate=80 fx=1",
     },
     "soft": {
         "bass": "wave=pulse amp=42 duty=46 attack=2 decay=90 sustain=72 release=110 gate=86 fx=0",
-        "arp": "wave=triangle amp=24 attack=0 decay=50 sustain=40 release=100 gate=50 fx=2",
-        "pad": "wave=triangle amp=13 attack=240 decay=260 sustain=86 release=500 gate=98 fx=1",
-        "lead": "wave=pulse amp=26 duty=40 attack=14 decay=160 sustain=78 release=300 gate=92 vibrato=11 glide=10 fx=1",
+        "arp": "wave=triangle amp=41 attack=0 decay=50 sustain=40 release=100 gate=50 fx=2",
+        "pad": "wave=triangle amp=6 attack=240 decay=260 sustain=86 release=500 gate=98 fx=1",
+        "lead": "wave=pulse amp=26 duty=40 pwm=8 pwm_rate=600 attack=14 decay=160 sustain=78 release=300 gate=92 vibrato=11 vibrato_delay=220 glide=10 fx=1",
         "counter": "wave=triangle amp=20 attack=10 decay=140 sustain=70 release=260 gate=88 fx=1",
     },
 }
@@ -545,20 +549,20 @@ FX = {
     "clean": [
         "0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=12 lowpass=20 mix=100",
         "1 delay_steps=3 delay_feedback=34 delay_mix=26 drive=0 lowpass=30 mix=80",
-        "2 delay_steps=2 delay_feedback=24 delay_mix=18 drive=0 lowpass=40 sidechain=34 sidechain_release=160 mix=80",
+        "2 mode=insert delay_steps=2 delay_feedback=24 delay_mix=18 drive=0 lowpass=40 sidechain=34 sidechain_release=160 sidechain_key=kick mix=100",
         "3 delay_steps=0 delay_feedback=0 delay_mix=0 drive=20 lowpass=20 mix=100",
     ],
     "space": [
         "0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=8 lowpass=30 mix=100",
         "1 delay_steps=3 delay_feedback=48 delay_mix=38 drive=0 lowpass=46 mix=80",
-        "2 delay_steps=4 delay_feedback=40 delay_mix=34 drive=0 lowpass=50 sidechain=40 sidechain_release=220 mix=76",
+        "2 mode=insert delay_steps=4 delay_feedback=40 delay_mix=34 drive=0 lowpass=50 sidechain=40 sidechain_release=220 sidechain_key=kick mix=100",
         "3 delay_steps=6 delay_feedback=30 delay_mix=30 drive=0 lowpass=60 mix=70",
     ],
     "machine": [
         "0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=26 lowpass=24 mix=100",
         "1 delay_steps=2 delay_feedback=30 delay_mix=22 drive=12 lowpass=30 mix=80",
-        "2 delay_steps=1 delay_feedback=20 delay_mix=14 drive=10 lowpass=36 sidechain=50 sidechain_release=140 mix=80",
-        "3 delay_steps=0 delay_feedback=0 delay_mix=0 drive=30 lowpass=10 ladder=70 ladder_cutoff=34 ladder_resonance=58 mix=100",
+        "2 mode=insert delay_steps=1 delay_feedback=20 delay_mix=14 drive=10 lowpass=36 sidechain=50 sidechain_release=140 sidechain_key=kick mix=100",
+        "3 mode=insert delay_steps=0 delay_feedback=0 delay_mix=0 drive=30 lowpass=10 ladder=70 ladder_cutoff=34 ladder_resonance=58 mix=100",
     ],
 }
 
@@ -944,6 +948,7 @@ def to_abc(track) -> str:
         f"% mode E {r['mode']}, progression {r['prog']}, form {form}",
         f"% A={r['a']} B={r['b']} counter={r['counter']}",
     ]
+    head.append("%%hold on")  # a written note sounds once, for its whole length
     if r["swing"]:
         head.append(f"%%swing {r['swing']}")
     for name, body in DRUM_KIT.items():
@@ -1065,27 +1070,46 @@ def check_score(tracks) -> bool:
 
 # ------------------------------------------------------------- master ---
 
-def master(text: str, render: str, tmp: pathlib.Path) -> str:
-    """Scale every voice of a track together until it peaks at or under
-    112 (of the engine's 128) with no clipped sample and its loudness is
-    at most -19 dBFS RMS, the level of the score's quietest tracks: one
-    level across all 33, so a level change never jumps in volume, and the
-    balance between voices untouched."""
-    import re
+PEAK_LIMIT = 28_672  # 112/128 of 16-bit full scale: headroom for the game's mixer
+RMS_LIMIT = 10 ** (-19 / 20)  # -19 dBFS, the level of the score's quietest tracks
+
+
+def measure(text: str, render: str, tmp: pathlib.Path):
+    """Render a track with the build's renderer: its peak (16-bit), how
+    many samples hit full scale, and its RMS as a fraction of full scale."""
+    import array
     import subprocess
 
-    for _ in range(30):
-        src, out = tmp / "track.abc", tmp / "track.u8"
-        src.write_text(text)
-        subprocess.run([render, str(src), str(out), "22050"], check=True)
-        pcm = out.read_bytes()
-        peak = max(abs(b - 128) for b in pcm)
-        clip = sum(1 for b in pcm if b in (0, 255))
-        rms = (sum((b - 128) ** 2 for b in pcm) / len(pcm)) ** 0.5 / 128
-        if peak <= 112 and clip == 0 and rms <= 10 ** (-19 / 20):
-            return text
-        text = re.sub(r"amp=(\d+)", lambda m: f"amp={max(4, round(int(m.group(1)) * 0.95))}", text)
-    raise SystemExit("could not master the track")
+    src, out = tmp / "track.abc", tmp / "track.s16"
+    src.write_text(text)
+    subprocess.run([render, str(src), str(out), "22050"], check=True)
+    pcm = array.array("h")
+    pcm.frombytes(out.read_bytes())
+    if pcm.itemsize != 2 or array.array("h", [1]).tobytes() != b"\x01\x00":
+        raise SystemExit("compose.py reads the renderer's little-endian 16-bit output")
+    peak = max(abs(v) for v in pcm)
+    clip = sum(1 for v in pcm if v in (32767, -32768))
+    rms = (sum(v * v for v in pcm) / len(pcm)) ** 0.5 / 32768
+    return peak, clip, rms
+
+
+def master(text: str, render: str, tmp: pathlib.Path) -> str:
+    """Set the track's output gain (`%%master`, applied after the mix) so
+    it peaks at or under PEAK_LIMIT with no clipped sample, at no more than
+    RMS_LIMIT: one level across all 33, so a level change never jumps in
+    volume. The voices keep the amplitudes the palette gives them, so
+    their balance, and every bit of their precision, is untouched."""
+    # Measured at a tenth of full gain, where no mix can clip, then scaled:
+    # the gain is applied after the mix, so the result is exact.
+    probe = 10.0
+    peak, _, rms = measure(text.replace("%%hold on", f"%%hold on\n%%master {probe}", 1), render, tmp)
+    gain = min(PEAK_LIMIT / peak, RMS_LIMIT / rms) * probe
+    pct = math.floor(gain * 10) / 10  # the engine reads tenths of a percent
+    text = text.replace("%%hold on", f"%%hold on\n%%master {pct:.1f}", 1)
+    peak, clip, rms = measure(text, render, tmp)
+    if peak > PEAK_LIMIT or clip or rms > RMS_LIMIT * 1.001:
+        raise SystemExit(f"could not master the track (peak {peak}, rms {rms:.4f})")
+    return text
 
 
 def main():

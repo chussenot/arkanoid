@@ -30,6 +30,12 @@ typedef struct {
     int gate_percent;
 } DspEnvelope;
 
+/* BRYX: every sample inside the engine carries DSP_FRAC_BITS bits below
+ * the 8-bit output step, so oscillators, envelopes, the mix and the FX
+ * run at 16-bit scale and are quantized once, at the output. An
+ * amplitude of 127 is still full scale. */
+#define DSP_FRAC_BITS 8
+
 typedef enum {
     DSP_ENV_IDLE = 0,
     DSP_ENV_ATTACK,
