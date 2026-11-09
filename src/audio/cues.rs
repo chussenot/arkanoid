@@ -96,6 +96,16 @@ impl Cue {
         })
     }
 
+    /// Whether new music waits for this cue to finish: the stingers that
+    /// end a level or a run, and the sounds that start play (the serve, the
+    /// warp). The mixer holds a music change until none of them sounds.
+    pub fn holds_music(self) -> bool {
+        matches!(
+            self,
+            Cue::LevelClear | Cue::GameOver | Cue::Victory | Cue::Launch | Cue::Warp
+        )
+    }
+
     /// Music loops play whole, start to end and round again.
     #[cfg(test)]
     pub fn is_music(self) -> bool {

@@ -3,7 +3,10 @@
 //! - **effects**: one-shot voices with a gain, a stereo position and a
 //!   pitch (playback rate, so one rendered brick note plays a whole scale);
 //! - **stingers**: effects that also *duck* the music while they play;
-//! - **music**: one looping track at a time, crossfaded on change.
+//! - **music**: one looping track at a time, crossfaded on change. A new
+//!   track waits for the sounds that hold the music (`Cue::holds_music`):
+//!   it starts when the fanfare, the serve or the warp has finished, never
+//!   under it.
 //!
 //! It is pure arithmetic over the embedded cues, unit-tested without a device;
 //! `output.rs` only feeds it buffers.
@@ -29,6 +32,9 @@ pub enum Command {
     MusicLevel(f32),
     /// The player's sound setting: effects on/off, music on/off.
     Enable { effects: bool, music: bool },
+    /// Fade out, in a moment, the sounds that hold the music: a stinger the
+    /// player has already moved past (Continue during Game Over).
+    CutHeld,
 }
 
 /// Voices that can sound at once; the oldest is stolen past this.
@@ -43,6 +49,8 @@ const CROSSFADE_SECS: f32 = 1.2;
 const DUCK_RELEASE_SECS: f32 = 0.5;
 /// Overall output level, under the soft limiter.
 const MASTER: f32 = 1.5;
+/// How quickly `CutHeld` silences a held sound: fast, but not a click.
+const CUT_SECS: f32 = 0.08;
 
 struct Voice {
     data: &'static [u8],
@@ -50,6 +58,11 @@ struct Voice {
     step: f64,
     left: f32,
     right: f32,
+    /// New music waits while this voice sounds (`Cue::holds_music`).
+    holds_music: bool,
+    /// 1 while playing; falls to 0 at `fade_step` a frame once cut.
+    fade: f32,
+    fade_step: f32,
 }
 
 struct Loop {
@@ -74,6 +87,8 @@ pub struct Mixer {
     duck_now: f32,
     effects_on: bool,
     music_on: bool,
+    /// A music change waiting for the held sounds to finish.
+    pending: Option<Option<Cue>>,
 }
 
 /// Equal-power stereo gains for a pan in -1..1: a sound keeps its
@@ -106,6 +121,40 @@ impl Mixer {
             duck_now: 1.0,
             effects_on: true,
             music_on: true,
+            pending: None,
+        }
+    }
+
+    /// Whether a sound that holds the music is still sounding.
+    fn music_held(&self) -> bool {
+        self.voices.iter().any(|v| v.holds_music && v.fade > 0.0)
+    }
+
+    /// Crossfade to `next` now.
+    fn switch_music(&mut self, next: Option<Cue>) {
+        let current = self.music.first().filter(|l| l.target > 0.0).map(|l| l.cue);
+        if current == next {
+            return;
+        }
+        for playing in &mut self.music {
+            playing.target = 0.0;
+        }
+        self.music.retain(|l| l.level > 0.0);
+        if self.music.len() > 1 {
+            // Never more than one loop fading out: drop the quietest.
+            self.music.truncate(1);
+        }
+        if let Some(cue) = next {
+            self.music.insert(
+                0,
+                Loop {
+                    cue,
+                    data: pcm(cue),
+                    pos: 0.0,
+                    level: 0.0,
+                    target: 1.0,
+                },
+            );
         }
     }
 
@@ -134,32 +183,26 @@ impl Mixer {
                     step: self.rate_ratio * f64::from(pitch.max(0.05)),
                     left: gain * l,
                     right: gain * r,
+                    holds_music: cue.holds_music(),
+                    fade: 1.0,
+                    fade_step: 0.0,
                 });
             }
             Command::Music(next) => {
-                let current = self.music.first().filter(|l| l.target > 0.0).map(|l| l.cue);
-                if current == next {
-                    return;
+                if next.is_some() && self.music_held() {
+                    // The old track still fades out now; the new one waits
+                    // for the held sounds to finish (`render`).
+                    self.switch_music(None);
+                    self.pending = Some(next);
+                } else {
+                    self.pending = None;
+                    self.switch_music(next);
                 }
-                for playing in &mut self.music {
-                    playing.target = 0.0;
-                }
-                self.music.retain(|l| l.level > 0.0);
-                if self.music.len() > 1 {
-                    // Never more than one loop fading out: drop the quietest.
-                    self.music.truncate(1);
-                }
-                if let Some(cue) = next {
-                    self.music.insert(
-                        0,
-                        Loop {
-                            cue,
-                            data: pcm(cue),
-                            pos: 0.0,
-                            level: 0.0,
-                            target: 1.0,
-                        },
-                    );
+            }
+            Command::CutHeld => {
+                let step = 1.0 / (CUT_SECS * self.output_rate);
+                for voice in self.voices.iter_mut().filter(|v| v.holds_music) {
+                    voice.fade_step = step;
                 }
             }
             Command::MusicLevel(level) => self.music_level = level.clamp(0.0, 1.0),
@@ -182,10 +225,11 @@ impl Mixer {
             let (mut left, mut right) = (0.0f32, 0.0f32);
 
             for voice in &mut self.voices {
-                let s = sample_at(voice.data, voice.pos);
+                let s = sample_at(voice.data, voice.pos) * voice.fade;
                 left += s * voice.left;
                 right += s * voice.right;
                 voice.pos += voice.step;
+                voice.fade = (voice.fade - voice.fade_step).max(0.0);
             }
 
             // Music: level eases toward its target (pause, mode), the duck
@@ -230,8 +274,14 @@ impl Mixer {
                 [] => {}
             }
         }
-        self.voices.retain(|v| v.pos < v.data.len() as f64);
+        self.voices
+            .retain(|v| v.pos < v.data.len() as f64 && v.fade > 0.0);
         self.music.retain(|t| t.target > 0.0 || t.level > 0.0);
+        if self.pending.is_some() && !self.music_held() {
+            if let Some(next) = self.pending.take() {
+                self.switch_music(next);
+            }
+        }
     }
 
     /// Voices currently sounding (tests and diagnostics).
@@ -347,6 +397,60 @@ mod tests {
         assert_eq!(mixer.music.len(), 1, "and is gone after the crossfade");
         mixer.apply(Command::Music(None));
         assert_eq!(mixer.music_track(), None);
+    }
+
+    #[cfg(feature = "audio")]
+    #[test]
+    fn new_music_waits_for_the_fanfare_to_finish() {
+        let mut mixer = Mixer::new(22_050);
+        mixer.apply(Command::Music(Some(Cue::Level(1))));
+        let mut out = vec![0.0f32; 2 * 2_205];
+        mixer.render(&mut out, 2);
+        mixer.apply(Command::Play {
+            cue: Cue::LevelClear,
+            gain: 1.0,
+            pan: 0.0,
+            pitch: 1.0,
+            duck: 2.7,
+        });
+        mixer.apply(Command::Music(Some(Cue::Level(2))));
+        assert_eq!(
+            mixer.music_track(),
+            None,
+            "the old track fades, the new one waits"
+        );
+        let fanfare = pcm(Cue::LevelClear).len() as f64 / f64::from(CUE_SAMPLE_RATE);
+        let mut played = 0.0;
+        while mixer.music_track().is_none() {
+            mixer.render(&mut out, 2);
+            played += 0.1;
+            assert!(played < fanfare + 0.5, "the music never came back");
+        }
+        assert!(
+            played + 0.1 >= fanfare,
+            "started {played:.1}s in, under a {fanfare:.1}s fanfare"
+        );
+        assert_eq!(mixer.music_track(), Some(Cue::Level(2)));
+        assert!(mixer.music[0].pos < 2.0 * 2_205.0, "and from its start");
+    }
+
+    #[cfg(feature = "audio")]
+    #[test]
+    fn cutting_held_sounds_fades_them_out_and_frees_the_music() {
+        let mut mixer = Mixer::new(22_050);
+        mixer.apply(play(Cue::GameOver));
+        mixer.apply(play(Cue::Brick));
+        mixer.apply(Command::Music(Some(Cue::Level(1))));
+        assert_eq!(mixer.music_track(), None, "held under Game Over");
+        mixer.apply(Command::CutHeld);
+        let mut out = vec![0.0f32; 2 * 4_410];
+        mixer.render(&mut out, 2);
+        assert_eq!(
+            mixer.voice_count(),
+            0,
+            "cut in 80 ms; the brick ran out too"
+        );
+        assert_eq!(mixer.music_track(), Some(Cue::Level(1)));
     }
 
     #[cfg(feature = "audio")]
