@@ -62,14 +62,14 @@ exceeds ball radius — assert this in a test, not a comment).
 paddle. 0 lives → GameOver with final score. All destructible bricks
 cleared → next level; last level cleared → Victory screen.
 
-**Power-ups (exactly these four, nothing more)**: dropped by 15% of
-destroyed bricks, uniformly among the four, fall at 140 px/s, caught with
+**Power-ups (exactly these seven, nothing more)**: dropped by 15% of
+destroyed bricks, uniformly among the seven, fall at 140 px/s, caught with
 the paddle:
 - Widen (paddle ×1.5 for 15 s, timers stack by refresh, not addition)
 - Slow (ball speed ×0.7 once, floor at launch speed)
 - Multiball (spawn 2 extra balls from current ball position; life is
   lost only when the LAST ball drops)
-- Glue (added after v1, see below)
+- Glue, Laser, Super laser, Tiny (added after v1, see below)
 
 **HUD**: score (top-left), lives as icons (top-right), level number
 (top-center). Menu and pause screens: title + key hints, keyboard only.
@@ -127,6 +127,22 @@ move.
   Space *press* releases every glued ball (holding Space does not: that is
   the serve); a ball also lets go by itself after 3 s, and when Glue runs
   out. The rest of the fleet keeps moving meanwhile.
+- **Laser** (power-up, 15 s): while Space is held, the paddle fires a pair
+  of bolts from 8 px in from each end every 0.3 s, at 800 px/s. A bolt
+  gives the first brick it meets one hit, as a ball would (an armored brick
+  loses one), and is spent; an indestructible brick stops it unharmed.
+- **Super laser** (power-up, 15 s): while Space is held, one wide bolt from
+  the paddle's center every 0.5 s, at 1000 px/s. It destroys every
+  destructible brick in its way, armored ones outright, and flies on until
+  an indestructible brick stops it.
+  Both guns: no bolt during a serve (Space launches); a bolt blows up an
+  asteroid it touches (a Laser bolt is spent doing so); at most 16 bolts in
+  flight; a bolt that takes a level's last brick clears it; catching either
+  gun replaces the one carried, timer full again. A bolt moves at most
+  17 px a tick, under a brick's 22 px height, so none can skip a brick.
+- **Tiny** (power-up, 15 s, the one that hurts): paddle ×0.6. Tiny and Widen
+  cancel each other: catching one ends the other, so the paddle is only
+  ever one size off.
 - **Asteroids**: from 4 s into a serve's flight, then every 5–10 s, one
   drifts in from the top edge (at most 3 at once), over the bricks, down at
   40 px/s with a sideways drift and wobble that flip at the walls. A ball

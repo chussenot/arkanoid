@@ -22,8 +22,8 @@ use winit::window::Window;
 use crate::assets::{Atlas, SpriteId, UvRect};
 use crate::events::{GameEvent, PowerUpKind};
 use crate::game::{
-    Ball, Brick, Game, GameState, Paddle, ASTEROID_BLAST_RADIUS, ASTEROID_RADIUS, PLAYFIELD_HEIGHT,
-    PLAYFIELD_WIDTH,
+    Ball, Brick, Game, GameState, GunKind, Paddle, ASTEROID_BLAST_RADIUS, ASTEROID_RADIUS,
+    PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
 };
 use crate::levels::BrickKind;
 
@@ -136,6 +136,8 @@ const MAX_POWERUPS: usize = 16;
 /// the same defensive way, explosions included (several can overlap).
 const MAX_ASTEROIDS: usize = 8;
 const MAX_EXPLOSIONS: usize = 8;
+/// `game.rs` caps bolts in flight at 16.
+const MAX_BOLTS: usize = 16;
 
 /// Falling power-up capsules are square, smaller than a brick but bigger
 /// than the ball -- big enough to read as "catch me" at a glance.
@@ -165,7 +167,8 @@ const MAX_QUADS: usize = 2
     + MAX_EXTRA_BALLS
     + MAX_POWERUPS
     + MAX_ASTEROIDS
-    + MAX_EXPLOSIONS;
+    + MAX_EXPLOSIONS
+    + MAX_BOLTS;
 
 /// Flat fallback color kept only for quads that don't carry a sprite of
 /// their own (ball trail, life icons) -- the paddle and ball's own quads
@@ -176,6 +179,14 @@ const POWERUP_WIDEN_COLOR: [f32; 4] = [0.35, 0.85, 0.40, 1.0];
 const POWERUP_SLOW_COLOR: [f32; 4] = [0.35, 0.55, 0.95, 1.0];
 const POWERUP_MULTIBALL_COLOR: [f32; 4] = [0.80, 0.35, 0.90, 1.0];
 const POWERUP_GLUE_COLOR: [f32; 4] = [0.95, 0.45, 0.65, 1.0];
+const POWERUP_LASER_COLOR: [f32; 4] = [0.95, 0.25, 0.20, 1.0];
+const POWERUP_SUPER_LASER_COLOR: [f32; 4] = [0.30, 0.95, 0.95, 1.0];
+/// Grey: the one capsule worth dodging.
+const POWERUP_TINY_COLOR: [f32; 4] = [0.55, 0.55, 0.58, 1.0];
+/// Bolts, and the paddle while it carries the gun that fires them, take
+/// their capsule's color.
+const LASER_PADDLE_TINT: [f32; 4] = [1.0, 0.55, 0.5, 1.0];
+const SUPER_LASER_PADDLE_TINT: [f32; 4] = [0.6, 1.0, 1.0, 1.0];
 
 /// Asteroids reuse the ball's round sprite, tinted rock-orange, at their
 /// own radius: round without a sprite of their own.
@@ -195,6 +206,9 @@ fn powerup_color(kind: PowerUpKind) -> [f32; 4] {
         PowerUpKind::Slow => POWERUP_SLOW_COLOR,
         PowerUpKind::Multiball => POWERUP_MULTIBALL_COLOR,
         PowerUpKind::Glue => POWERUP_GLUE_COLOR,
+        PowerUpKind::Laser => POWERUP_LASER_COLOR,
+        PowerUpKind::SuperLaser => POWERUP_SUPER_LASER_COLOR,
+        PowerUpKind::Tiny => POWERUP_TINY_COLOR,
     }
 }
 
@@ -970,12 +984,15 @@ impl Renderer {
                 + curr.extra_balls.len().min(MAX_EXTRA_BALLS)
                 + curr.powerups.len().min(MAX_POWERUPS)
                 + curr.asteroids.len().min(MAX_ASTEROIDS)
-                + self.explosions.len(),
+                + self.explosions.len()
+                + curr.bolts.len().min(MAX_BOLTS),
         );
-        let paddle_tint = if curr.glue_timer > 0.0 {
-            GLUE_PADDLE_TINT
-        } else {
-            WHITE_TINT
+        // A gun shows over Glue: it changes what Space does.
+        let paddle_tint = match curr.gun.map(|g| g.kind) {
+            Some(GunKind::Laser) => LASER_PADDLE_TINT,
+            Some(GunKind::SuperLaser) => SUPER_LASER_PADDLE_TINT,
+            None if curr.glue_timer > 0.0 => GLUE_PADDLE_TINT,
+            None => WHITE_TINT,
         };
         instances.push(QuadInstance::new_textured(
             shaken(drawn.paddle.x, drawn.paddle.y),
@@ -1059,6 +1076,18 @@ impl Renderer {
                 shaken(powerup.x, powerup.y),
                 [POWERUP_HALF_SIZE, POWERUP_HALF_SIZE],
                 powerup_color(powerup.kind),
+            )
+        }));
+
+        // Bolts in flight, flat quads in their gun's color.
+        instances.extend(curr.bolts.iter().take(MAX_BOLTS).map(|bolt| {
+            QuadInstance::new(
+                shaken(bolt.x, bolt.y),
+                bolt.half_size,
+                match bolt.kind {
+                    GunKind::Laser => POWERUP_LASER_COLOR,
+                    GunKind::SuperLaser => POWERUP_SUPER_LASER_COLOR,
+                },
             )
         }));
 

@@ -33,7 +33,7 @@ pub mod pilot;
 use std::fmt;
 use std::time::Duration;
 
-use crate::events::GameEvent;
+use crate::events::{GameEvent, PowerUpKind};
 use crate::game::{
     forecast_crossing, Ball, Forecast, Game, GameState, Input, Paddle, POWERUP_FALL_SPEED,
 };
@@ -354,11 +354,12 @@ impl Autopilot {
         };
 
         // A power-up is worth a detour only if the paddle can make it back
-        // in time for the ball; which power-up is worth more is moot, all
-        // three only help.
+        // in time for the ball. Which helpful one is worth more is moot;
+        // Tiny, the one that hurts, is never chased.
         let catch = game
             .powerups
             .iter()
+            .filter(|p| p.kind != PowerUpKind::Tiny)
             .filter_map(|p| {
                 let time = (paddle.top() - p.y) / POWERUP_FALL_SPEED;
                 let detour_ok = time >= 0.0
@@ -373,6 +374,12 @@ impl Autopilot {
         }
 
         (input.left, input.right) = pilot::steer(paddle.x, target_x, dt);
+
+        // A gun fires while Space is held, and every bolt can only help.
+        // A glued ball's release owns Space while there is one (above).
+        if game.gun.is_some() && fleet().all(|b| b.glued.is_none()) {
+            input.space = true;
+        }
     }
 
     /// The ball the paddle must deal with next, the one reaching its
@@ -770,6 +777,57 @@ mod tests {
     }
 
     #[test]
+    fn the_autopilot_fires_a_gun_and_leaves_a_tiny_capsule_alone() {
+        let mut game = Game::with_seed(4);
+        game.state = GameState::Playing;
+        let mut autopilot = Autopilot::new(None, 1);
+        // Serve, then give the paddle a laser.
+        for _ in 0..240 {
+            let input = autopilot.input(&game, DT);
+            game.tick(&input, DT);
+            autopilot.observe(&game);
+            game.events.clear();
+        }
+        assert!(!game.ball.attached);
+        game.gun = Some(crate::game::Gun {
+            kind: crate::game::GunKind::Laser,
+            timer: 10.0,
+        });
+        assert!(autopilot.input(&game, DT).space, "holds Space to fire");
+
+        // A capsule falling beside the paddle with time to spare (a slow
+        // ball high up, one brick left in a far corner): a Widen is worth
+        // the detour, a Tiny is treated as if it were not there.
+        let steer_with = |powerups: Vec<crate::game::PowerUp>| {
+            let mut probe = Game::with_seed(4).with_features(crate::game::Features::V1);
+            probe.state = GameState::Playing;
+            probe.paddle.x = 400.0;
+            probe.ball.attached = false;
+            (probe.ball.x, probe.ball.y, probe.ball.vx, probe.ball.vy) =
+                (400.0, 300.0, 10.0, -150.0);
+            probe.bricks.retain(|b| b.x < 100.0 && b.y < 80.0);
+            probe.powerups = powerups;
+            let input = Autopilot::new(None, 1).input(&probe, DT);
+            (input.left, input.right)
+        };
+        let capsule = |kind| crate::game::PowerUp {
+            x: 200.0,
+            y: 300.0,
+            kind,
+        };
+        let none = steer_with(vec![]);
+        let widen = steer_with(vec![capsule(PowerUpKind::Widen)]);
+        let tiny = steer_with(vec![capsule(PowerUpKind::Tiny)]);
+        assert_eq!(widen, (true, false), "goes for a Widen");
+        assert_ne!(
+            none,
+            (true, false),
+            "the ball alone would not take it there"
+        );
+        assert_eq!(tiny, none, "ignores a Tiny");
+    }
+
+    #[test]
     fn the_autopilot_starts_the_game_from_the_menu() {
         let mut game = Game::with_seed(1);
         let mut autopilot = Autopilot::new(None, 1);
@@ -796,14 +854,28 @@ mod benchmark {
                 "glue",
                 Features {
                     glue: true,
-                    asteroids: false,
+                    ..Features::V1
                 },
             ),
             (
                 "asteroids",
                 Features {
-                    glue: false,
                     asteroids: true,
+                    ..Features::V1
+                },
+            ),
+            (
+                "lasers",
+                Features {
+                    lasers: true,
+                    ..Features::V1
+                },
+            ),
+            (
+                "tiny",
+                Features {
+                    tiny: true,
+                    ..Features::V1
                 },
             ),
             ("all", Features::ALL),
