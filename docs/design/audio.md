@@ -60,6 +60,19 @@ flowchart LR
   - music crossfades over 1.2 s;
   - stingers duck the music to 25%;
   - a `tanh` soft limiter, so a burst of breaks never hard-clips.
+- **One thing at a time.** Sounds that mark a moment never play over
+  each other:
+  - A level's track starts at its first serve, after the serve's whip. A
+    lost life re-serves without restarting it.
+  - A new track never starts under the level-clear fanfare, Game Over,
+    Victory, the serve or the warp. The mixer holds it until they finish
+    (`Cue::holds_music`), then starts it from its first bar.
+  - A warp skips the level, so its whoosh plays without the level-clear
+    fanfare.
+  - Continue, New game or Play again on an end screen cuts that screen's
+    stinger in 80 ms.
+  - Game Over and Victory duck the run's music as it fades out under
+    them.
 - **The game thread never blocks on audio.** Commands cross a channel;
   the callback drains it and owns the mixer.
 - **Presentation only.** The director reads each tick's events before

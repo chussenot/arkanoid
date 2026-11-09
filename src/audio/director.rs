@@ -11,8 +11,13 @@
 //!   the field, in both renderers.
 //! - **The paddle tightens with the ball.** Its knock rises with the ball's
 //!   speed, so the rally's pace is heard as well as seen.
-//! - **Music follows the campaign.** One loop per act, faster and fuller
-//!   act by act; stingers mark the moments and duck the loop under them.
+//! - **Music follows the campaign.** Every level has its own track;
+//!   stingers mark the moments and duck the loop under them.
+//! - **One thing at a time.** A level's track starts at its first serve,
+//!   after the serve's whip; a new track never starts under a fanfare, a
+//!   warp or the serve (the mixer holds it, `Cue::holds_music`). A warp is
+//!   the transition, so it plays without the level-clear fanfare, and
+//!   leaving an end screen cuts its stinger.
 
 use crate::events::{GameEvent, PowerUpKind};
 use crate::game::{Game, GameState, GunKind, LevelSetKind, PLAYFIELD_WIDTH};
@@ -157,6 +162,9 @@ pub struct Director {
     intact_armor: Vec<(f32, f32)>,
     level: usize,
     ball_attached: bool,
+    /// The level whose first serve has been heard: its music plays from
+    /// there. Cleared when a run ends, so a Continue waits for its serve.
+    served_level: Option<usize>,
 }
 
 impl Director {
@@ -170,6 +178,7 @@ impl Director {
             intact_armor: Vec::new(),
             level: 0,
             ball_attached: false,
+            served_level: None,
         }
     }
 
@@ -181,7 +190,12 @@ impl Director {
         self.events(game, events, &mut out);
         self.armor(game, &mut out);
         self.launch(game, &mut out);
-        let music = music_for(game, &self.playlist);
+        let mut music = music_for(game, &self.playlist);
+        let in_play = matches!(game.state, GameState::Playing | GameState::Paused);
+        if in_play && self.served_level != Some(game.level) {
+            // Before the level's first serve, the field waits in silence.
+            music = None;
+        }
         if self.last_music != Some(music) {
             out.push(Command::Music(music));
             self.last_music = Some(music);
@@ -205,11 +219,20 @@ impl Director {
                     GameState::Menu | GameState::GameOver | GameState::Victory,
                     GameState::Playing,
                 ) => {
+                    // The player has moved past the end screen: its stinger
+                    // stops rather than play on under the new run.
+                    out.push(Command::CutHeld);
                     out.push(play(Cue::Select, 0.55, PLAYFIELD_WIDTH / 2.0));
                     out.push(Command::MusicLevel(1.0));
                     self.combo = 0;
                 }
                 _ => {}
+            }
+            if matches!(
+                state,
+                GameState::Menu | GameState::GameOver | GameState::Victory
+            ) {
+                self.served_level = None;
             }
         }
         self.last_state = Some(state);
@@ -220,6 +243,7 @@ impl Director {
         let has = |want: &GameEvent| events.iter().any(|e| e == want);
         let run_over = has(&GameEvent::GameOver);
         let won = has(&GameEvent::Victory);
+        let warped = has(&GameEvent::Warped);
         let mut bricks = 0;
         for event in events {
             match *event {
@@ -271,12 +295,16 @@ impl Director {
                     out.push(stinger(Cue::LifeLost, 0.7, 1.6));
                     self.combo = 0;
                 }
-                GameEvent::LevelCleared if !won => {
+                // A warp skips the level: its whoosh is the transition, and
+                // the fanfare is for a level cleared brick by brick.
+                GameEvent::LevelCleared if !won && !warped => {
                     out.push(stinger(Cue::LevelClear, 0.7, 2.7));
                     self.combo = 0;
                 }
-                GameEvent::GameOver => out.push(stinger(Cue::GameOver, 0.8, 0.0)),
-                GameEvent::Victory => out.push(stinger(Cue::Victory, 0.8, 0.0)),
+                // The run's music fades out under these; the duck keeps its
+                // tail from sounding over their first notes.
+                GameEvent::GameOver => out.push(stinger(Cue::GameOver, 0.8, 1.5)),
+                GameEvent::Victory => out.push(stinger(Cue::Victory, 0.8, 1.5)),
                 _ => {}
             }
         }
@@ -313,6 +341,7 @@ impl Director {
         if self.ball_attached && !attached && game.state == GameState::Playing {
             out.push(play(Cue::Launch, 0.4, game.paddle.x));
             self.combo = 0;
+            self.served_level = Some(game.level);
         }
         self.ball_attached = attached;
     }
@@ -560,6 +589,72 @@ mod tests {
         assert!(
             cues(&director.observe(&game, &[])).is_empty(),
             "level change"
+        );
+    }
+
+    fn music(commands: &[Command]) -> Option<Option<Cue>> {
+        commands.iter().find_map(|c| match c {
+            Command::Music(m) => Some(*m),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn a_levels_music_starts_at_its_first_serve() {
+        let (mut director, mut game) = playing();
+        game.ball.attached = true;
+        director.observe(&game, &[]);
+        assert!(
+            director.last_music == Some(None),
+            "silence while the ball waits"
+        );
+        game.ball.attached = false;
+        let out = director.observe(&game, &[]);
+        assert_eq!(cues(&out), vec![Cue::Launch]);
+        assert_eq!(music(&out), Some(Some(Cue::Level(game.level as u8))));
+
+        // A lost life re-attaches the ball: the music plays on.
+        game.ball.attached = true;
+        assert_eq!(music(&director.observe(&game, &[E::LifeLost])), None);
+
+        // The next level waits for its own serve.
+        game.level += 1;
+        assert_eq!(
+            music(&director.observe(&game, &[E::LevelCleared])),
+            Some(None)
+        );
+        game.ball.attached = false;
+        assert_eq!(
+            music(&director.observe(&game, &[])),
+            Some(Some(Cue::Level(game.level as u8)))
+        );
+    }
+
+    #[test]
+    fn a_warp_plays_the_warp_without_the_fanfare() {
+        let (mut director, game) = playing();
+        let out = director.observe(&game, &[E::Warped, E::LevelCleared]);
+        assert_eq!(cues(&out), vec![Cue::Warp]);
+    }
+
+    #[test]
+    fn leaving_an_end_screen_cuts_its_stinger_and_waits_for_the_serve() {
+        let (mut director, mut game) = playing();
+        game.ball.attached = false;
+        director.observe(&game, &[]);
+        game.state = GameState::GameOver;
+        let out = director.observe(&game, &[E::GameOver]);
+        assert!(matches!(
+            out.iter().find(|c| matches!(c, Command::Play { .. })),
+            Some(Command::Play { cue: Cue::GameOver, duck, .. }) if *duck > 0.0
+        ));
+        game.state = GameState::Playing;
+        game.ball.attached = true;
+        let out = director.observe(&game, &[]);
+        assert!(out.contains(&Command::CutHeld));
+        assert!(
+            director.last_music == Some(None),
+            "the continued run waits for its serve"
         );
     }
 
