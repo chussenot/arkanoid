@@ -83,8 +83,8 @@ mise run ci                                  # fmt-check + clippy + test — the
 - **Rendering**: `wgpu`, one instanced-quad pipeline, every entity (paddle, ball, bricks, walls, HUD) is a quad instance, target one-or-two draw calls per frame. No engine (no bevy/ggez/macroquad) — the point is a small, legible codebase.
 - **Windowing/input**: `winit`. **Timing**: fixed-timestep simulation at 120 Hz, decoupled from vsync, with render-side interpolation between ticks.
 - **Text**: `glyphon` for the score/lives/level HUD.
-- **Audio**: none in v1 — `events.rs` exists specifically so a future audio layer can subscribe to `GameEvent`s without touching simulation code.
-- Dependency budget is fixed: wgpu, winit, glyphon, bytemuck, rand. Anything beyond that needs a code comment justifying it.
+- **Audio** (added after v1, `docs/design/audio.md`): cues are ABC files in `audio/cues/`, rendered at build time by the vendored Electric Pulse C engine (`audio/engine/`, keep it byte-for-byte; see its PROVENANCE.md) via `build.rs`, and played through `cpal` by `src/audio/` (director → mixer → output). Audio only reads `GameEvent`s and game state, like the renderers. The `audio` feature is on by default; `--no-default-features` builds silent.
+- Dependency budget is fixed: wgpu, winit, glyphon, bytemuck, rand. Anything beyond that needs a code comment justifying it (as `cpal` and the `cc` build-dependency have in `Cargo.toml`).
 
 Module boundaries (the strict separation is the architectural point — don't blur it):
 - `src/main.rs` — window/event loop wiring only.

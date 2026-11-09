@@ -1,6 +1,7 @@
 //! Window/event loop wiring only (see docs/spec.md, Architecture section).
 
 mod assets;
+mod audio;
 mod autopilot;
 mod cli;
 mod events;
@@ -60,6 +61,13 @@ impl AnyRenderer {
         match self {
             Self::Classic(r) => r.set_record(record),
             Self::ThreeD(r) => r.set_record(record),
+        }
+    }
+
+    fn set_sound(&mut self, label: Option<&'static str>) {
+        match self {
+            Self::Classic(r) => r.set_sound(label),
+            Self::ThreeD(r) => r.set_sound(label),
         }
     }
 
@@ -143,6 +151,8 @@ struct App {
     record: hud::Record,
     /// Last frame's state, to catch the moment a run ends.
     last_state: game::GameState,
+    /// Sound (`audio/`), opened in `main`; `None` only before that.
+    audio: Option<audio::Audio>,
 }
 
 impl App {
@@ -162,6 +172,7 @@ impl App {
             autopilot: None,
             record: hud::Record::default(),
             last_state: game::GameState::Menu,
+            audio: None,
         }
     }
 }
@@ -229,14 +240,28 @@ impl ApplicationHandler for App {
                     KeyEvent {
                         physical_key,
                         state,
+                        repeat,
                         ..
                     },
                 is_synthetic: false,
                 ..
-            } => self.set_input_key(physical_key, state),
+            } => {
+                // M cycles the sound (all, effects only, off). An interface
+                // key, like closing the window: never a simulation input.
+                if physical_key == PhysicalKey::Code(KeyCode::KeyM)
+                    && state == ElementState::Pressed
+                    && !repeat
+                {
+                    if let Some(audio) = &mut self.audio {
+                        audio.cycle_mode();
+                    }
+                }
+                self.set_input_key(physical_key, state)
+            }
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
                     renderer.set_record(self.record);
+                    renderer.set_sound(self.audio.as_ref().and_then(audio::Audio::label));
                     renderer.render(
                         palette::LETTERBOX.clear(),
                         &self.render_prev,
@@ -283,6 +308,10 @@ impl ApplicationHandler for App {
             // contract documented in events.rs.
             if let Some(renderer) = &mut self.renderer {
                 renderer.ingest_tick_events(&self.game.events);
+            }
+            // Sound reads the same tick's events, before they are drained.
+            if let Some(audio) = &mut self.audio {
+                audio.observe(&self.game, &self.game.events);
             }
             self.game.events.clear();
             self.accumulator -= FIXED_DT;
@@ -469,6 +498,7 @@ fn main() {
         app.game.load_external_levels(set.levels);
     }
     app.record.best = record::load(app.game.level_set());
+    app.audio = Some(audio::Audio::new(audio::SoundMode::from_env()));
     if args.autopilot {
         let autopilot = build_autopilot(args.autopilot_every.unwrap_or(1));
         println!("autopilot: {}", autopilot.describe());

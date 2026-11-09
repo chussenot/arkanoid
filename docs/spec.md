@@ -13,7 +13,8 @@ in the order of the milestones, and ask before deviating.
   (120 Hz logic tick) with rendering interpolation, decoupled from vsync.
 - **Text: `glyphon`** (or wgpu-compatible equivalent) for score/lives HUD.
 - **Audio: none in v1.** Design the event enum so a sound layer can
-  subscribe later; do not pull an audio crate now.
+  subscribe later; do not pull an audio crate now. *(Added after v1: see
+  "Sound" below. The event enum was the hook, as designed.)*
 - **No engine** (no bevy/ggez/macroquad): the point is a small, legible
   codebase. Dependency budget: wgpu, winit, glyphon, bytemuck, rand,
   anything else requires a code comment justifying it.
@@ -119,6 +120,22 @@ are kept in a small per-user file (`src/record.rs`; never sent anywhere).
 The menu shows the best; the end screen marks a new one. Runs played by
 `--autopilot` show the record but never set it. Loaded levelsets keep no
 record.
+
+**Sound (added after v1)**, designed in `docs/design/audio.md`:
+- Cues are ABC text files in `audio/cues/`. `build.rs` renders them at build
+  time with the vendored Electric Pulse engine (`audio/engine/`,
+  unmodified, C99), and the binary embeds the PCM: the game runs no C.
+- Playback goes through `cpal` (the default `audio` feature; justified in
+  `Cargo.toml`) into BRYX's own mixer (`src/audio/`): panned effects,
+  pitched by playback rate; stingers that duck the music; one music loop
+  per act, crossfaded.
+- Sound is presentation only. `src/audio/director.rs` reads each tick's
+  events and the game's state, like the renderers, and never writes to
+  them.
+- M cycles the sound: on, effects only, off (`BRYX_SOUND` sets the
+  start). No device means a silent game, never a crash.
+  `--no-default-features` builds a silent game with no C compiler and no
+  ALSA.
 
 ## Rendering quality bar ("modern" means)
 

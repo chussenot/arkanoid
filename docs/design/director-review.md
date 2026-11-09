@@ -156,10 +156,9 @@ score from many attempts.
 
 ### Next
 
-- **Audio** (C3). This is the highest-value gap left. It needs a crate (a
-  minimal `cpal` synthesizer, or `rodio`) and so a written justification
-  against the fixed dependency budget. The `GameEvent` stream is already
-  the hook.
+- **Audio** (C3). Done in a follow-up: see [`audio.md`](audio.md). Cues
+  are rendered by the Electric Pulse engine and played through `cpal`,
+  with the dependency justified in `Cargo.toml`.
 - **2D destruction shards** (A2) and **3D fill light** (A3), for the
   engine/graphics engineer (B).
 - **Per-act visual accent** (A1), done without touching hue semantics.
@@ -225,5 +224,6 @@ Verification:
 
 - Fortress (L12): 171 s, last 10% 33 s. Same boxed-pocket pattern; the
   first candidate if playtests agree.
-- Audio, the next investment (see "Next").
+- Audio: done ([`audio.md`](audio.md)); it needs a listening pass on real
+  speakers.
 - A human playtest against the three open questions above.

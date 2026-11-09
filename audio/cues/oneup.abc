@@ -1,0 +1,14 @@
+X:1
+T:oneup
+C:BRYX
+M:4/4
+L:1/16
+Q:1/4=360
+K:C
+%%instrument horn wave=pulse amp=43 duty=25 attack=4 decay=80 sustain=70 release=160 gate=85 vibrato=6 fx=0
+%%instrument sub wave=triangle amp=36 attack=2 decay=90 sustain=60 release=160 gate=85 fx=0
+%%effect 0 delay_steps=2 delay_feedback=30 delay_mix=24 drive=0 lowpass=8 mix=100
+V:horn instrument=horn
+| e g b e'4 z8 |
+V:sub instrument=sub
+| E,2 B,2 E4 z8 |

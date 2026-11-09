@@ -36,7 +36,26 @@ glam = "0.33.3"
 # and no network stack. `--autopilot` works without it, on the deterministic
 # lane heuristic; this feature adds the TypeSafe System One strategist.
 [features]
+default = ["audio"]
 typesafe = ["dep:judgment", "dep:tokio", "dep:serde_json"]
+# Sound (src/audio/): cues rendered at build time by the vendored Electric
+# Pulse engine (build.rs, audio/), played through cpal. Without it the game
+# is silent and needs neither a C compiler nor ALSA headers.
+audio = ["dep:cpal", "dep:cc"]
+
+[dependencies.cpal]
+# Audio output: one stream, BRYX's own mixer in its callback
+# (src/audio/output.rs). The same choice Electric Pulse made for direct
+# playback (its ADR-0001): a thin, cross-platform device layer, no
+# decoding or engine of its own. On Linux it needs libasound2-dev.
+version = "0.17.3"
+optional = true
+
+[build-dependencies.cc]
+# Finds the platform's C compiler for build.rs, which builds the vendored
+# Electric Pulse engine into a host tool that renders audio/cues/*.abc.
+version = "1.1"
+optional = true
 
 [dependencies.judgment]
 # The typed System One client: questions with typed answers, every answer
