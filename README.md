@@ -172,3 +172,8 @@ interpolate positions between them — this keeps motion smooth at any monitor
 Hz without ever changing gameplay physics, which only ever see fixed
 120 Hz steps.
 
+## License
+
+BRYX is MIT-licensed: see [`LICENSE`](LICENSE). Optional third-party data
+the fetch scripts download keeps its own license and is never committed;
+[`ATTRIBUTION`](ATTRIBUTION) credits it.

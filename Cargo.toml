@@ -2,6 +2,7 @@
 name = "bryx"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 # src/bin/bench_render3d.rs (arkanoid-v2-c5) made this crate multi-binary,
 # so `cargo run`/`mise run run` need to be told which one is the actual
 # game -- otherwise cargo refuses to guess between it and bench_render3d.
