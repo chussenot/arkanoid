@@ -45,6 +45,26 @@ typedef struct {
     int release_step_q15;
 } AudioSidechain;
 
+/* BRYX: a small mono reverb (Freeverb's structure: four damped feedback
+ * combs in parallel, then two allpasses in series), added to the bus
+ * after its delay. Room size sets the combs' feedback, damping their
+ * low-pass. */
+#define FX_REVERB_COMBS 4
+#define FX_REVERB_ALLPASSES 2
+typedef struct {
+    int enabled;
+    int mix_percent;
+    int feedback_q15;
+    int damp_q15;
+    int *comb[FX_REVERB_COMBS];
+    int comb_len[FX_REVERB_COMBS];
+    int comb_idx[FX_REVERB_COMBS];
+    int comb_store[FX_REVERB_COMBS];
+    int *allpass[FX_REVERB_ALLPASSES];
+    int allpass_len[FX_REVERB_ALLPASSES];
+    int allpass_idx[FX_REVERB_ALLPASSES];
+} AudioReverb;
+
 typedef struct {
     int enabled;
     int mix_percent;
@@ -53,6 +73,7 @@ typedef struct {
     AudioLowpass lowpass;
     AudioMoogLadder ladder;
     AudioSidechain sidechain;
+    AudioReverb reverb;    /* BRYX */
 } AudioFxBusState;
 
 typedef struct {

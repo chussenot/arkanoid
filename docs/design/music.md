@@ -178,7 +178,7 @@ Tracks run 27–36 seconds; the menu runs 42.
 | 12 | Fortress | E phrygian, 118 BPM | ascent → wall | dark | buzz, march | The Wall appears: its first full statement, in the bass, with Phrygian's F natural making it a fortress. |
 | 13 | Lattice | E aeolian, 126 BPM, swing 54 | spark_shift → spark_inv (+ spark_aug) | circle | glass, disco | Interlocking Sparks: one knocked off the beat, and in the recap Spark in long notes threaded underneath. |
 | 14 | Wave | E dorian, 114 BPM, swing 62 | ascent → spark_aug (+ spark) | lift | soft, half | Swing and glide: Ascent surfs a Dorian swell. |
-| 15 | Rocket | E aeolian, 128 BPM | ascent_hi → ascent_dim (+ auto) | climb | pulse, gallop | Launch: Ascent an octave up, then at double speed, over a galloping bass. |
+| 15 | Rocket | E aeolian, 128 BPM (to 138) | ascent_hi → ascent_dim (+ auto) | climb | pulse, gallop | Launch: Ascent an octave up, then at double speed while the tempo climbs, over a galloping bass. |
 | 16 | Bridges | E harmonic, 122 BPM | ascent_aug → spark (+ wall_hi) | heroic | glass, four | Ascent stretched across the Wall like a viaduct; harmonic minor's D sharp lifts the span. |
 | **Act III · Machines** | | | | | | |
 | 17 | Spiral | E aeolian, 128 BPM | wall_seq → spark_seq (+ ascent_head) | circle | buzz, disco | The machine act begins: the Wall turned into a rising sequence, an arpeggio that spirals up the octave. |
@@ -188,7 +188,7 @@ Tracks run 27–36 seconds; the menu runs 42.
 | 21 | Shield | E phrygian, 130 BPM | spark → wall (+ auto) | dark | buzz, four | Spark held up against the Wall: hope over the machine. |
 | 22 | Armored frame | E phrygian, 132 BPM | wall_hi → wall_inv (+ wall_inv_aug) | dark | buzz, drive | All armor: the Wall high and ratcheting up, the Wall inverted and sinking, and in the recap the inverted Wall at half speed beneath the high one. The heaviest track of the act. |
 | 23 | Rain | E aeolian, 124 BPM, swing 58 | spark_fall → ascent_inv | fall | glass, sparse | Falling droplets: Spark stepping down over a sparse, swung beat; a breath before the last act. |
-| 24 | Funnel | E harmonic, 134 BPM | spark_seq → ascent_dim (+ wall_hi) | cadence | pulse, gallop | Narrowing: Spark ratchets up a step a bar, Ascent doubles its speed, and a V-to-i pours into the next act. |
+| 24 | Funnel | E harmonic, 134 BPM (to 146) | spark_seq → ascent_dim (+ wall_hi) | cadence | pulse, gallop | Narrowing: Spark ratchets up a step a bar as the tempo climbs to 146, Ascent doubles its speed, and a V-to-i pours into the next act. |
 | **Act IV · Vault** | | | | | | |
 | 25 | Two rooms | E dorian, 132 BPM | ascent → wall (+ spark) | lift | soft, four | Two rooms, two moods: a bright Dorian Ascent, then the Wall next door. |
 | 26 | Ring | E aeolian, 134 BPM, swing 55 | spark → spark_shift (+ canon) | circle | glass, disco | A round: Spark chasing itself a beat behind, around a circle of chords. |
@@ -207,8 +207,8 @@ The four moments quote the themes:
 |---|---|
 | Level clear | Spark bounding up, then the E minor triad climbing to a held high E |
 | Life lost | Ascent's opening leaps turned upside down and falling; it stops on B, unresolved: keep going |
-| Game Over | Ascent backwards and slowed over a Phrygian F in the bass, sinking to a low E |
-| Victory | Ascent in harmonic minor with Spark answering above it, resolving to E **major**: the score's one major chord, saved for winning |
+| Game Over | Ascent backwards and slowed over a Phrygian F in the bass, sinking to a low E; the tempo slows into it |
+| Victory | Ascent in harmonic minor with Spark answering above it, broadening into E **major**: the score's one major chord, saved for winning |
 
 ## Loaded levelsets
 
@@ -244,6 +244,15 @@ different order.
     sweeping slowly.
 - **Vibrato fades in** on every lead (`vibrato_delay`), so short notes
   stay clean and long ones sing.
+- **Seamless loops** (`%%loop`): each track renders twice and keeps the
+  second pass, so its first bar hears the echoes and tails of its last.
+- **Band-limited** squares and pulses (`%%bandlimit`): high notes stay clean.
+- **Reverb** on the melody bus: a small room on the clean tracks, a larger
+  one on the space tracks that opens in the break. The machine tracks stay
+  dry.
+- **Toms**: the rolls into the recap end on toms, high to low.
+- **Tempo**: Funnel and Rocket (`push`) accelerate through B and settle
+  back across the break.
 - **FX buses**:
   - bus 0: drums and bass;
   - bus 1: a dotted-eighth echo on the melody;

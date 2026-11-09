@@ -12,11 +12,13 @@
 #include "audio_engine.h"
 
 /* abc.c — ABC notation parser and PCM generator */
-#define ABC_MAX_VOICES     8
-#define ABC_MAX_NOTES      1024
-#define ABC_MAX_INSTRUMENTS 8
-#define ABC_MAX_PATTERNS   16
-#define ABC_MAX_ARRANGEMENT 32
+/* BRYX: limits raised from 8 voices, 1,024 steps (64 bars), 16 patterns and
+ * 32 arrangement slots. The parser's state now lives on the heap. */
+#define ABC_MAX_VOICES     12
+#define ABC_MAX_NOTES      4096
+#define ABC_MAX_INSTRUMENTS 12
+#define ABC_MAX_PATTERNS   64
+#define ABC_MAX_ARRANGEMENT 64
 #define ABC_MAX_FX_BUSES   4
 #define SAMPLE_RATE_ABC    22050
 
@@ -35,6 +37,7 @@ typedef struct {
     int pitch_time;       /* bit 8: pitch_time= (ms to sweep home) */
     int noise;            /* bit 9: noise=white|long|metal (0|1|2) */
     int accents_marked;   /* bit 10: accents=marked (only !>! notes accented) | beats */
+    int bandlimit;        /* bit 11: bandlimit=on|off (PolyBLEP square and pulse) */
     unsigned set;
 } AbcExtras;
 
@@ -86,6 +89,7 @@ typedef struct {
     int ladder_resonance;/* 0-100 */
     int insert;          /* BRYX: mode=insert */
     char sidechain_key[32]; /* BRYX: sidechain_key=<voice or instrument name> */
+    int reverb_mix, reverb_size, reverb_damp; /* BRYX: reverb=, reverb_size=, reverb_damp= */
 } AbcFxBus;
 
 typedef struct {
@@ -152,6 +156,8 @@ typedef struct {
 
     int hold;             /* BRYX: %%hold on: a note sounds once for its written length */
     AbcRamp ramps[SEQ_MAX_RAMPS]; /* BRYX: %%ramp */
+    int bandlimit;        /* BRYX: %%bandlimit on: every instrument's default */
+    int loop;             /* BRYX: %%loop on */
     int ramp_count;
     int master_permille;  /* BRYX: %%master <percent>: output gain; 0 = unity */
 } AbcMusic;

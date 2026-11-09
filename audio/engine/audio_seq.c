@@ -95,6 +95,19 @@ int seq_compile_timeline(const SeqSong *song, int sample_rate, SeqTimeline *time
 
         for (int step = 0; step < pattern->length; step++) {
             SeqTimelineStep *entry = &timeline->steps[absolute_step];
+            /* BRYX: a tempo ramp sets this step's BPM. */
+            int bpm = song->tempo_bpm > 0 ? song->tempo_bpm : 120;
+            for (int r = 0; r < song->ramp_count; r++) {
+                const SeqRamp *ramp = &song->ramps[r];
+                int span = ramp->end_step - ramp->start_step;
+                if (ramp->param != SEQ_RAMP_TEMPO || absolute_step < ramp->start_step)
+                    continue;
+                if (absolute_step >= ramp->end_step || span <= 0)
+                    bpm = ramp->to;
+                else
+                    bpm = ramp->from + (ramp->to - ramp->from) * (absolute_step - ramp->start_step) / span;
+            }
+            timing.tempo_bpm = clampi(bpm, 1, 2000);
             entry->pattern_index = pattern_index;
             entry->pattern_step = step;
             entry->samples = seq_timing_next(&timing, absolute_step);

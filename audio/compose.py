@@ -553,6 +553,8 @@ DRUM_KIT = {
     "snare": "wave=noise amp=22 attack=0 decay=60 sustain=0 release=70 gate=50 noise=long pitch=12 pitch_time=40 accents=marked fx=0",
     # The short LFSR loop: a metallic, ringing hat.
     "hat": "wave=noise amp=10 attack=0 decay=12 sustain=0 release=14 gate=20 noise=metal accents=marked fx=0",
+    # Toms for the rolls into the recap: a triangle that drops a fifth.
+    "tom": "wave=triangle amp=40 attack=0 decay=140 sustain=0 release=60 gate=80 pitch=7 pitch_time=70 accents=marked fx=0",
 }
 
 PALETTES = {
@@ -590,13 +592,13 @@ FX = {
     # bus 0: drums and bass; 1: melody echo; 2: arpeggio pump; 3: ladder.
     "clean": [
         "0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=12 lowpass=20 mix=100",
-        "1 delay_steps=3 delay_feedback=34 delay_mix=26 drive=0 lowpass=30 mix=80",
+        "1 delay_steps=3 delay_feedback=34 delay_mix=26 drive=0 lowpass=30 reverb=6 reverb_size=40 reverb_damp=55 mix=80",
         "2 mode=insert delay_steps=2 delay_feedback=24 delay_mix=18 drive=0 lowpass=40 sidechain=34 sidechain_release=160 sidechain_key=kick mix=100",
         "3 delay_steps=0 delay_feedback=0 delay_mix=0 drive=20 lowpass=20 mix=100",
     ],
     "space": [
         "0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=8 lowpass=30 mix=100",
-        "1 delay_steps=3 delay_feedback=48 delay_mix=38 drive=0 lowpass=46 mix=80",
+        "1 delay_steps=3 delay_feedback=48 delay_mix=38 drive=0 lowpass=46 reverb=12 reverb_size=72 reverb_damp=40 mix=80",
         "2 mode=insert delay_steps=4 delay_feedback=40 delay_mix=34 drive=0 lowpass=50 sidechain=40 sidechain_release=220 sidechain_key=kick mix=100",
         "3 delay_steps=6 delay_feedback=30 delay_mix=30 drive=0 lowpass=60 mix=70",
     ],
@@ -616,7 +618,8 @@ FX = {
 #   counter-line written by rule against the lead, "canon" for the lead
 #   itself a beat later and an octave down, or None),
 #   note: what the track is about (docs/design/music.md quotes these).
-#   Optional: bass_b (B's bass style; BASS_B by default).
+#   Optional: bass_b (B's bass style; BASS_B by default); push (a BPM the
+#   B section accelerates to, the break settling back).
 
 RECIPES = [
     # ---- Act I: Foundations. Dorian and Aeolian, 112-122, Spark leads.
@@ -663,9 +666,9 @@ RECIPES = [
     dict(level=14, name="Wave", mode="dorian", bpm=114, palette="soft", fx="space", prog="lift",
          bass="walk", arp="updown", drums="half", swing=62, a="ascent", b="spark_aug", counter="spark",
          note="Swing and glide: Ascent surfs a Dorian swell."),
-    dict(level=15, name="Rocket", mode="aeolian", bpm=128, palette="pulse", fx="clean", prog="climb",
+    dict(level=15, name="Rocket", mode="aeolian", bpm=128, push=138, palette="pulse", fx="clean", prog="climb",
          bass="gallop", arp="trance", drums="gallop", swing=0, a="ascent_hi", b="ascent_dim", counter="auto",
-         note="Launch: Ascent an octave up, then at double speed, over a galloping bass."),
+         note="Launch: Ascent an octave up, then at double speed while the tempo climbs, over a galloping bass."),
     dict(level=16, name="Bridges", mode="harmonic", bpm=122, palette="glass", fx="space", prog="heroic",
          bass="wall", arp="eighths", drums="four", swing=0, a="ascent_aug", b="spark", counter="wall_hi",
          note="Ascent stretched across the Wall like a viaduct; harmonic minor's D sharp lifts the span."),
@@ -691,9 +694,9 @@ RECIPES = [
     dict(level=23, name="Rain", mode="aeolian", bpm=124, palette="glass", fx="space", prog="fall",
          bass="half", arp="rain", drums="sparse", swing=58, a="spark_fall", b="ascent_inv", counter=None,
          note="Falling droplets: Spark stepping down over a sparse, swung beat; a breath before the last act."),
-    dict(level=24, name="Funnel", mode="harmonic", bpm=134, palette="pulse", fx="clean", prog="cadence",
+    dict(level=24, name="Funnel", mode="harmonic", bpm=134, push=146, palette="pulse", fx="clean", prog="cadence",
          bass="gallop", arp="trance", drums="gallop", swing=0, a="spark_seq", b="ascent_dim", counter="wall_hi",
-         note="Narrowing: Spark ratchets up a step a bar, Ascent doubles its speed, and a V-to-i pours into the next act."),
+         note="Narrowing: Spark ratchets up a step a bar as the tempo climbs to 146, Ascent doubles its speed, and a V-to-i pours into the next act."),
     # ---- Act IV: Vault. Harmonic minor, 132-148, all three themes.
     dict(level=25, name="Two rooms", mode="dorian", bpm=132, palette="soft", fx="space", prog="lift",
          bass="octave", arp="eighths", drums="four", swing=0, a="ascent", b="wall", counter="spark",
@@ -850,7 +853,7 @@ def compose(r: dict):
     b_body, _ = phrase(r["b"])
     a2_body = climax(a_body)
 
-    parts = {k: [] for k in ("kick", "snare", "hat", "bass", "arp", "pad", "lead", "counter")}
+    parts = {k: [] for k in ("kick", "snare", "hat", "tom", "bass", "arp", "pad", "lead", "counter")}
     # The dynamics layer: one mark per step per part (what the step would
     # be struck at), and the accented steps of the parts that mark them.
     dyn = {k: [] for k in parts}
@@ -862,7 +865,7 @@ def compose(r: dict):
         level = "mf" if section == "turn" and i == 1 else SECTION_LEVEL[section]
         swell = last and nxt == "A2"
         bar_dyn = [SWELL[t // 4] if swell else level for t in range(16)]
-        for part in ("bass", "arp", "pad", "lead", "counter", "kick", "snare"):
+        for part in ("bass", "arp", "pad", "lead", "counter", "kick", "snare", "tom"):
             dyn[part] += bar_dyn
         # Hats: the off-beat eighths at the bar's level, the rest a step under.
         dyn["hat"] += [lv if t % 4 == 2 else softer(lv) for t, lv in enumerate(bar_dyn)]
@@ -899,6 +902,13 @@ def compose(r: dict):
         if section == "A2" and snare and r["drums"] not in LIGHT_STYLES and s_pat[10] == ".":
             s_pat = s_pat[:10] + "x" + s_pat[11:]
             dyn["snare"][-16 + 10] = "pp"
+        # A roll ends on the toms, high to low, where the snare's last
+        # four hits were.
+        toms = [(R, 16)]
+        if fill == "roll":
+            s_pat = s_pat[:12] + "...."
+            toms = [(R, 12), (7, 1), (5, 1), (4, 1), (2, 1)]
+        parts["tom"] += toms
         parts["kick"] += hits(k_pat) if kick else [(R, 16)]
         parts["snare"] += hits(s_pat)
         parts["hat"] += hits(h_pat) if hat else [(R, 16)]
@@ -1014,7 +1024,10 @@ def ramps(track):
     - Every track: the melody's echo swells in the break and is thrown
       at the turn's breath.
     - Pulse and soft leads: the pulse narrows across the recap, toward
-      the climax, and widens again after it."""
+      the climax, and widens again after it.
+    - Space tracks: the reverb opens in the break.
+    - A recipe with `push`: the tempo climbs through B and settles back
+      across the break."""
     r, bars = track["recipe"], track["bars"]
     start = {}
     for k, (section, i, n, *_rest) in enumerate(bars):
@@ -1035,16 +1048,31 @@ def ramps(track):
     if "turn" in start:
         k = start["turn"]
         lines += [f"bus1 delay_mix 62 62 {k} {k}", f"bus1 delay_mix {mix} {mix} {k + 16} {k + 16}"]
+    if r["fx"] == "space" and "break" in start:
+        k = start["break"]
+        lines += [f"bus1 reverb 12 30 {k} {k + 31}", f"bus1 reverb 12 12 {k + 32} {k + 32}"]
+    if r.get("push") and "break" in start:
+        b, k, bpm, peak = start["B"], start["break"], r["bpm"], r["push"]
+        lines += [f"song tempo {bpm} {peak} {b} {b + 63}", f"song tempo {peak} {bpm} {k} {k + 31}"]
     if r["palette"] in BASE["duty"]:
         duty, k = BASE["duty"][r["palette"]], start["A2"]
         lines += [f"lead duty {duty} {duty // 2} {k} {k + 63}", f"lead duty {duty} {duty} {k + 64} {k + 64}"]
+    # Under %%loop the song renders twice and the second pass is kept, so
+    # each moved parameter is also set to its start value on step 0: the
+    # kept pass starts where the first did, whatever the end left behind.
+    starts = []
+    for line in lines:
+        target, param, frm = line.split()[:3]
+        if param != "tempo" and (target, param) not in [(t, q) for t, q, _ in starts]:
+            starts.append((target, param, frm))
+    lines = [f"{t} {q} {v} {v} 0 0" for t, q, v in starts] + lines
     return [f"%%ramp {line}" for line in lines]
 
 
 def to_abc(track) -> str:
     r, parts = track["recipe"], track["parts"]
     mode = r["mode"]
-    registers = {"bass": E4 - 12, "arp": E4, "pad": E4 - 12, "lead": E4, "counter": E4}
+    registers = {"bass": E4 - 12, "arp": E4, "pad": E4 - 12, "lead": E4, "counter": E4, "tom": E4 - 12}
     pal = PALETTES[r["palette"]]
     form = " ".join(f"{s}({n})" for s, n in track["form"])
     head = [
@@ -1060,6 +1088,8 @@ def to_abc(track) -> str:
         f"% A={r['a']} B={r['b']} counter={r['counter']}",
     ]
     head.append("%%hold on")  # a written note sounds once, for its whole length
+    head.append("%%loop on")  # rendered twice, the second pass kept: no seam
+    head.append("%%bandlimit on")  # smooth pulse edges: no aliasing on high notes
     if r["swing"]:
         head.append(f"%%swing {r['swing']}")
     for name, body in DRUM_KIT.items():
@@ -1070,7 +1100,7 @@ def to_abc(track) -> str:
         head.append(f"%%effect {bus}")
     head += ramps(track)
     body = []
-    for name in ("kick", "snare", "hat", "bass", "arp", "pad", "lead", "counter"):
+    for name in ("kick", "snare", "hat", "tom", "bass", "arp", "pad", "lead", "counter"):
         body.append(f"V:{name} instrument={name}")
         line = parts[name]
         body.append(render_line(line, mode, registers.get(name, E4), track["dyn"][name], track["acc"][name],

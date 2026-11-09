@@ -98,21 +98,38 @@ unsigned char *audio_engine_render_builtin_menu(int sample_rate, int *out_len, A
     return audio_engine_render_song(song, sample_rate, out_len, out_stats);
 }
 
+/* BRYX: the parsed music and the song are megabytes since the limits
+ * were raised, so they live on the heap, never on a thread's stack. */
+static SeqSong *load_song(const char *path)
+{
+    AbcMusic *music = calloc(1, sizeof(*music));
+    SeqSong *song = calloc(1, sizeof(*song));
+
+    if (!music || !song || abc_load(path, music) != 0 || abc_build_seq_song(music, song) != 0) {
+        free(music);
+        free(song);
+        return NULL;
+    }
+    free(music);
+    return song;
+}
+
 unsigned char *audio_engine_render_abc_file(const char *path, int sample_rate, int *out_len,
                                             AudioRenderStats *out_stats)
 {
-    AbcMusic music;
-    SeqSong song;
+    SeqSong *song;
+    unsigned char *pcm;
 
     if (out_len) *out_len = 0;
     render_stats_reset(out_stats);
     if (!path || !out_len || sample_rate <= 0)
         return NULL;
-    if (abc_load(path, &music) != 0)
+    song = load_song(path);
+    if (!song)
         return NULL;
-    if (abc_build_seq_song(&music, &song) != 0)
-        return NULL;
-    return audio_engine_render_song(&song, sample_rate, out_len, out_stats);
+    pcm = audio_engine_render_song(song, sample_rate, out_len, out_stats);
+    free(song);
+    return pcm;
 }
 
 void audio_engine_free_buffer(unsigned char *buffer)
@@ -122,17 +139,18 @@ void audio_engine_free_buffer(unsigned char *buffer)
 
 int16_t *audio_engine_render_abc_file_s16(const char *path, int sample_rate, int *out_len)
 {
-    AbcMusic music;
-    SeqSong song;
+    SeqSong *song;
+    int16_t *pcm;
 
     if (out_len) *out_len = 0;
     if (!path || !out_len || sample_rate <= 0)
         return NULL;
-    if (abc_load(path, &music) != 0)
+    song = load_song(path);
+    if (!song)
         return NULL;
-    if (abc_build_seq_song(&music, &song) != 0)
-        return NULL;
-    return audio_mix_render_song_s16(&song, sample_rate, out_len);
+    pcm = audio_mix_render_song_s16(song, sample_rate, out_len);
+    free(song);
+    return pcm;
 }
 
 void audio_engine_free_s16(int16_t *buffer)

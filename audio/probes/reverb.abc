@@ -1,0 +1,11 @@
+X:1
+M:4/4
+L:1/16
+Q:1/4=120
+K:C
+% A short note into a bus with reverb, then silence: the room rings on.
+%%hold on
+%%instrument tone wave=square amp=100 attack=0 decay=0 sustain=100 release=1 gate=100 fx=1
+%%effect 1 mode=insert reverb=60 reverb_size=80 reverb_damp=30 mix=100
+V:tone instrument=tone
+| e2 z14 |

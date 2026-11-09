@@ -27,6 +27,10 @@ typedef struct {
     int noise_clock;
     uint32_t lfsr;
     uint32_t noise_phase;
+    /* BRYX: 1 smooths the square's and pulse's edges with PolyBLEP, so a
+     * high note no longer folds its harmonics back below 11 kHz as
+     * inharmonic noise. 0 keeps the original hard edges. */
+    int bandlimit;
 } DspOscillator;
 
 typedef struct {

@@ -208,6 +208,7 @@ static void voice_init(MixVoiceState *voice, const SeqInstrument *instrument,
         int amp = (voice->osc_count == 1) ? (amplitude << DSP_FRAC_BITS) : ((amplitude << DSP_FRAC_BITS) / 2);
         dsp_osc_init(&voice->oscs[i], voice->waveform, amp);
         voice->oscs[i].noise_clock = instrument->noise_clock;
+        voice->oscs[i].bandlimit = instrument->bandlimit;
         if (voice->waveform == DSP_WAVE_PULSE)
             dsp_osc_set_pulse_width_percent(&voice->oscs[i], pulse);
     }
@@ -292,116 +293,124 @@ int16_t *audio_mix_render_timeline_s16(const SeqSong *song, const SeqTimeline *t
         }
     }
 
-    for (int absolute_step = 0; absolute_step < timeline->total_steps; absolute_step++) {
-        SeqNoteEvent events[SEQ_MAX_STEP_EVENTS];
-        int event_count = seq_collect_step_events(song, timeline, absolute_step, events);
-        const SeqTimelineStep *timeline_step = &timeline->steps[absolute_step];
-        const SeqPattern *pattern = &song->patterns[timeline_step->pattern_index];
-        int samples_this_step = timeline_step->samples;
+    /* BRYX: under %%loop the song plays twice and only the second pass is
+     * kept, so its start carries the end's echoes, reverb and release
+     * tails: a loop with no seam. Ramps and voices run on across passes. */
+    for (int pass = song->loop ? 0 : 1; pass < 2; pass++) {
+        int keep = pass == 1;
+        base = 0;
+        for (int absolute_step = 0; absolute_step < timeline->total_steps; absolute_step++) {
+            SeqNoteEvent events[SEQ_MAX_STEP_EVENTS];
+            int event_count = seq_collect_step_events(song, timeline, absolute_step, events);
+            const SeqTimelineStep *timeline_step = &timeline->steps[absolute_step];
+            const SeqPattern *pattern = &song->patterns[timeline_step->pattern_index];
+            int samples_this_step = timeline_step->samples;
 
-        /* BRYX: ramps move their parameters at each step they cover. */
-        for (int r = 0; r < song->ramp_count; r++) {
-            const SeqRamp *ramp = &song->ramps[r];
-            int span, value;
-            if (absolute_step < ramp->start_step || absolute_step > ramp->end_step)
-                continue;
-            span = ramp->end_step - ramp->start_step;
-            value = span > 0
-                ? ramp->from + (int)(((int64_t)(ramp->to - ramp->from) * (absolute_step - ramp->start_step)) / span)
-                : ramp->to;
-            if (ramp->param == SEQ_RAMP_DUTY) {
-                if (ramp->track >= 0 && ramp->track < SEQ_MAX_TRACKS)
-                    tracks[ramp->track].duty_override = dsp_clampi(value, 1, 99);
-            } else if (ramp->bus >= 0 && ramp->bus < song->fx_bus_count) {
-                audio_fx_bus_set_param(&fx_states[ramp->bus], ramp->param, value);
-            }
-        }
-
-        memset(key_struck, 0, sizeof(key_struck));
-        for (int e = 0; e < event_count; e++) {
-            const SeqNoteEvent *event = &events[e];
-            const SeqTrack *track = &pattern->tracks[event->track_index];
-            const SeqStep *step = &track->steps[event->step_index];
-            SeqInstrument played = song->instruments[event->instrument_index];
-            const SeqInstrument *instrument = &played;
-            int amp = track_amplitude(song, track, step, event->step_index);
-            unsigned taken = 0;
-            int chord[2];
-            /* BRYX: a held note's gate spans every step tied to it. */
-            int held = seq_held_samples(song, timeline, absolute_step, event->track_index);
-            int gate_samples = (int)(((int64_t)held * event->gate_percent) / 100);
-            double target_freq = midi_note_to_freq(event->note);
-            MixTrackState *track_state = &tracks[event->track_index];
-            MixVoiceState *voice = pick_voice_slot(track_state, &taken);
-
-            if (track_state->duty_override > 0)
-                played.pulse_width = track_state->duty_override;
-            voice_init(voice, instrument, sample_rate, amp, target_freq,
-                       track_state->last_freq, gate_samples, event->instrument_index,
-                       event->note, event->fx_trigger, event->accent);
-            /* BRYX: a chord's other notes take the track's other voices,
-             * struck together and never gliding. */
-            chord[0] = event->note2;
-            chord[1] = event->note3;
-            for (int c = 0; c < 2; c++) {
-                if (chord[c] <= 0) continue;
-                voice_init(pick_voice_slot(track_state, &taken), instrument, sample_rate, amp,
-                           midi_note_to_freq(chord[c]), 0.0, gate_samples, event->instrument_index,
-                           chord[c], event->fx_trigger, event->accent);
-            }
-            track_state->last_freq = target_freq;
-            for (int b = 0; b < song->fx_bus_count; b++)
-                if (song->fx_buses[b].sidechain_key == event->track_index + 1)
-                    key_struck[b] = 1;
-        }
-
-        for (int i = 0; i < samples_this_step; i++) {
-            int pre_fx_sum = 0;
-            int fx_return_sum = 0;
-            int master_sidechain_env_q15 = 32767;
-            int64_t out;
-            memset(fx_bus_levels, 0, sizeof(fx_bus_levels));
-            memset(fx_bus_trigger, 0, sizeof(fx_bus_trigger));
-
-            for (int track_index = 0; track_index < timeline->max_track_count; track_index++) {
-                for (int v = 0; v < tracks[track_index].voice_limit; v++) {
-                    MixVoiceState *voice = &tracks[track_index].voices[v];
-                    int sample;
-                    int on_bus;
-                    if (!voice->active) continue;
-                    sample = voice_next(voice);
-                    on_bus = voice->fx_bus >= 0 && voice->fx_bus < song->fx_bus_count;
-                    /* BRYX: an insert bus takes its voices' dry signal. */
-                    if (!on_bus || !song->fx_buses[voice->fx_bus].insert)
-                        pre_fx_sum += sample;
-                    if (on_bus) {
-                        int trig = voice->fx_trigger > 0 ? voice->fx_trigger : 0;
-                        if (voice->accent > 0 && trig < 1) trig = 1;
-                        fx_bus_levels[voice->fx_bus] += sample;
-                        if (trig > fx_bus_trigger[voice->fx_bus])
-                            fx_bus_trigger[voice->fx_bus] = trig;
-                    }
+            /* BRYX: ramps move their parameters at each step they cover. */
+            for (int r = 0; r < song->ramp_count; r++) {
+                const SeqRamp *ramp = &song->ramps[r];
+                int span, value;
+                if (absolute_step < ramp->start_step || absolute_step > ramp->end_step)
+                    continue;
+                span = ramp->end_step - ramp->start_step;
+                value = span > 0
+                    ? ramp->from + (int)(((int64_t)(ramp->to - ramp->from) * (absolute_step - ramp->start_step)) / span)
+                    : ramp->to;
+                if (ramp->param == SEQ_RAMP_DUTY) {
+                    if (ramp->track >= 0 && ramp->track < SEQ_MAX_TRACKS)
+                        tracks[ramp->track].duty_override = dsp_clampi(value, 1, 99);
+                } else if (ramp->bus >= 0 && ramp->bus < song->fx_bus_count) {
+                    audio_fx_bus_set_param(&fx_states[ramp->bus], ramp->param, value);
                 }
             }
 
-            for (int bus_index = 0; bus_index < song->fx_bus_count; bus_index++) {
-                int sc_env = 32767;
-                int keyed = song->fx_buses[bus_index].sidechain_key > 0;
-                /* BRYX: a keyed sidechain fires once, on its key's note-on. */
-                int trigger = keyed ? (i == 0 && key_struck[bus_index]) : fx_bus_trigger[bus_index];
-                fx_return_sum += audio_fx_bus_process(&fx_states[bus_index], fx_bus_levels[bus_index],
-                                                      trigger, &sc_env);
-                if (!keyed && sc_env < master_sidechain_env_q15)
-                    master_sidechain_env_q15 = sc_env;
+            memset(key_struck, 0, sizeof(key_struck));
+            for (int e = 0; e < event_count; e++) {
+                const SeqNoteEvent *event = &events[e];
+                const SeqTrack *track = &pattern->tracks[event->track_index];
+                const SeqStep *step = &track->steps[event->step_index];
+                SeqInstrument played = song->instruments[event->instrument_index];
+                const SeqInstrument *instrument = &played;
+                int amp = track_amplitude(song, track, step, event->step_index);
+                unsigned taken = 0;
+                int chord[2];
+                /* BRYX: a held note's gate spans every step tied to it. */
+                int held = seq_held_samples(song, timeline, absolute_step, event->track_index);
+                int gate_samples = (int)(((int64_t)held * event->gate_percent) / 100);
+                double target_freq = midi_note_to_freq(event->note);
+                MixTrackState *track_state = &tracks[event->track_index];
+                MixVoiceState *voice = pick_voice_slot(track_state, &taken);
+
+                if (track_state->duty_override > 0)
+                    played.pulse_width = track_state->duty_override;
+                voice_init(voice, instrument, sample_rate, amp, target_freq,
+                           track_state->last_freq, gate_samples, event->instrument_index,
+                           event->note, event->fx_trigger, event->accent);
+                /* BRYX: a chord's other notes take the track's other voices,
+                 * struck together and never gliding. */
+                chord[0] = event->note2;
+                chord[1] = event->note3;
+                for (int c = 0; c < 2; c++) {
+                    if (chord[c] <= 0) continue;
+                    voice_init(pick_voice_slot(track_state, &taken), instrument, sample_rate, amp,
+                               midi_note_to_freq(chord[c]), 0.0, gate_samples, event->instrument_index,
+                               chord[c], event->fx_trigger, event->accent);
+                }
+                track_state->last_freq = target_freq;
+                for (int b = 0; b < song->fx_bus_count; b++)
+                    if (song->fx_buses[b].sidechain_key == event->track_index + 1)
+                        key_struck[b] = 1;
             }
 
-            out = ((int64_t)(pre_fx_sum + fx_return_sum) * master_sidechain_env_q15) / 32767;
-            out = (out * master_permille) / 1000;
-            if (out > 32767) out = 32767;
-            if (out < -32768) out = -32768;
-            buf[base + i] = (int16_t)out;
+            for (int i = 0; i < samples_this_step; i++) {
+                int pre_fx_sum = 0;
+                int fx_return_sum = 0;
+                int master_sidechain_env_q15 = 32767;
+                int64_t out;
+                memset(fx_bus_levels, 0, sizeof(fx_bus_levels));
+                memset(fx_bus_trigger, 0, sizeof(fx_bus_trigger));
+
+                for (int track_index = 0; track_index < timeline->max_track_count; track_index++) {
+                    for (int v = 0; v < tracks[track_index].voice_limit; v++) {
+                        MixVoiceState *voice = &tracks[track_index].voices[v];
+                        int sample;
+                        int on_bus;
+                        if (!voice->active) continue;
+                        sample = voice_next(voice);
+                        on_bus = voice->fx_bus >= 0 && voice->fx_bus < song->fx_bus_count;
+                        /* BRYX: an insert bus takes its voices' dry signal. */
+                        if (!on_bus || !song->fx_buses[voice->fx_bus].insert)
+                            pre_fx_sum += sample;
+                        if (on_bus) {
+                            int trig = voice->fx_trigger > 0 ? voice->fx_trigger : 0;
+                            if (voice->accent > 0 && trig < 1) trig = 1;
+                            fx_bus_levels[voice->fx_bus] += sample;
+                            if (trig > fx_bus_trigger[voice->fx_bus])
+                                fx_bus_trigger[voice->fx_bus] = trig;
+                        }
+                    }
+                }
+
+                for (int bus_index = 0; bus_index < song->fx_bus_count; bus_index++) {
+                    int sc_env = 32767;
+                    int keyed = song->fx_buses[bus_index].sidechain_key > 0;
+                    /* BRYX: a keyed sidechain fires once, on its key's note-on. */
+                    int trigger = keyed ? (i == 0 && key_struck[bus_index]) : fx_bus_trigger[bus_index];
+                    fx_return_sum += audio_fx_bus_process(&fx_states[bus_index], fx_bus_levels[bus_index],
+                                                          trigger, &sc_env);
+                    if (!keyed && sc_env < master_sidechain_env_q15)
+                        master_sidechain_env_q15 = sc_env;
+                }
+
+                out = ((int64_t)(pre_fx_sum + fx_return_sum) * master_sidechain_env_q15) / 32767;
+                out = (out * master_permille) / 1000;
+                if (out > 32767) out = 32767;
+                if (out < -32768) out = -32768;
+                if (keep)
+                    buf[base + i] = (int16_t)out;
+            }
+            base += samples_this_step;
         }
-        base += samples_this_step;
     }
 
     for (int i = 0; i < song->fx_bus_count && i < SEQ_MAX_FX_BUSES; i++)
@@ -442,18 +451,22 @@ unsigned char *audio_mix_render_timeline(const SeqSong *song, const SeqTimeline 
 
 int16_t *audio_mix_render_song_s16(const SeqSong *song, int sample_rate, int *out_len)
 {
-    SeqTimeline timeline;
+    SeqTimeline *timeline = calloc(1, sizeof(*timeline)); /* BRYX: heap, see audio_engine.c */
+    int16_t *pcm = NULL;
 
-    if (seq_compile_timeline(song, sample_rate, &timeline) != 0)
-        return NULL;
-    return audio_mix_render_timeline_s16(song, &timeline, sample_rate, out_len);
+    if (timeline && seq_compile_timeline(song, sample_rate, timeline) == 0)
+        pcm = audio_mix_render_timeline_s16(song, timeline, sample_rate, out_len);
+    free(timeline);
+    return pcm;
 }
 
 unsigned char *audio_mix_render_song(const SeqSong *song, int sample_rate, int *out_len)
 {
-    SeqTimeline timeline;
+    SeqTimeline *timeline = calloc(1, sizeof(*timeline));
+    unsigned char *pcm = NULL;
 
-    if (seq_compile_timeline(song, sample_rate, &timeline) != 0)
-        return NULL;
-    return audio_mix_render_timeline(song, &timeline, sample_rate, out_len);
+    if (timeline && seq_compile_timeline(song, sample_rate, timeline) == 0)
+        pcm = audio_mix_render_timeline(song, timeline, sample_rate, out_len);
+    free(timeline);
+    return pcm;
 }

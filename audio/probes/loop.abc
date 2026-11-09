@@ -1,0 +1,12 @@
+X:1
+M:4/4
+L:1/16
+Q:1/4=120
+K:C
+% A note on the last step with a long release: under %%loop, the render's
+% first samples carry its tail.
+%%hold on
+%%loop on
+%%instrument tone wave=triangle amp=100 attack=0 decay=0 sustain=100 release=600 gate=100 fx=0
+V:tone instrument=tone
+| z15 e1 |
