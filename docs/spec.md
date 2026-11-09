@@ -147,6 +147,15 @@ one. Runs played by
 `--autopilot` show the record but never set it. Loaded levelsets keep no
 record.
 
+**Effects (added after v1)**, designed in `docs/design/kinetic-fx.md`:
+- Every brick contact pushes `GameEvent::BrickStruck`, from a ball or a
+  bolt, indestructible bricks included. It carries the contact point, the
+  struck face's normal and the striker.
+- Effects are presentation only. They read events, never change state, and
+  leave `Input` and the pinned replay hash as they were.
+- The effect light's hue for a broken brick is the rally step its note is
+  played on (`src/rally.rs`, shared with the sound director).
+
 **Sound (added after v1)**, designed in `docs/design/audio.md`:
 - Cues are ABC text files in `audio/cues/`. `build.rs` renders them at build
   time with BRYX's fork of the Electric Pulse engine (`audio/engine/`, C99;

@@ -102,6 +102,19 @@ one hit), a plate held by four rivets (armored), the same plate cracked
 (armored, one hit left), diagonal hatching (indestructible). Set
 `BRYX_REDUCED_MOTION=1` to turn off screen and camera shake.
 
+Every impact has its own signature:
+- a brick glows from its outline and throws splinters off the struck face;
+- an armored brick cracks where it was hit, and later breaks apart along
+  that crack;
+- an indestructible brick throws back a cold arc;
+- an explosive ball's blast reaches its neighbors one by one;
+- an asteroid falls apart into rock;
+- a metal ball strikes sparks.
+
+The light's color follows the note each broken brick plays. `BRYX_FX=off`,
+`geometry` (no bloom or shockwave) or `full` (the default) sets how much of
+this runs; `docs/design/kinetic-fx.md` has the design and its costs.
+
 ## Design
 
 [`DESIGN.md`](DESIGN.md) is the visual system: one palette

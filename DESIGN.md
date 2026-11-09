@@ -173,6 +173,14 @@ at the point of use:
   their capsule's hue, so cause and effect read as one thing.
 - **Hazards**: Asteroid (#8B7F9A) is cool cratered stone; its Explosion
   (#FFB55E) is the only warm thing about it.
+- **Effect light** (brief, emissive, `src/fx/`):
+  - the rally scale `FX_SCALE`, root to fifth: #FFD58A, #FFA474, #FF7FAE,
+    #B59BFF, #7CCBFF (warm at the root, cooling as the run climbs);
+  - Crack #FFB347, inside an armored brick, and Fissure #1A100A, the crack's
+    line after its light has gone;
+  - Deflect #C9E2FF, an indestructible rebound;
+  - Blast core #FFF1D6;
+  - Spark #FFF4DC.
 
 ### Named Rules
 **The Never-Alone Rule.** No meaning rides on hue alone. A new capsule needs
@@ -183,6 +191,13 @@ a unique letter; a new brick kind needs a mark that the
 Both renderers import the same constants.
 
 **The Brightest-Ball Rule.** Nothing that moves is brighter than the ball.
+Light is not an object: an effect's flash, ring, glint or spark may burn
+brighter, above 1.0 where the bloom takes it, but only for its brief life
+(under 250 ms at full strength) and never on anything the player tracks.
+
+**The Light-Is-Selective Rule.** The scene stays within the palette (its
+shaders clamp to 1.0), so only effect light blooms, by construction. The
+HUD is drawn after post-processing, never through it.
 
 ## Typography
 
@@ -310,9 +325,24 @@ beside the score. Shown whenever `--autopilot` drives the input (PRODUCT.md,
 "Honest about the machine").
 
 ### Motion
-- Effects follow game events and are brief: brick flash (one frame), shake
-  (2D 3 px for 80 ms, 3D camera 26 units for 150 ms), a four-step trail,
-  explosions (350 ms), 3D tumble ghosts (500 ms).
+- Effects follow game events and are brief: shake (2D 3 px for 80 ms, 3D
+  camera 26 units for 150 ms) and a four-step trail.
+- **Kinetic effects** (`src/fx/`, `docs/design/kinetic-fx.md`): one
+  signature per event, shared by both lenses, all over within 0.9 s:
+  - **Normal brick:** a glow from its outline, splinters, and light along
+    the struck face.
+  - **Armored brick:** a crack from the real impact point, then a fracture
+    along that crack.
+  - **Indestructible brick:** a cold rebound arc.
+  - **Explosive ball:** a blast, then its neighbors breaking as the front
+    reaches them.
+  - **Asteroid:** rock and dust.
+  - **Metal ball:** sparks.
+  - **Level end:** a sweep of light.
+
+  The light's hue is the rally's step on the scale the brick notes climb
+  (`FX_SCALE`). With `BRYX_FX=off`, the older one-frame brick flash, 2D
+  ghost and 3D tumble return as the fallback.
 - Nothing flashes above 3 Hz. The only interface animation is the single
   0.9 s life cue.
 - `BRYX_REDUCED_MOTION=1` turns shake off in both renderers.
