@@ -19,6 +19,7 @@
 //! pattern (`assets.rs`). See PRODUCT.md, "Accessibility & Inclusion".
 
 use crate::events::PowerUpKind;
+use crate::game::BallMode;
 use crate::levels::BrickKind;
 
 /// An sRGB color as authored: 8 bits per channel, no alpha.
@@ -118,6 +119,15 @@ pub const SCRIM_ALPHA: f32 = 0.95;
 /// The ball: the brightest object on screen, warm white so it is not
 /// mistaken for any capsule or for the paddle's cool metal.
 pub const BALL: Rgb = hex(0xFFF2CF);
+/// Every ball's color: its own warm white, or while a ball power lasts,
+/// that power's capsule hue.
+pub fn ball(mode: Option<BallMode>) -> Rgb {
+    match mode {
+        None => BALL,
+        Some(BallMode::Explosive) => CAPSULE_EXPLOSIVE_BALL,
+        Some(BallMode::Metal) => CAPSULE_METAL_BALL,
+    }
+}
 /// Brushed-metal paddle base (the sprite recipe adds grain and gloss).
 pub const PADDLE: Rgb = hex(0xC6CEDC);
 /// One-frame flash on a brick that was hit.
@@ -155,9 +165,17 @@ pub const CAPSULE_SUPER_LASER: Rgb = hex(0x2BCFD8);
 pub const CAPSULE_TINY: Rgb = hex(0x9BA5B9);
 pub const CAPSULE_PLAYER: Rgb = hex(0xF0C232);
 pub const CAPSULE_BREAK: Rgb = hex(0xFF8A2B);
+/// Chartreuse, not the explosion's amber: amber sits within a few steps of
+/// Player's gold and Break's orange, chartreuse has the green-yellow gap
+/// to itself. Every ball wears it while the power lasts.
+pub const CAPSULE_EXPLOSIVE_BALL: Rgb = hex(0xC5F03C);
+/// Polished steel, the lightest capsule: Tiny's gray is the dull one.
+/// Every ball wears it while the power lasts.
+pub const CAPSULE_METAL_BALL: Rgb = hex(0xE6E9F0);
 
-/// A capsule's hue. The open Break gate and the laser bolts reuse their
-/// capsule's hue, so the cause and the effect read as one thing.
+/// A capsule's hue. The open Break gate, the laser bolts and a powered ball
+/// reuse their capsule's hue, so the cause and the effect read as one
+/// thing.
 pub fn capsule(kind: PowerUpKind) -> Rgb {
     match kind {
         PowerUpKind::Widen => CAPSULE_WIDEN,
@@ -169,11 +187,14 @@ pub fn capsule(kind: PowerUpKind) -> Rgb {
         PowerUpKind::Tiny => CAPSULE_TINY,
         PowerUpKind::Player => CAPSULE_PLAYER,
         PowerUpKind::Break => CAPSULE_BREAK,
+        PowerUpKind::ExplosiveBall => CAPSULE_EXPLOSIVE_BALL,
+        PowerUpKind::MetalBall => CAPSULE_METAL_BALL,
     }
 }
 
 /// The letter on a capsule: the color-blind-safe half of its identity.
-/// Unique across the nine; Super laser takes X because S is Slow's.
+/// Unique across the eleven; Super laser takes X because S is Slow's, and
+/// Metal ball takes I (iron) because M is Multiball's.
 pub fn capsule_letter(kind: PowerUpKind) -> &'static str {
     match kind {
         PowerUpKind::Widen => "W",
@@ -185,11 +206,13 @@ pub fn capsule_letter(kind: PowerUpKind) -> &'static str {
         PowerUpKind::Tiny => "T",
         PowerUpKind::Player => "P",
         PowerUpKind::Break => "B",
+        PowerUpKind::ExplosiveBall => "E",
+        PowerUpKind::MetalBall => "I",
     }
 }
 
 /// The ink a capsule's letter is set in: the field's own dark, which
-/// clears 4.5:1 on all nine hues (`capsule_letters_clear_contrast`).
+/// clears 4.5:1 on all eleven hues (`capsule_letters_clear_contrast`).
 pub const CAPSULE_INK: Rgb = FIELD;
 
 // -- hazards and effects ---------------------------------------------------
@@ -204,7 +227,7 @@ pub const EXPLOSION: Rgb = hex(0xFFB55E);
 mod tests {
     use super::*;
 
-    const ALL_CAPSULES: [PowerUpKind; 9] = [
+    const ALL_CAPSULES: [PowerUpKind; 11] = [
         PowerUpKind::Widen,
         PowerUpKind::Slow,
         PowerUpKind::Multiball,
@@ -214,6 +237,8 @@ mod tests {
         PowerUpKind::Tiny,
         PowerUpKind::Player,
         PowerUpKind::Break,
+        PowerUpKind::ExplosiveBall,
+        PowerUpKind::MetalBall,
     ];
 
     /// WCAG relative luminance of an sRGB color.

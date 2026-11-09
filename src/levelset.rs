@@ -150,9 +150,9 @@ enum BonusCell {
 
 /// One bonus-grid character (docs/levelset-format.md's table) as BRYX
 /// reads it. The mapping keeps an extra's *effect* where BRYX has one:
-/// a sticky paddle is Glue, a weapon is Laser, metal (piercing) ball is
-/// Super laser, an explosive ball (it clears an area) is Laser, the
-/// shortened paddle is Tiny, an extra life is Player.
+/// a sticky paddle is Glue, a weapon is Laser, the explosive and metal
+/// balls are BRYX's own, the shortened paddle is Tiny, an extra life is
+/// Player.
 fn bonus_cell(ch: char) -> BonusCell {
     use AuthoredDrop::{Kind, Random, RandomHelpful};
     let mapped = |drop| BonusCell::Mapped(drop);
@@ -163,8 +163,8 @@ fn bonus_cell(ch: char) -> BonusCell {
         'b' => mapped(Kind(PowerUpKind::Multiball)), // extra ball
         's' => mapped(Kind(PowerUpKind::Glue)),  // slime: the paddle catches the ball
         'p' => mapped(Kind(PowerUpKind::Laser)), // weapon: the paddle shoots
-        '*' => mapped(Kind(PowerUpKind::Laser)), // explosive ball: clears an area
-        'm' => mapped(Kind(PowerUpKind::SuperLaser)), // metal ball: pierces bricks
+        '*' => mapped(Kind(PowerUpKind::ExplosiveBall)), // explosive ball
+        'm' => mapped(Kind(PowerUpKind::MetalBall)), // metal ball
         '-' => mapped(Kind(PowerUpKind::Tiny)),  // shorten paddle
         'l' => mapped(Kind(PowerUpKind::Player)), // extra life
         '?' => mapped(Random),
@@ -522,8 +522,8 @@ mod tests {
             ('b', Kind(PowerUpKind::Multiball)),
             ('s', Kind(PowerUpKind::Glue)),
             ('p', Kind(PowerUpKind::Laser)),
-            ('*', Kind(PowerUpKind::Laser)),
-            ('m', Kind(PowerUpKind::SuperLaser)),
+            ('*', Kind(PowerUpKind::ExplosiveBall)),
+            ('m', Kind(PowerUpKind::MetalBall)),
             ('-', Kind(PowerUpKind::Tiny)),
             ('l', Kind(PowerUpKind::Player)),
             ('?', Random),
@@ -820,11 +820,11 @@ mod tests {
         assert_eq!(at(10, 0).powerup, Some(Kind(PowerUpKind::Tiny))); // '-'
         assert_eq!(at(11, 0).powerup, Some(Kind(PowerUpKind::Player))); // 'l'
         assert_eq!(at(12, 0).powerup, Some(Kind(PowerUpKind::Glue))); // 's'
-        assert_eq!(at(13, 0).powerup, Some(Kind(PowerUpKind::SuperLaser))); // 'm'
+        assert_eq!(at(13, 0).powerup, Some(Kind(PowerUpKind::MetalBall))); // 'm'
         assert_eq!(at(2, 1).powerup, Some(Kind(PowerUpKind::Laser))); // 'p'
         assert_eq!(at(3, 1).powerup, Some(Random)); // '?'
         assert_eq!(at(5, 1).powerup, Some(RandomHelpful)); // 'j'
-        assert_eq!(at(11, 1).powerup, Some(Kind(PowerUpKind::Laser))); // '*'
+        assert_eq!(at(11, 1).powerup, Some(Kind(PowerUpKind::ExplosiveBall))); // '*'
         assert_eq!(at(6, 1).kind, BrickKind::Normal, "'F' is an alias of 'f'");
 
         // Exactly the 26 documented non-empty brick chars produced a spawn

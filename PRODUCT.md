@@ -59,8 +59,8 @@ identity.
 - Content: a 32-level named campaign (default), v1's three levels
   (`--classic`), or loaded levelsets. Bricks are normal, armored (two hits)
   or indestructible.
-- Nine capsules: Widen, Slow, Multiball, Glue, Laser, Super laser, Tiny,
-  Player, Break. Plus drifting asteroids that explode, laser bolts, and the
+- Eleven capsules: Widen, Slow, Multiball, Glue, Laser, Super laser, Tiny,
+  Player, Break, Explosive ball, Metal ball. Plus drifting asteroids that explode, laser bolts, and the
   Break gate in the right wall.
 - Presentation is fixed by the spec's technology choices: one instanced-quad
   pipeline in 2D, a cube/sphere pipeline in 3D, `glyphon` text. A procedural

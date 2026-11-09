@@ -156,6 +156,19 @@ const ASTEROID_SCORE: u32 = 100;
 /// so a blast takes out a small cluster, never a whole row.
 pub const ASTEROID_BLAST_RADIUS: f32 = 40.0;
 
+// -- ball powers ------------------------------------------------------------
+
+/// How long a ball power (Explosive ball or Metal ball) lasts once caught.
+/// Catching either while one is active replaces it, timer full again, as
+/// the two guns do.
+const BALL_POWER_DURATION_SECS: f32 = 15.0;
+/// An explosive ball's blast, from the center of the brick it struck to the
+/// closest point of each other brick: past the eight neighbors' corners
+/// (28.2 px away on the 52x22 grid), short of the bricks two rows up or
+/// two columns over (33 and 78 px). The struck brick and the ring around
+/// it, never more.
+pub const BALL_BLAST_RADIUS: f32 = 30.0;
+
 /// Gameplay added after the v1 spec. Each can be switched off, so v1's
 /// rules (and its pinned replay hash) stay reproducible: `--classic` plays
 /// with none of them.
@@ -176,6 +189,10 @@ pub struct Features {
     /// The Break power-up: a gate opens in the right wall, and sliding the
     /// paddle through it skips to the next level.
     pub warp: bool,
+    /// The Explosive ball and Metal ball power-ups: for a while every ball
+    /// blows up the bricks around the one it hits, or breaks whatever it
+    /// hits outright and flies on through.
+    pub ball_powers: bool,
 }
 
 impl Features {
@@ -186,6 +203,7 @@ impl Features {
         tiny: true,
         player: true,
         warp: true,
+        ball_powers: true,
     };
     pub const V1: Self = Self {
         glue: false,
@@ -194,6 +212,7 @@ impl Features {
         tiny: false,
         player: false,
         warp: false,
+        ball_powers: false,
     };
 }
 
@@ -296,6 +315,32 @@ pub enum GunKind {
 pub struct Gun {
     pub kind: GunKind,
     pub timer: f32,
+}
+
+/// What every ball does to a brick while a ball power lasts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BallMode {
+    /// A struck brick blows up: it and every brick within
+    /// `BALL_BLAST_RADIUS` take one hit. The ball bounces as usual.
+    Explosive,
+    /// A struck brick breaks outright, armored or not, and the ball flies
+    /// on through it. Indestructible bricks still turn it back.
+    Metal,
+}
+
+/// An active ball power and the seconds it has left.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BallPower {
+    pub mode: BallMode,
+    pub timer: f32,
+}
+
+impl BallPower {
+    /// One tick's countdown; `None` once it runs out.
+    fn tick(self, dt_fixed: f32) -> Option<Self> {
+        let timer = self.timer - dt_fixed;
+        (timer > 0.0).then_some(Self { timer, ..self })
+    }
 }
 
 /// A bolt fired by the paddle's gun, flying straight up.
@@ -544,6 +589,72 @@ fn ball_hits_brick(ball: &Ball, brick: &Brick) -> bool {
     dx * dx + dy * dy <= ball.radius * ball.radius
 }
 
+/// What one ball-brick contact did (see [`strike_brick`]).
+#[derive(Debug, Clone, PartialEq)]
+enum Strike {
+    /// The ball touches no brick.
+    Miss,
+    /// It bounced off an indestructible brick.
+    Indestructible,
+    /// It hit a destructible brick. `destroyed` holds the bricks that
+    /// broke, already removed (none on an armored brick's first hit);
+    /// `blast` is where an explosive ball blew up.
+    Hit {
+        destroyed: Vec<Brick>,
+        blast: Option<(f32, f32)>,
+    },
+}
+
+/// Resolves `ball` against the first brick it overlaps, under the balls'
+/// current power: the one rule the game (`resolve_brick_collisions`) and
+/// the autopilot's forecast (`forecast_crossing`) both play by.
+///
+/// - No power: the ball bounces off the nearest face and the brick takes
+///   one hit.
+/// - Metal: a destructible brick breaks outright and the ball keeps its
+///   course, so it plows through a column in one pass.
+/// - Explosive: the ball bounces, and the brick and its neighbors take a
+///   blast centered on the struck brick (`BALL_BLAST_RADIUS`).
+///
+/// An indestructible brick turns every ball back, powered or not.
+fn strike_brick(bricks: &mut Vec<Brick>, ball: &mut Ball, mode: Option<BallMode>) -> Strike {
+    let Some(index) = bricks.iter().position(|brick| ball_hits_brick(ball, brick)) else {
+        return Strike::Miss;
+    };
+    let struck = bricks[index];
+    if struck.kind == BrickKind::Indestructible {
+        reflect_off_brick_face(ball, &struck);
+        return Strike::Indestructible;
+    }
+    match mode {
+        Some(BallMode::Metal) => Strike::Hit {
+            destroyed: vec![bricks.remove(index)],
+            blast: None,
+        },
+        Some(BallMode::Explosive) => {
+            reflect_off_brick_face(ball, &struck);
+            Strike::Hit {
+                destroyed: blast_bricks(bricks, struck.x, struck.y, BALL_BLAST_RADIUS),
+                blast: Some((struck.x, struck.y)),
+            }
+        }
+        None => {
+            reflect_off_brick_face(ball, &struck);
+            let brick = &mut bricks[index];
+            brick.hits_remaining = brick.hits_remaining.saturating_sub(1);
+            let destroyed = if brick.hits_remaining == 0 {
+                vec![bricks.remove(index)]
+            } else {
+                Vec::new()
+            };
+            Strike::Hit {
+                destroyed,
+                blast: None,
+            }
+        }
+    }
+}
+
 /// Reflects `ball`'s velocity off whichever face of `brick` it penetrated
 /// least deeply (the nearest face, per spec), and nudges the ball back out
 /// along that axis by the penetration depth so it doesn't immediately
@@ -734,6 +845,10 @@ pub struct Game {
     pub gun: Option<Gun>,
     /// Seconds until the gun may fire again.
     gun_cooldown: f32,
+    /// The balls' power (Explosive or Metal), while one is active. It
+    /// applies to every ball in play, and like the gun it outlasts a lost
+    /// life.
+    pub ball_power: Option<BallPower>,
     /// Bolts in flight.
     pub bolts: Vec<Bolt>,
     /// The Break gate in the right wall is open: the paddle may slide out
@@ -914,6 +1029,7 @@ impl Game {
         self.tiny_timer = 0.0;
         self.gun = None;
         self.gun_cooldown = 0.0;
+        self.ball_power = None;
         self.stall_nudges = 0;
         self.load_level_bricks();
         self.reset_for_serve();
@@ -944,6 +1060,7 @@ impl Game {
             tiny_timer: 0.0,
             gun: None,
             gun_cooldown: 0.0,
+            ball_power: None,
             bolts: Vec::new(),
             gate_open: false,
             asteroids: Vec::new(),
@@ -1023,6 +1140,7 @@ impl Game {
             }
         }
         self.gun_cooldown = (self.gun_cooldown - dt_fixed).max(0.0);
+        self.ball_power = self.ball_power.and_then(|power| power.tick(dt_fixed));
         self.paddle.width = if self.widen_timer > 0.0 {
             PADDLE_WIDTH * WIDEN_MULTIPLIER
         } else if self.tiny_timer > 0.0 {
@@ -1241,31 +1359,23 @@ impl Game {
     /// Returns whether the ball bounced off an indestructible brick (the
     /// one kind of brick hit that is not progress; see `STALL_SECS`).
     fn resolve_brick_collisions(&mut self, ball: &mut Ball) -> bool {
-        let Some(index) = self
-            .bricks
-            .iter()
-            .position(|brick| ball_hits_brick(ball, brick))
-        else {
-            return false;
-        };
-
-        reflect_off_brick_face(ball, &self.bricks[index]);
-
-        if self.bricks[index].kind == BrickKind::Indestructible {
-            return true;
+        let mode = self.ball_power.map(|power| power.mode);
+        match strike_brick(&mut self.bricks, ball, mode) {
+            Strike::Miss => false,
+            Strike::Indestructible => true,
+            Strike::Hit { destroyed, blast } => {
+                self.stall_secs = 0.0;
+                if let Some((x, y)) = blast {
+                    self.events.push(GameEvent::BallExploded { x, y });
+                }
+                // Empty on an armored brick's first hit: its state changed
+                // (2 -> 1 hit left), no score, no event.
+                for brick in destroyed {
+                    self.on_brick_destroyed(brick);
+                }
+                false
+            }
         }
-        self.stall_secs = 0.0;
-
-        self.bricks[index].hits_remaining = self.bricks[index].hits_remaining.saturating_sub(1);
-        if self.bricks[index].hits_remaining > 0 {
-            // Armored brick's first hit: state changed (2 -> 1 hit left),
-            // not destroyed yet -- no score, no event.
-            return false;
-        }
-
-        let brick = self.bricks.remove(index);
-        self.on_brick_destroyed(brick);
-        false
     }
 
     /// Scores a destroyed brick, announces it and rolls its power-up drop,
@@ -1358,6 +1468,9 @@ impl Game {
         if self.features.warp {
             kinds.push(PowerUpKind::Break);
         }
+        if self.features.ball_powers {
+            kinds.extend([PowerUpKind::ExplosiveBall, PowerUpKind::MetalBall]);
+        }
         kinds
     }
 
@@ -1435,9 +1548,9 @@ impl Game {
             && powerup.y <= self.paddle.bottom()
     }
 
-    /// Applies one of the exactly-three power-up effects (spec: do not add
-    /// a fourth -- this match has no wildcard arm specifically so adding a
-    /// variant to `PowerUpKind` without handling it here fails to build).
+    /// Applies one of the spec's eleven power-up effects. The match has no
+    /// wildcard arm, so a `PowerUpKind` variant added without handling it
+    /// here fails to build.
     fn apply_powerup(&mut self, kind: PowerUpKind) {
         match kind {
             PowerUpKind::Widen => {
@@ -1468,6 +1581,18 @@ impl Game {
             }
             PowerUpKind::Glue => {
                 self.glue_timer = GLUE_DURATION_SECS;
+            }
+            PowerUpKind::ExplosiveBall => {
+                self.ball_power = Some(BallPower {
+                    mode: BallMode::Explosive,
+                    timer: BALL_POWER_DURATION_SECS,
+                });
+            }
+            PowerUpKind::MetalBall => {
+                self.ball_power = Some(BallPower {
+                    mode: BallMode::Metal,
+                    timer: BALL_POWER_DURATION_SECS,
+                });
             }
             PowerUpKind::Slow => {
                 for ball in std::iter::once(&mut self.ball).chain(self.extra_balls.iter_mut()) {
@@ -1682,7 +1807,7 @@ impl Game {
         self.stall_secs = 0.0;
         self.score += ASTEROID_SCORE;
         self.events.push(GameEvent::AsteroidExploded { x, y });
-        for brick in blast_bricks(&mut self.bricks, x, y) {
+        for brick in blast_bricks(&mut self.bricks, x, y, ASTEROID_BLAST_RADIUS) {
             self.on_brick_destroyed(brick);
         }
     }
@@ -1724,15 +1849,16 @@ impl Asteroid {
     }
 }
 
-/// An asteroid's blast at (`x`, `y`): every destructible brick within
-/// `ASTEROID_BLAST_RADIUS` takes one hit, the hit a ball would give it (a
-/// normal brick breaks, an armored one loses one of its two). Returns the
-/// bricks it destroyed, already removed from `bricks`.
-fn blast_bricks(bricks: &mut Vec<Brick>, x: f32, y: f32) -> Vec<Brick> {
+/// A blast at (`x`, `y`), an asteroid's or an explosive ball's: every
+/// destructible brick within `radius` (to its closest point) takes one
+/// hit, the hit a ball would give it (a normal brick breaks, an armored
+/// one loses one of its two). Returns the bricks it destroyed, already
+/// removed from `bricks`.
+fn blast_bricks(bricks: &mut Vec<Brick>, x: f32, y: f32, radius: f32) -> Vec<Brick> {
     let in_range = |brick: &Brick| {
         let dx = x - x.clamp(brick.left(), brick.right());
         let dy = y - y.clamp(brick.top(), brick.bottom());
-        dx * dx + dy * dy <= ASTEROID_BLAST_RADIUS * ASTEROID_BLAST_RADIUS
+        dx * dx + dy * dy <= radius * radius
     };
     let mut destroyed = Vec::new();
     bricks.retain_mut(|brick| {
@@ -1792,7 +1918,8 @@ pub struct Forecast {
     pub path: Vec<(f32, f32)>,
 }
 
-/// [`Forecast`] for `ball` against `bricks` and `asteroids`, down to
+/// [`Forecast`] for `ball` against `bricks` and `asteroids`, under the
+/// balls' `ball_power` (counted down as the game would), down to
 /// `line_y` (the paddle's contact line; the paddle itself is left out, as
 /// is anything random: no asteroid spawns, no level clear). `None` if the
 /// ball is resting on the paddle, held by Glue, or still above the line
@@ -1805,6 +1932,7 @@ pub fn forecast_crossing(
     ball: &Ball,
     bricks: &[Brick],
     asteroids: &[Asteroid],
+    ball_power: Option<BallPower>,
     line_y: f32,
     dt_fixed: f32,
     max_ticks: u32,
@@ -1815,32 +1943,27 @@ pub fn forecast_crossing(
     let mut ball = *ball;
     let mut bricks = bricks.to_vec();
     let mut asteroids = asteroids.to_vec();
+    let mut power = ball_power;
     let mut path = Vec::with_capacity(max_ticks as usize + 1);
     path.push((ball.x, ball.y));
     for tick in 1..=max_ticks {
+        // Counted down before the ball moves, as `tick_playing` does.
+        power = power.and_then(|p| p.tick(dt_fixed));
+        let mode = power.map(|p| p.mode);
         let substeps = substep_count(ball.speed(), BALL_RADIUS, dt_fixed);
         let sub_dt = dt_fixed / substeps as f32;
         for _ in 0..substeps {
             ball.x += ball.vx * sub_dt;
             ball.y += ball.vy * sub_dt;
             resolve_wall_collisions(&mut ball);
-            if let Some(index) = bricks.iter().position(|b| ball_hits_brick(&ball, b)) {
-                reflect_off_brick_face(&mut ball, &bricks[index]);
-                let brick = &mut bricks[index];
-                if brick.kind != BrickKind::Indestructible {
-                    brick.hits_remaining = brick.hits_remaining.saturating_sub(1);
-                    if brick.hits_remaining == 0 {
-                        bricks.remove(index);
-                    }
-                }
-            }
+            strike_brick(&mut bricks, &mut ball, mode);
             if let Some(index) = asteroids
                 .iter()
                 .position(|a| ball_touches_asteroid(&ball, a))
             {
                 let asteroid = asteroids.remove(index);
                 bounce_off_asteroid(&mut ball, &asteroid);
-                blast_bricks(&mut bricks, asteroid.x, asteroid.y);
+                blast_bricks(&mut bricks, asteroid.x, asteroid.y, ASTEROID_BLAST_RADIUS);
             }
             if ball.vy > 0.0 && ball.y >= line_y {
                 path.push((ball.x, ball.y));
@@ -2608,8 +2731,8 @@ mod tests {
             (200..=400).contains(&spawned),
             "expected roughly 15% of 2000 destroyed bricks to drop a power-up, got {spawned}"
         );
-        // Nine kinds, evenly: about 33 each out of ~300, std dev ~5.5.
-        assert_eq!(kinds.len(), 9, "{kinds:?}");
+        // Eleven kinds, evenly: about 27 each out of ~300, std dev ~5.
+        assert_eq!(kinds.len(), 11, "{kinds:?}");
         assert!(
             kinds.values().all(|&n| (8..=70).contains(&n)),
             "{kinds:?} out of {spawned}"
@@ -2945,6 +3068,211 @@ mod tests {
                 assert!(!matches!(
                     powerup.kind,
                     PowerUpKind::Laser | PowerUpKind::SuperLaser | PowerUpKind::Tiny
+                ));
+            }
+        }
+    }
+
+    // -- power-ups: Explosive ball and Metal ball ---------------------------------
+
+    /// A playing game with `kind`'s ball power on, no asteroids, and its
+    /// ball flying straight up at (`x`, `y`).
+    fn powered(kind: PowerUpKind, x: f32, y: f32) -> Game {
+        let mut game = playing_game().with_features(Features {
+            asteroids: false,
+            ..Features::ALL
+        });
+        game.ball = Ball {
+            x,
+            y,
+            vx: 0.0,
+            vy: -300.0,
+            radius: BALL_RADIUS,
+            attached: false,
+            glued: None,
+        };
+        game.apply_powerup(kind);
+        game
+    }
+
+    #[test]
+    fn a_metal_ball_breaks_every_destructible_brick_in_its_way_until_an_indestructible_one() {
+        let mut game = powered(PowerUpKind::MetalBall, 400.0, 400.0);
+        game.bricks = vec![
+            test_brick_at(400.0, 300.0, BrickKind::Normal, 1, 10),
+            test_brick_at(400.0, 278.0, BrickKind::Armored, 2, 20),
+            test_brick_at(400.0, 256.0, BrickKind::Normal, 1, 30),
+            test_brick_at(400.0, 234.0, BrickKind::Indestructible, 1, 0),
+            test_brick_at(20.0, 100.0, BrickKind::Normal, 1, 40), // keeps the level open
+        ];
+        let mut turned_at = None;
+        for tick in 0..120 {
+            game.tick(&Input::default(), DT);
+            if turned_at.is_none() && game.ball.vy > 0.0 {
+                turned_at = Some(tick);
+            }
+        }
+        assert_eq!(game.score, 10 + 20 + 30, "armored broken outright");
+        assert_eq!(game.bricks.len(), 2, "the wall and the far brick stand");
+        assert!(
+            turned_at.is_some(),
+            "the indestructible brick turned it back"
+        );
+        assert!(
+            game.ball.x == 400.0,
+            "it flew straight through: never deflected sideways"
+        );
+        assert!(!game
+            .events
+            .iter()
+            .any(|e| matches!(e, GameEvent::BallExploded { .. })));
+    }
+
+    #[test]
+    fn an_explosive_ball_blows_up_the_struck_brick_and_its_eight_neighbors() {
+        let mut game = powered(PowerUpKind::ExplosiveBall, 400.0, 316.0);
+        let (w, h) = (levels::BRICK_WIDTH, levels::BRICK_HEIGHT);
+        let mut bricks = vec![test_brick_at(400.0, 300.0, BrickKind::Normal, 1, 10)];
+        for (dx, dy) in [(-1, -1), (0, -1), (1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1)] {
+            bricks.push(test_brick_at(
+                400.0 + dx as f32 * w,
+                300.0 + dy as f32 * h,
+                BrickKind::Normal,
+                1,
+                1,
+            ));
+        }
+        bricks.extend([
+            test_brick_at(400.0 + w, 300.0, BrickKind::Armored, 2, 20),
+            test_brick_at(400.0, 300.0 - 2.0 * h, BrickKind::Normal, 1, 1), // two rows up
+            test_brick_at(400.0 + 2.0 * w, 300.0, BrickKind::Normal, 1, 1), // two over
+            test_brick_at(20.0, 100.0, BrickKind::Indestructible, 1, 0),
+        ]);
+        // The neighbor to the left made indestructible: blasts never touch one.
+        bricks[4].kind = BrickKind::Indestructible;
+        game.bricks = bricks;
+
+        let mut ball = game.ball;
+        assert!(!game.resolve_brick_collisions(&mut ball));
+
+        assert!(ball.vy > 0.0, "it bounces as usual");
+        assert!(game
+            .events
+            .contains(&GameEvent::BallExploded { x: 400.0, y: 300.0 }));
+        let at = |x: f32, y: f32| game.bricks.iter().find(|b| b.x == x && b.y == y);
+        assert!(at(400.0, 300.0).is_none(), "the struck brick broke");
+        assert_eq!(
+            at(400.0 + w, 300.0).map(|b| b.hits_remaining),
+            Some(1),
+            "an armored neighbor takes one hit"
+        );
+        assert!(at(400.0 - w, 300.0).is_some(), "indestructible: untouched");
+        assert!(
+            at(400.0, 300.0 - 2.0 * h).is_some(),
+            "two rows up: out of reach"
+        );
+        assert!(
+            at(400.0 + 2.0 * w, 300.0).is_some(),
+            "two over: out of reach"
+        );
+        assert_eq!(
+            game.score,
+            10 + 6,
+            "the struck brick and six normal neighbors"
+        );
+        assert_eq!(game.bricks.len(), 5);
+    }
+
+    #[test]
+    fn catching_either_ball_power_replaces_the_other_and_it_runs_out() {
+        let mut game = powered(PowerUpKind::ExplosiveBall, 20.0, 400.0);
+        game.ball_power.as_mut().unwrap().timer = 1.0;
+        game.apply_powerup(PowerUpKind::MetalBall);
+        assert_eq!(
+            game.ball_power,
+            Some(BallPower {
+                mode: BallMode::Metal,
+                timer: BALL_POWER_DURATION_SECS
+            })
+        );
+        game.ball_power.as_mut().unwrap().timer = DT / 2.0;
+        game.tick(&Input::default(), DT);
+        assert!(game.ball_power.is_none());
+    }
+
+    #[test]
+    fn a_ball_power_outlasts_a_lost_life_and_ends_with_the_run() {
+        let mut game = powered(PowerUpKind::MetalBall, 20.0, 400.0);
+        game.lose_life();
+        assert!(game.ball_power.is_some());
+        game.restart_at(1);
+        assert!(game.ball_power.is_none());
+    }
+
+    #[test]
+    fn a_metal_ball_that_takes_the_last_brick_clears_the_level() {
+        let mut game = powered(PowerUpKind::MetalBall, 400.0, 340.0);
+        game.bricks = vec![test_brick_at(400.0, 300.0, BrickKind::Armored, 2, 20)];
+        for _ in 0..30 {
+            game.tick(&Input::default(), DT);
+            if game.level == 2 {
+                break;
+            }
+        }
+        assert_eq!(game.level, 2);
+    }
+
+    #[test]
+    fn the_forecast_reproduces_a_powered_ball_and_its_power_running_out() {
+        // Into level 1's wall of bricks, with the power ending mid-flight:
+        // the forecast must break what the game breaks, under the power
+        // and after it, to land where the game's ball lands.
+        for kind in [PowerUpKind::ExplosiveBall, PowerUpKind::MetalBall] {
+            let mut game = powered(kind, 300.0, 400.0);
+            game.ball.vx = 140.0;
+            game.ball.vy = -320.0;
+            game.ball_power.as_mut().unwrap().timer = 0.9;
+            game.paddle.x = 60.0;
+            let line_y = game.paddle.top() - BALL_RADIUS;
+            let forecast = forecast_crossing(
+                &game.ball,
+                &game.bricks,
+                &game.asteroids,
+                game.ball_power,
+                line_y,
+                DT,
+                1200,
+            )
+            .expect("it comes down within ten seconds");
+            let bricks_before = game.bricks.len();
+            for step in 1..forecast.ticks as usize {
+                game.tick(&Input::default(), DT);
+                let (x, y) = forecast.path[step];
+                assert!(
+                    (x - game.ball.x).abs() < 1e-3 && (y - game.ball.y).abs() < 1e-3,
+                    "{kind:?} tick {step}: forecast ({x}, {y}), game ({}, {})",
+                    game.ball.x,
+                    game.ball.y
+                );
+            }
+            assert!(game.ball_power.is_none(), "{kind:?}: ran out on the way");
+            assert!(game.bricks.len() + 2 <= bricks_before, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn without_the_ball_powers_feature_neither_ever_drops() {
+        let mut game = playing_game().with_features(Features {
+            ball_powers: false,
+            ..Features::ALL
+        });
+        for _ in 0..3000 {
+            game.powerups.clear();
+            game.maybe_drop_powerup(400.0, 300.0);
+            if let Some(powerup) = game.powerups.first() {
+                assert!(!matches!(
+                    powerup.kind,
+                    PowerUpKind::ExplosiveBall | PowerUpKind::MetalBall
                 ));
             }
         }
@@ -3289,9 +3617,16 @@ mod tests {
         game.asteroids = vec![test_asteroid(360.0, 160.0)];
         game.paddle.x = 60.0;
         let line_y = game.paddle.top() - BALL_RADIUS;
-        let forecast =
-            forecast_crossing(&game.ball, &game.bricks, &game.asteroids, line_y, DT, 600)
-                .expect("it comes down within five seconds");
+        let forecast = forecast_crossing(
+            &game.ball,
+            &game.bricks,
+            &game.asteroids,
+            game.ball_power,
+            line_y,
+            DT,
+            600,
+        )
+        .expect("it comes down within five seconds");
         let bricks_before = game.bricks.len();
         for step in 1..=forecast.ticks as usize {
             game.tick(&Input::default(), DT);

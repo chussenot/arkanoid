@@ -245,6 +245,8 @@ impl Director {
         let won = has(&GameEvent::Victory);
         let warped = has(&GameEvent::Warped);
         let mut bricks = 0;
+        // Several balls can blow up in one tick: one blast is heard.
+        let mut ball_blast = false;
         for event in events {
             match *event {
                 GameEvent::BrickDestroyedAt { x, .. } => {
@@ -275,6 +277,12 @@ impl Director {
                 }
                 GameEvent::AsteroidExploded { x, .. } => {
                     out.push(play(Cue::Explosion, 0.7, x));
+                }
+                // Quieter than an asteroid's: an explosive ball can blow up
+                // every second for fifteen seconds, under the brick notes.
+                GameEvent::BallExploded { x, .. } if !ball_blast => {
+                    ball_blast = true;
+                    out.push(play(Cue::Explosion, 0.4, x));
                 }
                 GameEvent::PowerUpCaught(kind) => out.push(match kind {
                     PowerUpKind::Tiny => play(Cue::Tiny, 0.55, paddle_x),
@@ -416,6 +424,32 @@ mod tests {
         assert_eq!(pitches(&out).len(), MAX_BRICK_SOUNDS_PER_TICK);
         let next = pitches(&director.observe(&game, &[brick_at(400.0)]));
         assert_eq!(next, vec![semitones(PENTATONIC[8])]);
+    }
+
+    #[test]
+    fn ball_blasts_in_one_tick_are_heard_once_and_under_an_asteroids() {
+        let (mut director, game) = playing();
+        let out = director.observe(
+            &game,
+            &[
+                E::BallExploded { x: 100.0, y: 100.0 },
+                E::BallExploded { x: 500.0, y: 100.0 },
+                E::AsteroidExploded { x: 300.0, y: 100.0 },
+            ],
+        );
+        let gains: Vec<f32> = out
+            .iter()
+            .filter_map(|c| match c {
+                Command::Play {
+                    cue: Cue::Explosion,
+                    gain,
+                    ..
+                } => Some(*gain),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(gains.len(), 2, "one ball blast, one asteroid: {out:?}");
+        assert!(gains[0] < gains[1], "the ball's is the quieter");
     }
 
     #[test]

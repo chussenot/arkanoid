@@ -150,7 +150,7 @@ than reproducing the original engine's silent fallthrough.
 | `+` | lengthen (widen) paddle | bonus | Widen |
 | `l` | extra life | bonus | Player |
 | `s` | slime paddle (catches ball) | bonus | Glue |
-| `m` | metal ball | bonus | Super laser (both pierce) |
+| `m` | metal ball | bonus | Metal ball |
 | `b` | extra ball (multiball) | bonus | Multiball |
 | `w` | protective wall | bonus | nothing |
 | `f` | frozen paddle | malus | nothing |
@@ -164,7 +164,7 @@ than reproducing the original engine's silent fallthrough.
 | `~` | ghost paddle | malus | nothing |
 | `!` | disable (paddle input disabled) | malus | nothing |
 | `&` | add time (bonus-level timer) | bonus | nothing |
-| `*` | explosive ball | bonus | Laser (it clears an area) |
+| `*` | explosive ball | bonus | Explosive ball |
 | `}` | bonus magnet | bonus | nothing |
 | `{` | malus magnet | malus | nothing |
 | `W` | weak ball | malus | nothing |

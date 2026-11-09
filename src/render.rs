@@ -17,8 +17,8 @@ use winit::window::Window;
 use crate::assets::{Atlas, SpriteId, UvRect, CAPSULE_SIZE};
 use crate::events::GameEvent;
 use crate::game::{
-    Ball, Brick, Game, GunKind, Paddle, ASTEROID_BLAST_RADIUS, ASTEROID_RADIUS,
-    GATE_REACH_ABOVE_PADDLE, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
+    Ball, BallMode, Brick, Game, GunKind, Paddle, ASTEROID_BLAST_RADIUS, ASTEROID_RADIUS,
+    BALL_BLAST_RADIUS, GATE_REACH_ABOVE_PADDLE, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
 };
 use crate::hud::{self, Hud, BAND_HEIGHT};
 use crate::levels::BrickKind;
@@ -138,10 +138,11 @@ const TRAIL_LEN: usize = 4;
 
 /// Upper bound on how many "just destroyed" ghost quads (see
 /// `bricks_just_destroyed`) get drawn in a single frame. Normally 0 or 1 --
-/// at most one brick is destroyed per ball per substep -- generous enough
-/// to cover a worst-case multiball/catch-up-ticks frame without sizing the
-/// instance buffer for a full second copy of `MAX_BRICKS`.
-const MAX_DESTROY_GHOSTS: usize = 8;
+/// one brick per ball per substep -- and up to 9 for an explosive ball's
+/// blast (the struck brick and its ring); generous enough to cover a blast
+/// plus a multiball/catch-up-ticks frame without sizing the instance
+/// buffer for a full second copy of `MAX_BRICKS`.
+const MAX_DESTROY_GHOSTS: usize = 16;
 
 /// Fixed number of quad instances the instance buffer has room for: the
 /// paddle, the ball trail, the ball, the largest possible brick grid (plus
@@ -173,39 +174,71 @@ fn paddle_tint(c: palette::Rgb, k: f32) -> [f32; 4] {
     [1.0 - k + k * r, 1.0 - k + k * g, 1.0 - k + k * b, 1.0]
 }
 
+/// The tint that turns the ball sprite (drawn in `palette::BALL`) into
+/// `palette::ball(mode)`: the target over the base, channel by channel, so
+/// the sprite's base tone lands on the target hue and its shading keeps
+/// its shape. A channel above 1 is fine: the shader multiplies in linear
+/// light and only the surface write clamps.
+fn ball_tint(mode: Option<BallMode>) -> [f32; 4] {
+    let [r, g, b, _] = palette::ball(mode).linear();
+    let [br, bg, bb, _] = palette::BALL.linear();
+    [r / br, g / bg, b / bb, 1.0]
+}
+
 /// How strongly a capsule's hue tints the paddle while its effect lasts.
 const PADDLE_TINT_STRENGTH: f32 = 0.55;
 
-/// One asteroid explosion playing out, render-side only: spawned from a
-/// `GameEvent::AsteroidExploded` (the asteroid is already gone from `Game`
-/// by then, so its spot comes from the event), aged by wall-clock time.
+/// One explosion playing out, an asteroid's or an explosive ball's,
+/// render-side only: spawned from its `GameEvent` (what blew up is already
+/// gone from `Game` by then, so its spot comes from the event), aged by
+/// wall-clock time.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Explosion {
     x: f32,
     y: f32,
+    /// Radius at birth: the size of what blew up.
+    from: f32,
+    /// Radius at the end: the blast's reach.
+    to: f32,
     age: f32,
 }
 
 impl Explosion {
-    /// Radius and alpha at its current age: grows from the asteroid's size
-    /// out to the blast radius, which shows what it reached, and fades.
+    /// Radius and alpha at its current age: grows from the size of what
+    /// blew up out to the blast radius, which shows what it reached, and
+    /// fades.
     fn look(&self) -> (f32, f32) {
         let t = (self.age / EXPLOSION_SECS).clamp(0.0, 1.0);
-        let radius = ASTEROID_RADIUS + (ASTEROID_BLAST_RADIUS - ASTEROID_RADIUS) * t;
+        let radius = self.from + (self.to - self.from) * t;
         (radius, 1.0 - t)
     }
 }
 
-/// Adds one explosion per `AsteroidExploded` in `events`, up to the cap.
+/// Adds one explosion per `AsteroidExploded` or `BallExploded` in
+/// `events`, up to the cap.
 fn ingest_explosions(explosions: &mut Vec<Explosion>, events: &[GameEvent]) {
     for event in events {
-        if let GameEvent::AsteroidExploded { x, y } = *event {
-            if explosions.len() < MAX_EXPLOSIONS {
-                explosions.push(Explosion { x, y, age: 0.0 });
-            }
+        let (x, y, from, to) = match *event {
+            GameEvent::AsteroidExploded { x, y } => (x, y, ASTEROID_RADIUS, ASTEROID_BLAST_RADIUS),
+            // From the struck brick's half-height: the blast starts inside
+            // the brick it centers on.
+            GameEvent::BallExploded { x, y } => (x, y, BALL_BLAST_START, BALL_BLAST_RADIUS),
+            _ => continue,
+        };
+        if explosions.len() < MAX_EXPLOSIONS {
+            explosions.push(Explosion {
+                x,
+                y,
+                from,
+                to,
+                age: 0.0,
+            });
         }
     }
 }
+
+/// An explosive ball's blast is first drawn this big.
+const BALL_BLAST_START: f32 = crate::levels::BRICK_HEIGHT / 2.0;
 
 /// Ages every explosion by `dt` seconds and drops the finished ones.
 fn step_explosions(explosions: &mut Vec<Explosion>, dt: f32) {
@@ -896,6 +929,7 @@ impl Renderer {
         // top of its own trail. Uses the trail as it stood at the *start*
         // of this frame, then updates it (`push_trail`) for next frame.
         let ball_uv = self.sprite_atlas.uv_rect(SpriteId::Ball);
+        let ball_tint = ball_tint(curr.ball_power.map(|p| p.mode));
         let trail_len = self.ball_trail.len().max(1) as f32;
         instances.extend(self.ball_trail.iter().enumerate().map(|(i, &(x, y))| {
             let fade = (i + 1) as f32 / trail_len;
@@ -904,7 +938,12 @@ impl Renderer {
                 shaken(x, y),
                 [radius, radius],
                 ball_uv,
-                [1.0, 1.0, 1.0, TRAIL_BASE_ALPHA * fade],
+                [
+                    ball_tint[0],
+                    ball_tint[1],
+                    ball_tint[2],
+                    TRAIL_BASE_ALPHA * fade,
+                ],
             )
         }));
         push_trail(&mut self.ball_trail, &drawn.ball);
@@ -913,7 +952,7 @@ impl Renderer {
             shaken(drawn.ball.x, drawn.ball.y),
             [drawn.ball.radius, drawn.ball.radius],
             ball_uv,
-            WHITE_TINT,
+            ball_tint,
         ));
         // `.take(MAX_BRICKS)`: defensive only -- `levels.rs`'s own tests
         // already enforce every built-in level fits this cap. A brick that
@@ -951,7 +990,7 @@ impl Renderer {
                 shaken(ball.x, ball.y),
                 [ball.radius, ball.radius],
                 ball_uv,
-                WHITE_TINT,
+                ball_tint,
             )
         }));
 
@@ -1319,5 +1358,47 @@ mod tests {
         // The paddle (unaffected by the respawn) still interpolates
         // normally -- the snap is ball-specific, not a whole-frame freeze.
         assert!((drawn.paddle.x - 400.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn each_explosion_grows_from_what_blew_up_to_its_own_blast_reach() {
+        let mut explosions = Vec::new();
+        ingest_explosions(
+            &mut explosions,
+            &[
+                GameEvent::AsteroidExploded { x: 1.0, y: 2.0 },
+                GameEvent::BrickDestroyed,
+                GameEvent::BallExploded { x: 3.0, y: 4.0 },
+            ],
+        );
+        assert_eq!(explosions.len(), 2);
+        let ends = |e: &Explosion| {
+            let start = e.look().0;
+            let end = Explosion {
+                age: EXPLOSION_SECS,
+                ..*e
+            }
+            .look()
+            .0;
+            (start, end)
+        };
+        assert_eq!(
+            ends(&explosions[0]),
+            (ASTEROID_RADIUS, ASTEROID_BLAST_RADIUS)
+        );
+        assert_eq!(ends(&explosions[1]), (BALL_BLAST_START, BALL_BLAST_RADIUS));
+    }
+
+    #[test]
+    fn the_ball_tint_turns_the_ball_sprite_into_its_powers_hue() {
+        assert_eq!(ball_tint(None), WHITE_TINT);
+        let base = palette::BALL.linear();
+        for mode in [BallMode::Explosive, BallMode::Metal] {
+            let tint = ball_tint(Some(mode));
+            let target = palette::ball(Some(mode)).linear();
+            for c in 0..3 {
+                assert!((base[c] * tint[c] - target[c]).abs() < 1e-5, "{mode:?}");
+            }
+        }
     }
 }
