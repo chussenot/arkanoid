@@ -409,7 +409,7 @@ fn main() {
             }
             None => {
                 eprintln!(
-                "--levelset {path}: no levelset found there; falling back to the built-in 3 levels"
+                "--levelset {path}: no levelset found there; falling back to the built-in levels"
             );
                 None
             }
@@ -418,13 +418,18 @@ fn main() {
     let event_loop = EventLoop::new().expect("failed to create event loop");
     let mut app = App::new(atlas);
     app.renderer_kind = args.renderer;
-    if args.classic {
-        app.game = Game::new().with_features(game::Features::V1);
-    }
+    // A normal game plays the campaign; `--classic` plays v1 as specified,
+    // its three levels and its rules.
+    app.game = if args.classic {
+        Game::new().with_features(game::Features::V1)
+    } else {
+        Game::new().with_campaign()
+    };
     // Feed a successfully-resolved `--levelset` load into `Game` before the
     // event loop starts driving frames (arkanoid-v2-a8's integration job --
     // see `Game::load_external_levels`'s doc comment). A `None` here (no
-    // flag, bad path, empty directory) leaves the built-in 3 levels active.
+    // flag, bad path, empty directory) leaves the built-in levels active:
+    // the campaign, or v1's three under `--classic`.
     if let Some(set) = loaded_levelset {
         app.game.load_external_levels(set.levels);
     }
