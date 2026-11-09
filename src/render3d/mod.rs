@@ -544,7 +544,7 @@ fn build_rock_mesh() -> (Vec<Vertex3D>, Vec<u16>) {
         Vec3::from(p) * (1.0 + ROCK_JAG * (unit * 2.0 - 1.0))
     };
     let mut vertices = Vec::with_capacity(indices.len());
-    for tri in indices.chunks_exact(3) {
+    for tri in indices.as_chunks::<3>().0 {
         let [a, b, c] = [0, 1, 2].map(|k| jag(sphere[tri[k] as usize].position));
         let normal = (b - a).cross(c - a);
         if normal.length_squared() < 1e-8 {
@@ -2089,7 +2089,7 @@ mod tests {
         assert!(max - min > 0.15, "not jagged: radii {min}..{max}");
         assert!(max <= 1.0 + ROCK_JAG + 1e-4 && min >= 1.0 - ROCK_JAG - 1e-4);
         // Flat shading: the three vertices of a face share its normal.
-        for tri in vertices.chunks_exact(3) {
+        for tri in vertices.as_chunks::<3>().0 {
             assert_eq!(tri[0].normal, tri[1].normal);
             assert_eq!(tri[1].normal, tri[2].normal);
         }
@@ -2097,7 +2097,7 @@ mod tests {
         // so each edge is shared by exactly two faces.
         let key = |p: [f32; 3]| p.map(|c| (c * 1e4).round() as i64);
         let mut edges = std::collections::HashMap::new();
-        for tri in vertices.chunks_exact(3) {
+        for tri in vertices.as_chunks::<3>().0 {
             for (a, b) in [(0, 1), (1, 2), (2, 0)] {
                 let (ka, kb) = (key(tri[a].position), key(tri[b].position));
                 let edge = if ka < kb { (ka, kb) } else { (kb, ka) };
