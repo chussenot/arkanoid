@@ -5,11 +5,11 @@ M:4/4
 L:1/16
 Q:1/4=136
 K:C
-% Deflections: displaced Spark, a Wall sequence, Ascent bouncing in staccato.
+% Deflections: displaced Spark, a Wall sequence, Ascent bouncing in staccato, and an echo thrown off the end of every B bar.
 % mode E phrygian, progression dark, form A(4) B(4) A2(4) break(2) turn(2)
 % A=spark_shift B=wall_seq counter=ascent_stac
 %%hold on
-%%master 52.8
+%%master 52.9
 %%loop on
 %%bandlimit on
 %%instrument kick wave=triangle amp=67 attack=0 decay=70 sustain=0 release=40 gate=60 pitch=24 pitch_time=55 fx=0
@@ -35,6 +35,14 @@ K:C
 %%ramp bus1 delay_mix 22 22 224 224
 %%ramp bus1 delay_mix 62 62 224 224
 %%ramp bus1 delay_mix 22 22 240 240
+%%ramp bus1 delay_mix 70 70 76 76
+%%ramp bus1 delay_mix 22 22 80 80
+%%ramp bus1 delay_mix 70 70 92 92
+%%ramp bus1 delay_mix 22 22 96 96
+%%ramp bus1 delay_mix 70 70 108 108
+%%ramp bus1 delay_mix 22 22 112 112
+%%ramp bus1 delay_mix 70 70 124 124
+%%ramp bus1 delay_mix 22 22 128 128
 V:kick instrument=kick
 | !f!E,, z z z z z z !mf!E,, z z E,, z z z z z | !f!E,, z z z z z z !mf!E,, z z E,, z z z z z | !f!E,, z z z z z z !mf!E,, z z E,, z z z z z | !f!E,, z z z z z z !mf!E,, z z E,, z z z z z | !f!E,, z z z z z z !mf!E,, z z E,, z z z z z | !f!E,, z z z z z z !mf!E,, z z E,, z z z z z | !f!E,, z z z z z z !mf!E,, z z E,, z z z z z | !mp!E,, z z z z z z E,, z z !mf!E,, z z z z z | !ff!E,, z z z z z z !f!E,, z z E,, z z z z z | !ff!E,, z z z z z z !f!E,, z z E,, z z z z z | !ff!E,, z z z z z z !f!E,, z z E,, z z z z z | !ff!E,, z z z z z z !f!E,, z z E,, z z z z z | z16 | z16 | z16 | E,, z z z z z z !mf!E,, z z E,, z z z z z |
 V:snare instrument=snare

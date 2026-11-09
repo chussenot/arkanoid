@@ -13,6 +13,6 @@ K:C
 %%instrument low wave=triangle amp=38 attack=4 decay=200 sustain=60 release=300 gate=90 fx=0
 %%effect 0 delay_steps=3 delay_feedback=30 delay_mix=24 drive=0 lowpass=20 mix=100
 V:lead instrument=lead
-| e2 A2 E4 ^F2 A2 B,4 |
+| !f!e2 A2 !mf!E4 ^F2 !mp!A2 B,4 |
 V:low instrument=low
 | E,4 A,,4 C,4 B,,4 |

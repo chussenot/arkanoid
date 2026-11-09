@@ -27,10 +27,13 @@ K:C
 %%effect 2 mode=insert delay_steps=2 delay_feedback=24 delay_mix=18 drive=0 lowpass=40 sidechain=34 sidechain_release=160 sidechain_key=kick mix=100
 %%effect 3 delay_steps=0 delay_feedback=0 delay_mix=0 drive=20 lowpass=20 mix=100
 %%ramp bus1 delay_mix 26 26 0 0
+%%ramp bus1 reverb 6 6 0 0
 %%ramp bus1 delay_mix 26 60 128 159
 %%ramp bus1 delay_mix 26 26 160 160
 %%ramp bus1 delay_mix 62 62 224 224
 %%ramp bus1 delay_mix 26 26 240 240
+%%ramp bus1 reverb 6 15 128 159
+%%ramp bus1 reverb 6 6 160 160
 V:kick instrument=kick
 | !f!E,, z z z !mf!E,, z z z E,, z z z E,, z z z | !f!E,, z z z !mf!E,, z z z E,, z z z E,, z z z | !f!E,, z z z !mf!E,, z z z E,, z z z E,, z z z | !f!E,, z z z !mf!E,, z z z E,, z z z E,, z z z | !f!E,, z z z !mf!E,, z z z E,, z z z E,, z z z | !f!E,, z z z !mf!E,, z z z E,, z z z E,, z z z | !f!E,, z z z !mf!E,, z z z E,, z z z E,, z z z | !f!E,, z z z !mf!E,, z z z E,, z z z E,, z z z | z16 | z16 | !ff!E,, z z z !f!E,, z z z E,, z z z E,, z z z | !ff!E,, z z z !f!E,, z z z E,, z z z E,, z z z | !ff!E,, z z z !f!E,, z z z E,, z z z E,, z z z | !ff!E,, z z z !f!E,, z z z E,, z z z E,, z z z | z16 | E,, z z z !mf!E,, z z z E,, z z z E,, z z z |
 V:snare instrument=snare

@@ -5,11 +5,11 @@ M:4/4
 L:1/16
 Q:1/4=132
 K:C
-% Two rooms, two moods: a bright Dorian Ascent, then the Wall next door.
+% Two rooms, two moods: a bright Dorian Ascent, then the Wall next door, in a bigger room.
 % mode E dorian, progression lift, form A(4) B(4) A2(4) break(2) turn(2)
 % A=ascent B=wall counter=spark
 %%hold on
-%%master 37.2
+%%master 36.7
 %%loop on
 %%bandlimit on
 %%instrument kick wave=triangle amp=67 attack=0 decay=70 sustain=0 release=40 gate=60 pitch=24 pitch_time=55 fx=0
@@ -34,6 +34,8 @@ K:C
 %%ramp bus1 delay_mix 38 38 240 240
 %%ramp bus1 reverb 12 30 192 223
 %%ramp bus1 reverb 12 12 224 224
+%%ramp bus1 reverb 12 26 64 79
+%%ramp bus1 reverb 26 12 128 128
 %%ramp lead duty 40 20 128 191
 %%ramp lead duty 40 40 192 192
 V:kick instrument=kick

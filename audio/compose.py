@@ -619,7 +619,9 @@ FX = {
 #   itself a beat later and an octave down, or None),
 #   note: what the track is about (docs/design/music.md quotes these).
 #   Optional: bass_b (B's bass style; BASS_B by default); push (a BPM the
-#   B section accelerates to, the break settling back).
+#   B section accelerates to, the break settling back); climax (the
+#   recap's dynamic level); and the production touches ramps() reads:
+#   room, room_b, squelch, throws, arc.
 
 RECIPES = [
     # ---- Act I: Foundations. Dorian and Aeolian, 112-122, Spark leads.
@@ -635,7 +637,7 @@ RECIPES = [
     dict(level=4, name="Twin towers", mode="dorian", bpm=118, palette="glass", fx="clean", prog="climb",
          bass="octave", arp="eighths", drums="four", swing=0, a="ascent", b="spark", counter="ascent_5th",
          note="Ascent arrives in full, then doubled a fifth above: two towers of the same theme."),
-    dict(level=5, name="Arrow", mode="aeolian", bpm=124, palette="pulse", fx="clean", prog="drive",
+    dict(level=5, name="Arrow", room=(0, 0), mode="aeolian", bpm=124, palette="pulse", fx="clean", prog="drive",
          bass="drive", arp="trance", drums="four", swing=0, a="ascent_dim", b="spark_seq", counter=None,
          note="Ascent at double speed, straight as an arrow over a driving sixteenth bass; Spark climbs a step a bar."),
     dict(level=6, name="Capped columns", mode="dorian", bpm=116, palette="soft", fx="clean", prog="sway",
@@ -644,84 +646,84 @@ RECIPES = [
     dict(level=7, name="Diamond", mode="dorian", bpm=120, palette="glass", fx="space", prog="circle",
          bass="walk", arp="spiral", drums="half", swing=54, a="ascent", b="ascent_inv", counter="spark",
          note="Symmetry: Ascent and its mirror image, facets of one theme."),
-    dict(level=8, name="Scatter", mode="aeolian", bpm=122, palette="pulse", fx="clean", prog="epic",
+    dict(level=8, name="Scatter", throws=True, mode="aeolian", bpm=122, palette="pulse", fx="clean", prog="epic",
          bass="sync", arp="sparse", drums="break", swing=56, a="spark_shift", b="ascent_head", counter=None,
          note="Spark knocked off the beat and lightly swung; Ascent's head returns in the middle, still a promise, as the first act ends."),
     # ---- Act II: Structures. Aeolian and harmonic minor, 120-128, Ascent leads.
     dict(level=9, name="Picture frame", mode="aeolian", bpm=120, palette="soft", fx="space", prog="heroic",
          bass="walk", arp="updown", drums="four", swing=0, a="ascent", b="spark_aug", counter="ascent_aug",
          note="Ascent framed by itself: stated, then, in the recap, held in long notes beneath its own return."),
-    dict(level=10, name="Heart", mode="dorian", bpm=108, palette="soft", fx="space", prog="lift",
+    dict(level=10, name="Heart", room=(18, 75), arc=[("turn", 108, 96)], mode="dorian", bpm=108, palette="soft", fx="space", prog="lift",
          bass="half", arp="eighths", drums="half", swing=60, a="ascent_aug", b="spark", counter="spark",
-         note="The warm one: Ascent slowed to a sigh over a swung half-time beat."),
+         note="The warm one: Ascent slowed to a sigh over a swung half-time beat; each loop's last bar slows, a breath out."),
     dict(level=11, name="Double W", mode="aeolian", bpm=124, palette="pulse", fx="clean", prog="drive",
          bass="octave", arp="updown", drums="break", swing=0, a="spark_seq", b="ascent_inv", counter="auto",
          note="Zig-zag: Spark climbing a degree a bar, then Ascent upside down; the arpeggio never stops changing direction."),
-    dict(level=12, name="Fortress", mode="phrygian", bpm=118, palette="buzz", fx="machine", prog="dark",
+    dict(level=12, name="Fortress", squelch=True, mode="phrygian", bpm=118, palette="buzz", fx="machine", prog="dark",
          bass="wall", arp="sparse", drums="march", swing=0, a="ascent", b="wall", counter=None,
-         note="The Wall appears: its first full statement, in the bass, with Phrygian's F natural making it a fortress."),
+         note="The Wall appears: its first full statement, in the bass, with Phrygian's F natural making it a fortress; the filter squeals as B climbs."),
     dict(level=13, name="Lattice", mode="aeolian", bpm=126, palette="glass", fx="clean", prog="circle",
          bass="pulse", arp="broken", drums="disco", swing=54, a="spark_shift", b="spark_inv", counter="spark_aug",
          note="Interlocking Sparks: one knocked off the beat, and in the recap Spark in long notes threaded underneath."),
-    dict(level=14, name="Wave", mode="dorian", bpm=114, palette="soft", fx="space", prog="lift",
+    dict(level=14, name="Wave", room=(16, 70), mode="dorian", bpm=114, palette="soft", fx="space", prog="lift",
          bass="walk", arp="updown", drums="half", swing=62, a="ascent", b="spark_aug", counter="spark",
          note="Swing and glide: Ascent surfs a Dorian swell."),
     dict(level=15, name="Rocket", mode="aeolian", bpm=128, push=138, palette="pulse", fx="clean", prog="climb",
          bass="gallop", arp="trance", drums="gallop", swing=0, a="ascent_hi", b="ascent_dim", counter="auto",
          note="Launch: Ascent an octave up, then at double speed while the tempo climbs, over a galloping bass."),
-    dict(level=16, name="Bridges", mode="harmonic", bpm=122, palette="glass", fx="space", prog="heroic",
+    dict(level=16, name="Bridges", room=(18, 85), mode="harmonic", bpm=122, palette="glass", fx="space", prog="heroic",
          bass="wall", arp="eighths", drums="four", swing=0, a="ascent_aug", b="spark", counter="wall_hi",
          note="Ascent stretched across the Wall like a viaduct; harmonic minor's D sharp lifts the span."),
     # ---- Act III: Machines. Phrygian and Aeolian, 126-136, the Wall leads.
     dict(level=17, name="Spiral", mode="aeolian", bpm=128, palette="buzz", fx="machine", prog="circle",
          bass="pulse", arp="spiral", drums="disco", swing=0, a="wall_seq", b="spark_seq", counter="ascent_head",
          note="The machine act begins: the Wall turned into a rising sequence, an arpeggio that spirals up the octave."),
-    dict(level=18, name="Pillars", mode="phrygian", bpm=126, palette="soft", fx="machine", prog="pedal",
+    dict(level=18, name="Pillars", room=(20, 80), mode="phrygian", bpm=126, palette="soft", fx="machine", prog="pedal",
          bass="drone", arp="sparse", drums="half", swing=0, a="wall_aug", b="ascent_aug", counter=None,
-         note="Space between columns: a bass that keeps one note a bar, the Wall in long notes, Ascent held like a pillar."),
-    dict(level=19, name="Crown", mode="harmonic", bpm=130, palette="pulse", fx="clean", prog="heroic",
+         note="Space between columns: a bass that keeps one note a bar, the Wall in long notes, Ascent held like a pillar, in the one machine track with a room."),
+    dict(level=19, name="Crown", arc=[("A2", 130, 116, 3, 3)], mode="harmonic", bpm=130, palette="pulse", fx="clean", prog="heroic",
          bass="octave", arp="up", drums="march", swing=0, a="ascent", b="ascent_hi", counter="spark",
-         note="Regal: Ascent as a fanfare in harmonic minor, then crowned an octave higher."),
-    dict(level=20, name="Hourglass", mode="aeolian", bpm=128, palette="glass", fx="space", prog="fall",
+         note="Regal: Ascent as a fanfare in harmonic minor, then crowned an octave higher, broadening into its last cadence."),
+    dict(level=20, name="Hourglass", arc=[("A", 128, 134), ("B", 134, 128)], mode="aeolian", bpm=128, palette="glass", fx="space", prog="fall",
          bass="sync", arp="updown", drums="break", swing=0, a="ascent", b="ascent_retro", counter="auto",
-         note="Time turned over: Ascent, then Ascent backwards, the sand running the other way."),
+         note="Time turned over: Ascent, then Ascent backwards, the sand running the other way; the tempo flows forward through A and back through B."),
     dict(level=21, name="Shield", mode="phrygian", bpm=130, palette="buzz", fx="machine", prog="dark",
          bass="wall", arp="broken", drums="four", swing=0, a="spark", b="wall", counter="auto",
          note="Spark held up against the Wall: hope over the machine."),
-    dict(level=22, name="Armored frame", mode="phrygian", bpm=132, palette="buzz", fx="machine", prog="dark",
+    dict(level=22, name="Armored frame", squelch=True, mode="phrygian", bpm=132, palette="buzz", fx="machine", prog="dark",
          bass="wall", arp="trance", drums="drive", swing=0, a="wall_hi", b="wall_inv", counter="wall_inv_aug",
          note="All armor: the Wall high and ratcheting up, the Wall inverted and sinking, and in the recap the inverted Wall at half speed beneath the high one. The heaviest track of the act."),
-    dict(level=23, name="Rain", mode="aeolian", bpm=124, palette="glass", fx="space", prog="fall",
+    dict(level=23, name="Rain", room=(20, 75), mode="aeolian", bpm=124, palette="glass", fx="space", prog="fall",
          bass="half", arp="rain", drums="sparse", swing=58, a="spark_fall", b="ascent_inv", counter=None,
          note="Falling droplets: Spark stepping down over a sparse, swung beat; a breath before the last act."),
     dict(level=24, name="Funnel", mode="harmonic", bpm=134, push=146, palette="pulse", fx="clean", prog="cadence",
          bass="gallop", arp="trance", drums="gallop", swing=0, a="spark_seq", b="ascent_dim", counter="wall_hi",
          note="Narrowing: Spark ratchets up a step a bar as the tempo climbs to 146, Ascent doubles its speed, and a V-to-i pours into the next act."),
     # ---- Act IV: Vault. Harmonic minor, 132-148, all three themes.
-    dict(level=25, name="Two rooms", mode="dorian", bpm=132, palette="soft", fx="space", prog="lift",
+    dict(level=25, name="Two rooms", room_b=26, mode="dorian", bpm=132, palette="soft", fx="space", prog="lift",
          bass="octave", arp="eighths", drums="four", swing=0, a="ascent", b="wall", counter="spark",
-         note="Two rooms, two moods: a bright Dorian Ascent, then the Wall next door."),
-    dict(level=26, name="Ring", mode="aeolian", bpm=134, palette="glass", fx="space", prog="circle",
+         note="Two rooms, two moods: a bright Dorian Ascent, then the Wall next door, in a bigger room."),
+    dict(level=26, name="Ring", room=(18, 70), mode="aeolian", bpm=134, palette="glass", fx="space", prog="circle",
          bass="walk", arp="spiral", drums="disco", swing=55, a="spark", b="spark_shift", counter="canon",
          note="A round: Spark chasing itself a beat behind, around a circle of chords."),
-    dict(level=27, name="Baffles", mode="phrygian", bpm=136, palette="buzz", fx="machine", prog="dark",
+    dict(level=27, name="Baffles", throws=True, mode="phrygian", bpm=136, palette="buzz", fx="machine", prog="dark",
          bass="sync", arp="broken", drums="break", swing=0, a="spark_shift", b="wall_seq", counter="ascent_stac",
-         note="Deflections: displaced Spark, a Wall sequence, Ascent bouncing in staccato."),
-    dict(level=28, name="Chevron", mode="aeolian", bpm=138, palette="pulse", fx="clean", prog="fall",
+         note="Deflections: displaced Spark, a Wall sequence, Ascent bouncing in staccato, and an echo thrown off the end of every B bar."),
+    dict(level=28, name="Chevron", arc=[("A", 138, 130), ("B", 130, 138)], mode="aeolian", bpm=138, palette="pulse", fx="clean", prog="fall",
          bass="octave", arp="updown", drums="four", swing=0, a="spark_fall", b="spark_seq", counter="ascent_inv",
-         note="V-shape: Spark falls, then climbs back the same way."),
-    dict(level=29, name="Split wall", mode="harmonic", bpm=138, palette="buzz", fx="machine", prog="cadence",
+         note="V-shape: Spark falls, then climbs back the same way, and the tempo makes the same V."),
+    dict(level=29, name="Split wall", squelch=True, mode="harmonic", bpm=138, palette="buzz", fx="machine", prog="cadence",
          bass="wall", arp="trance", drums="drive", swing=0, a="ascent_hi", b="wall_hi", counter="spark",
          note="The Wall split by Ascent breaking through it, an octave above."),
     dict(level=30, name="Bulwark", mode="phrygian", bpm=132, palette="buzz", fx="machine", prog="pedal",
          bass="half", arp="sparse", drums="half", swing=0, a="wall_aug", b="ascent_aug", counter="wall",
          note="Massive and slow-feeling at speed: half-time drums, the Wall in long notes, a bulwark."),
-    dict(level=31, name="Minefield", mode="phrygian", bpm=140, palette="glass", fx="space", prog="dark",
+    dict(level=31, name="Minefield", room=(4, 30), mode="phrygian", bpm=140, palette="glass", fx="space", prog="dark",
          bass="pulse", arp="sparse", drums="sparse", swing=0, a="spark_shift", b="ascent_stac", counter=None,
          note="Tension before the end: sparse, staccato, every note placed carefully."),
-    dict(level=32, name="Vault", mode="harmonic", bpm=144, palette="pulse", fx="space", prog="heroic",
+    dict(level=32, name="Vault", room=(16, 75), push=150, climax="ff", mode="harmonic", bpm=144, palette="pulse", fx="space", prog="heroic",
          bass="wall", arp="trance", drums="drive", swing=0, a="ascent", b="spark", counter="spark",
-         note="The finale: Ascent over the Wall, then Spark; in the recap all three at once, the Wall below, Ascent above, Spark between."),
+         note="The finale: Ascent over the Wall, then Spark, the tempo pushing to 150; in the recap, at its loudest, all three at once, the Wall below, Ascent above, Spark between."),
 ]
 
 MENU = dict(level=0, name="Menu", mode="dorian", bpm=92, palette="glass", fx="space", prog="lift",
@@ -863,6 +865,8 @@ def compose(r: dict):
     for section, i, n, nxt, chords in bars:
         last = i == n - 1
         level = "mf" if section == "turn" and i == 1 else SECTION_LEVEL[section]
+        if section == "A2" and r.get("climax"):
+            level = r["climax"]
         swell = last and nxt == "A2"
         bar_dyn = [SWELL[t // 4] if swell else level for t in range(16)]
         for part in ("bass", "arp", "pad", "lead", "counter", "kick", "snare", "tom"):
@@ -1011,8 +1015,28 @@ def compose(r: dict):
 
 # Base values of the parameters the ramps move (they must match FX and
 # the palettes, so every ramp returns to where the loop starts).
-BASE = {"ladder_cutoff": 34, "delay_mix": {"clean": 26, "space": 38, "machine": 22},
+BASE = {"ladder_cutoff": 34, "ladder_resonance": 58,
+        "delay_mix": {"clean": 26, "space": 38, "machine": 22},
+        "reverb": {"clean": 6, "space": 12, "machine": 0},
         "duty": {"pulse": 25, "soft": 40}}
+
+
+def reverb_mix(r) -> int:
+    """The melody bus's reverb: the fx's, unless the recipe has its own room."""
+    return r["room"][0] if "room" in r else BASE["reverb"][r["fx"]]
+
+
+def fx_lines(r):
+    """The recipe's FX buses: its fx, with its own room on bus 1 if it has one."""
+    out = []
+    for bus in FX[r["fx"]]:
+        if bus.startswith("1 ") and "room" in r:
+            mix, size = r["room"]
+            parts = [w for w in bus.split() if not w.startswith("reverb")]
+            parts.insert(-1, f"reverb={mix} reverb_size={size} reverb_damp=45")
+            bus = " ".join(parts)
+        out.append(bus)
+    return out
 
 
 def ramps(track):
@@ -1025,9 +1049,13 @@ def ramps(track):
       at the turn's breath.
     - Pulse and soft leads: the pulse narrows across the recap, toward
       the climax, and widens again after it.
-    - Space tracks: the reverb opens in the break.
+    - Every track with a room: the reverb opens in the break.
     - A recipe with `push`: the tempo climbs through B and settles back
-      across the break."""
+      across the break.
+    - Recipe touches: `room` (its own reverb, mix and size), `room_b` (B in
+      a bigger room), `squelch` (the ladder's resonance rising across B),
+      `throws` (an echo thrown on the last beat of each B bar), `arc`
+      (tempo arcs over sections or bars)."""
     r, bars = track["recipe"], track["bars"]
     start = {}
     for k, (section, i, n, *_rest) in enumerate(bars):
@@ -1048,9 +1076,30 @@ def ramps(track):
     if "turn" in start:
         k = start["turn"]
         lines += [f"bus1 delay_mix 62 62 {k} {k}", f"bus1 delay_mix {mix} {mix} {k + 16} {k + 16}"]
-    if r["fx"] == "space" and "break" in start:
+    room = reverb_mix(r)
+    if room and "break" in start:
         k = start["break"]
-        lines += [f"bus1 reverb 12 30 {k} {k + 31}", f"bus1 reverb 12 12 {k + 32} {k + 32}"]
+        lines += [f"bus1 reverb {room} {room * 5 // 2} {k} {k + 31}", f"bus1 reverb {room} {room} {k + 32} {k + 32}"]
+    if r.get("room_b") and room:
+        b = start["B"]
+        lines += [f"bus1 reverb {room} {r['room_b']} {b} {b + 15}", f"bus1 reverb {r['room_b']} {room} {b + 64} {b + 64}"]
+    if r.get("squelch") and r["fx"] == "machine":
+        b, res = start["B"], BASE["ladder_resonance"]
+        lines += [f"bus3 ladder_resonance {res} 88 {b} {b + 63}", f"bus3 ladder_resonance {res} {res} {b + 64} {b + 64}"]
+    if r.get("throws"):
+        # The echo thrown on the last beat of each B bar: a deflection.
+        b = start["B"]
+        for bar in range(4):
+            k = b + 16 * bar + 12
+            lines += [f"bus1 delay_mix 70 70 {k} {k}", f"bus1 delay_mix {mix} {mix} {k + 4} {k + 4}"]
+    for arc in r.get("arc", ()):
+        # (section, from BPM, to BPM[, first bar, last bar]): a tempo arc.
+        section, frm, to = arc[:3]
+        first, last = (arc[3], arc[4]) if len(arc) == 5 else (0, None)
+        k = start[section] + 16 * first
+        end = (start[section] + 16 * (last + 1) if last is not None
+               else start[section] + 16 * next(n for s, n in track["form"] if s == section)) - 1
+        lines.append(f"song tempo {frm} {to} {k} {end}")
     if r.get("push") and "break" in start:
         b, k, bpm, peak = start["B"], start["break"], r["bpm"], r["push"]
         lines += [f"song tempo {bpm} {peak} {b} {b + 63}", f"song tempo {peak} {bpm} {k} {k + 31}"]
@@ -1060,12 +1109,18 @@ def ramps(track):
     # Under %%loop the song renders twice and the second pass is kept, so
     # each moved parameter is also set to its start value on step 0: the
     # kept pass starts where the first did, whatever the end left behind.
+    # The reset is each parameter's base value, never a ramp's own start
+    # (the turn's echo throw starts at 62).
+    base = {("bus3", "ladder_cutoff"): BASE["ladder_cutoff"], ("bus3", "ladder_resonance"): BASE["ladder_resonance"],
+            ("bus1", "delay_mix"): mix, ("bus1", "reverb"): room,
+            ("lead", "duty"): BASE["duty"].get(r["palette"])}
     starts = []
     for line in lines:
-        target, param, frm = line.split()[:3]
-        if param != "tempo" and (target, param) not in [(t, q) for t, q, _ in starts]:
-            starts.append((target, param, frm))
-    lines = [f"{t} {q} {v} {v} 0 0" for t, q, v in starts] + lines
+        target, param = line.split()[:2]
+        if param != "tempo" and (target, param) not in starts:
+            starts.append((target, param))
+    lines = [f"{t} {q} {base[(t, q)]} {base[(t, q)]} 0 0" for t, q in starts] + lines
+    assert len(lines) <= 32, f"{r['name']}: {len(lines)} ramps, the engine takes 32"
     return [f"%%ramp {line}" for line in lines]
 
 
@@ -1096,7 +1151,7 @@ def to_abc(track) -> str:
         head.append(f"%%instrument {name} {body}")
     for name in ("bass", "arp", "pad", "lead", "counter"):
         head.append(f"%%instrument {name} {pal[name]}")
-    for bus in FX[r["fx"]]:
+    for bus in fx_lines(r):
         head.append(f"%%effect {bus}")
     head += ramps(track)
     body = []

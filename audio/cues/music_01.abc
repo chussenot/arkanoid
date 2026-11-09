@@ -9,7 +9,7 @@ K:C
 % mode E dorian, progression lift, form intro(2) A(4) B(4) A2(4) turn(2)
 % A=spark B=ascent_head counter=None
 %%hold on
-%%master 35.2
+%%master 35.4
 %%loop on
 %%bandlimit on
 %%swing 54
@@ -26,7 +26,7 @@ K:C
 %%effect 1 delay_steps=3 delay_feedback=34 delay_mix=26 drive=0 lowpass=30 reverb=6 reverb_size=40 reverb_damp=55 mix=80
 %%effect 2 mode=insert delay_steps=2 delay_feedback=24 delay_mix=18 drive=0 lowpass=40 sidechain=34 sidechain_release=160 sidechain_key=kick mix=100
 %%effect 3 delay_steps=0 delay_feedback=0 delay_mix=0 drive=20 lowpass=20 mix=100
-%%ramp bus1 delay_mix 62 62 0 0
+%%ramp bus1 delay_mix 26 26 0 0
 %%ramp lead duty 25 25 0 0
 %%ramp bus1 delay_mix 62 62 224 224
 %%ramp bus1 delay_mix 26 26 240 240

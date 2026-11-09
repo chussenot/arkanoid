@@ -7,21 +7,21 @@ Q:1/4=132
 K:C
 % Ascent in harmonic minor, Spark answering above, resolving to E major: the score's one major chord.
 %%hold on
+%%master 81.0
 %%bandlimit on
 % The third bar broadens into the E major chord.
 %%ramp song tempo 132 108 32 47
-%%master 120.1
 %%instrument brass wave=pulse amp=25 duty=28 attack=6 decay=140 sustain=72 release=320 gate=90 vibrato=7 fx=1
 %%instrument harm wave=pulse amp=15 duty=40 attack=6 decay=140 sustain=64 release=320 gate=90 fx=1
 %%instrument bass wave=triangle amp=28 attack=2 decay=160 sustain=70 release=320 gate=92 fx=0
-%%instrument kick wave=noise amp=18 attack=0 decay=10 sustain=6 release=14 gate=24 fx=0
+%%instrument kick wave=triangle amp=40 attack=0 decay=70 sustain=0 release=40 gate=60 pitch=24 pitch_time=55 fx=0
 %%effect 0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=10 lowpass=20 mix=100
-%%effect 1 delay_steps=3 delay_feedback=36 delay_mix=28 drive=0 lowpass=8 mix=90
+%%effect 1 delay_steps=3 delay_feedback=36 delay_mix=28 drive=0 lowpass=8 reverb=14 reverb_size=65 reverb_damp=45 mix=90
 V:brass instrument=brass
-| E2 B2 e4 ^d2 B2 A2 B2 | G2 A2 B4 ^d2 e2 g4 | a2 g2 ^f2 e2 ^d4 ^f4 | e16 |
+| !mf!E2 B2 e4 ^d2 B2 A2 B2 | G2 A2 B4 ^d2 e2 g4 | !f!a2 g2 ^f2 e2 ^d4 ^f4 | !ff!e16 |
 V:harm instrument=harm
-| z16 | B z d e z g2 z a g e z ^d2 z2 | c'2 b2 a2 g2 ^f4 b4 | ^g16 |
+| z16 | !mf!B z d e z g2 z a g e z ^d2 z2 | !f!c'2 b2 a2 g2 ^f4 b4 | !ff![^gb]16 |
 V:bass instrument=bass
 | E,4 E,4 B,,4 B,,4 | C,4 C,4 G,,4 G,,4 | A,,4 A,,4 B,,4 B,,4 | E,16 |
 V:kick instrument=kick
-| c2z2 c2z2 c2z2 c2z2 | c2z2 c2z2 c2z2 c2z2 | c2z2 c2z2 c2z2 c2z2 | c4 z12 |
+| E,,2z2 E,,2z2 E,,2z2 E,,2z2 | E,,2z2 E,,2z2 E,,2z2 E,,2z2 | E,,2z2 E,,2z2 E,,2z2 E,,2z2 | E,,4 z12 |

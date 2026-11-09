@@ -9,7 +9,7 @@ K:C
 % mode E dorian, progression fall_dorian, form intro(2) A(4) B(4) A2(4) turn(2)
 % A=spark_fall B=spark_retro counter=ascent_inv
 %%hold on
-%%master 51.8
+%%master 51.7
 %%loop on
 %%bandlimit on
 %%instrument kick wave=triangle amp=67 attack=0 decay=70 sustain=0 release=40 gate=60 pitch=24 pitch_time=55 fx=0
@@ -25,7 +25,7 @@ K:C
 %%effect 1 delay_steps=3 delay_feedback=48 delay_mix=38 drive=0 lowpass=46 reverb=12 reverb_size=72 reverb_damp=40 mix=80
 %%effect 2 mode=insert delay_steps=4 delay_feedback=40 delay_mix=34 drive=0 lowpass=50 sidechain=40 sidechain_release=220 sidechain_key=kick mix=100
 %%effect 3 delay_steps=6 delay_feedback=30 delay_mix=30 drive=0 lowpass=60 mix=70
-%%ramp bus1 delay_mix 62 62 0 0
+%%ramp bus1 delay_mix 38 38 0 0
 %%ramp bus1 delay_mix 62 62 224 224
 %%ramp bus1 delay_mix 38 38 240 240
 V:kick instrument=kick

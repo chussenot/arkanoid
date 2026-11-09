@@ -9,7 +9,7 @@ K:C
 % mode E harmonic, progression cadence, form A(4) B(4) A2(4) break(2) turn(2)
 % A=ascent_hi B=wall_hi counter=spark
 %%hold on
-%%master 47.1
+%%master 47.4
 %%loop on
 %%bandlimit on
 %%instrument kick wave=triangle amp=67 attack=0 decay=70 sustain=0 release=40 gate=60 pitch=24 pitch_time=55 fx=0
@@ -27,6 +27,7 @@ K:C
 %%effect 3 mode=insert delay_steps=0 delay_feedback=0 delay_mix=0 drive=30 lowpass=10 ladder=70 ladder_cutoff=34 ladder_resonance=58 mix=100
 %%ramp bus3 ladder_cutoff 34 34 0 0
 %%ramp bus1 delay_mix 22 22 0 0
+%%ramp bus3 ladder_resonance 58 58 0 0
 %%ramp bus3 ladder_cutoff 34 62 64 127
 %%ramp bus3 ladder_cutoff 34 34 128 128
 %%ramp bus3 ladder_cutoff 34 14 192 223
@@ -35,6 +36,8 @@ K:C
 %%ramp bus1 delay_mix 22 22 224 224
 %%ramp bus1 delay_mix 62 62 224 224
 %%ramp bus1 delay_mix 22 22 240 240
+%%ramp bus3 ladder_resonance 58 88 64 127
+%%ramp bus3 ladder_resonance 58 58 128 128
 V:kick instrument=kick
 | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !f!E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !mp!E,, z !p!E,, z !mp!E,, z E,, z !mf!E,, z E,, z !f!E,, z E,, z | !ff!E,, z !f!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !ff!E,, z !f!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !ff!E,, z !f!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | !ff!E,, z !f!E,, z E,, z E,, z E,, z E,, z E,, z E,, z | z16 | z16 | z16 | E,, z !mf!E,, z E,, z E,, z E,, z E,, z E,, z E,, z |
 V:snare instrument=snare

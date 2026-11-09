@@ -148,6 +148,17 @@ under its loudest, against 9.8 before. Every track still masters to
 Rebalanced against phase 2, every voice lands within about 2 dB, except
 Vault's lead (+3 dB, mostly reverb on a busy line).
 
+**The sound pass.** Every effect and stinger was rewritten with the
+fork's features: pitch sweeps instead of glides, clocked and metal noise
+instead of white, dynamics, chords, reverb and band-limiting where they
+serve the sound. The laser keeps its hard edges on purpose: the grit is
+the zap. Each cue keeps its role, its base pitch (brick and paddle are
+still pitched by the director) and its loudness:
+- Over the old sound's length, every cue is within 0.6 dB of before
+  except Victory, at -0.8 dB (held by its 0.9 peak cap).
+- No cue peaks above 0.9.
+- The reverb tails lengthen Warp (to 1.0 s) and Explosion (to 0.56 s).
+
 **Storage: mu-law.** Linear 8-bit storage would throw the 16-bit render
 away again: in the score's quietest bars (median -28 dBFS) it leaves the
 signal 25 dB above its noise. G.711 mu-law spends the same byte
@@ -159,19 +170,19 @@ encode, and the mixer decodes it through a 256-entry table.
 
 | Cue | When | Sound |
 |---|---|---|
-| `brick` | a brick breaks | pulse pop, pitched up the scale by the rally |
-| `armor` | an armored brick cracks | high metallic double tink |
-| `paddle` | ball meets paddle | triangle knock and a noise click, pitched by speed |
-| `launch` | serve | short rising whip |
-| `capsule` | any helpful capsule | quick rising arpeggio with an echo |
-| `tiny` | the Tiny capsule | falling, slightly sour arpeggio |
-| `oneup` | the Player capsule | a small fanfare; ducks the music |
-| `laser`, `superlaser` | a gun fires | a gliding zap; a heavier, buzzing beam |
-| `asteroid` | an asteroid arrives | a low noise swell |
-| `explosion` | an asteroid blows up | a noise burst over a falling thump |
-| `ball_lost` | one ball of a multiball drops | a descending figure |
-| `warp` | leaving through the Break gate | a rising sweep |
-| `select`, `pause` | start, continue, resume; pause | two-note blips, up and down |
+| `brick` | a brick breaks | a pulse pop that snaps down onto its note, with a glint of metal noise; pitched up the scale by the rally |
+| `armor` | an armored brick cracks | two metallic tinks, the second softer, over ringing metal noise |
+| `paddle` | ball meets paddle | a triangle knock that drops a fourth onto its note, and a clocked-noise click; pitched by speed |
+| `launch` | serve | one note whipping up two octaves, over a rising breath of noise |
+| `capsule` | any helpful capsule | a quick rising arpeggio that swells into its top, with an echo |
+| `tiny` | the Tiny capsule | a falling arpeggio that fades as it shrinks, its pulse width wobbling sour |
+| `oneup` | the Player capsule | a small fanfare landing on a two-note chord, in a little room; ducks the music |
+| `laser`, `superlaser` | a gun fires | a note falling two octaves in 60 ms; a square falling three, with a buzz and a falling hiss |
+| `asteroid` | an asteroid arrives | a low clocked-noise rumble swelling in over a wavering drone |
+| `explosion` | an asteroid blows up | a noise burst whose clock falls three octaves (crack, then rumble), over a thump dropping a fifth, in a little room |
+| `ball_lost` | one ball of a multiball drops | a descending figure that fades as it falls |
+| `warp` | leaving through the Break gate | one note rising three octaves over a rising rush of noise, into an echoing room |
+| `select`, `pause` | start, continue, resume; pause | two-note blips, up (the second leaning in) and down (the second stepping back) |
 | `life_lost`, `level_clear`, `game_over`, `victory` | stingers | the score's themes in miniature ([`music.md`](music.md#stingers)) |
 | `music_menu`, `music_01`–`32` | loops | the score: see [`music.md`](music.md) |
 
