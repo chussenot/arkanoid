@@ -85,6 +85,33 @@ const GLUE_DURATION_SECS: f32 = 15.0;
 /// so a held ball can never stall the game.
 pub const GLUE_HOLD_SECS: f32 = 3.0;
 
+/// Paddle width multiplier while Tiny is active, and for how long. Tiny and
+/// Widen cancel each other: catching one ends the other, so the paddle is
+/// only ever one size off.
+const TINY_MULTIPLIER: f32 = 0.6;
+const TINY_DURATION_SECS: f32 = 15.0;
+
+// -- lasers ---------------------------------------------------------------
+
+/// How long a gun (Laser or Super laser) lasts once caught. Catching either
+/// while one is active replaces it, timer full again.
+const GUN_DURATION_SECS: f32 = 15.0;
+/// Laser: a pair of bolts from near the paddle's ends, each giving the
+/// first brick it meets one hit, as a ball would.
+const LASER_COOLDOWN_SECS: f32 = 0.3;
+const LASER_SPEED: f32 = 800.0;
+const LASER_HALF_SIZE: [f32; 2] = [2.0, 7.0];
+/// Laser bolts leave this far in from each end of the paddle.
+const LASER_INSET: f32 = 8.0;
+/// Super laser: one wide bolt from the paddle's center that destroys every
+/// destructible brick in its way, armored ones outright, until an
+/// indestructible brick stops it.
+const SUPER_LASER_COOLDOWN_SECS: f32 = 0.5;
+const SUPER_LASER_SPEED: f32 = 1000.0;
+const SUPER_LASER_HALF_SIZE: [f32; 2] = [5.0, 12.0];
+/// Bolts in flight at once, at most: a bound, not a rate (the cooldown is).
+const MAX_BOLTS: usize = 16;
+
 // -- stalls ---------------------------------------------------------------
 
 /// Seconds of flight without any ball touching the paddle, breaking or
@@ -132,16 +159,24 @@ pub struct Features {
     /// Asteroids drifting in from the top, blowing up when a ball or the
     /// paddle hits them.
     pub asteroids: bool,
+    /// The Laser and Super laser power-ups: the paddle fires bolts.
+    pub lasers: bool,
+    /// The Tiny power-up, a bad one: the paddle shrinks.
+    pub tiny: bool,
 }
 
 impl Features {
     pub const ALL: Self = Self {
         glue: true,
         asteroids: true,
+        lasers: true,
+        tiny: true,
     };
     pub const V1: Self = Self {
         glue: false,
         asteroids: false,
+        lasers: false,
+        tiny: false,
     };
 }
 
@@ -230,6 +265,49 @@ pub struct Glued {
     pub offset: f32,
     /// Seconds held so far (released at `GLUE_HOLD_SECS`).
     pub held: f32,
+}
+
+/// Which gun the paddle carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GunKind {
+    Laser,
+    SuperLaser,
+}
+
+/// An active gun and the seconds it has left.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Gun {
+    pub kind: GunKind,
+    pub timer: f32,
+}
+
+/// A bolt fired by the paddle's gun, flying straight up.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Bolt {
+    /// Center.
+    pub x: f32,
+    pub y: f32,
+    pub half_size: [f32; 2],
+    pub kind: GunKind,
+}
+
+impl Bolt {
+    fn touches_brick(&self, brick: &Brick) -> bool {
+        (self.x - brick.x).abs() <= self.half_size[0] + brick.width / 2.0
+            && (self.y - brick.y).abs() <= self.half_size[1] + brick.height / 2.0
+    }
+
+    fn touches_asteroid(&self, asteroid: &Asteroid) -> bool {
+        let dx = asteroid.x
+            - asteroid
+                .x
+                .clamp(self.x - self.half_size[0], self.x + self.half_size[0]);
+        let dy = asteroid.y
+            - asteroid
+                .y
+                .clamp(self.y - self.half_size[1], self.y + self.half_size[1]);
+        dx * dx + dy * dy <= asteroid.radius * asteroid.radius
+    }
 }
 
 /// An asteroid: drifts in from the top through the bricks, and blows up
@@ -550,6 +628,14 @@ pub struct Game {
     space_was_held: bool,
     /// Seconds left on an active Glue; 0 means inactive.
     pub glue_timer: f32,
+    /// Seconds left on an active Tiny; 0 means inactive.
+    pub tiny_timer: f32,
+    /// The paddle's gun, while one is active.
+    pub gun: Option<Gun>,
+    /// Seconds until the gun may fire again.
+    gun_cooldown: f32,
+    /// Bolts in flight.
+    pub bolts: Vec<Bolt>,
     /// Asteroids currently drifting.
     pub asteroids: Vec<Asteroid>,
     /// Seconds of play until the next asteroid may spawn.
@@ -673,6 +759,10 @@ impl Game {
             pause_was_held: false,
             space_was_held: false,
             glue_timer: 0.0,
+            tiny_timer: 0.0,
+            gun: None,
+            gun_cooldown: 0.0,
+            bolts: Vec::new(),
             asteroids: Vec::new(),
             asteroid_timer: ASTEROID_FIRST_SPAWN_SECS,
             features: Features::default(),
@@ -727,8 +817,20 @@ impl Game {
         if self.glue_timer > 0.0 {
             self.glue_timer = (self.glue_timer - dt_fixed).max(0.0);
         }
+        if self.tiny_timer > 0.0 {
+            self.tiny_timer = (self.tiny_timer - dt_fixed).max(0.0);
+        }
+        if let Some(gun) = &mut self.gun {
+            gun.timer -= dt_fixed;
+            if gun.timer <= 0.0 {
+                self.gun = None;
+            }
+        }
+        self.gun_cooldown = (self.gun_cooldown - dt_fixed).max(0.0);
         self.paddle.width = if self.widen_timer > 0.0 {
             PADDLE_WIDTH * WIDEN_MULTIPLIER
+        } else if self.tiny_timer > 0.0 {
+            PADDLE_WIDTH * TINY_MULTIPLIER
         } else {
             PADDLE_WIDTH
         };
@@ -747,8 +849,14 @@ impl Game {
 
         self.stall_secs += dt_fixed;
         self.hold_glued_balls(space_pressed, dt_fixed);
+        if input.space {
+            self.fire_gun();
+        }
         self.advance_balls(dt_fixed);
         self.update_powerups(dt_fixed);
+        if self.state == GameState::Playing && !self.ball.attached {
+            self.update_bolts(dt_fixed);
+        }
         if self.state == GameState::Playing && !self.ball.attached {
             self.update_asteroids(dt_fixed);
         }
@@ -950,20 +1058,20 @@ impl Game {
         if !self.rng.random_bool(POWERUP_DROP_CHANCE) {
             return;
         }
-        let kinds: &[PowerUpKind] = if self.features.glue {
-            &[
-                PowerUpKind::Widen,
-                PowerUpKind::Slow,
-                PowerUpKind::Multiball,
-                PowerUpKind::Glue,
-            ]
-        } else {
-            &[
-                PowerUpKind::Widen,
-                PowerUpKind::Slow,
-                PowerUpKind::Multiball,
-            ]
-        };
+        let mut kinds = vec![
+            PowerUpKind::Widen,
+            PowerUpKind::Slow,
+            PowerUpKind::Multiball,
+        ];
+        if self.features.glue {
+            kinds.push(PowerUpKind::Glue);
+        }
+        if self.features.lasers {
+            kinds.extend([PowerUpKind::Laser, PowerUpKind::SuperLaser]);
+        }
+        if self.features.tiny {
+            kinds.push(PowerUpKind::Tiny);
+        }
         // An `i32` range, as v1 drew it: the same draw over 0..3 keeps
         // `Features::V1` runs drop for drop identical to v1.
         let kind = kinds[self.rng.random_range(0..kinds.len() as i32) as usize];
@@ -1052,6 +1160,23 @@ impl Game {
         match kind {
             PowerUpKind::Widen => {
                 self.widen_timer = WIDEN_DURATION_SECS;
+                self.tiny_timer = 0.0;
+            }
+            PowerUpKind::Tiny => {
+                self.tiny_timer = TINY_DURATION_SECS;
+                self.widen_timer = 0.0;
+            }
+            PowerUpKind::Laser => {
+                self.gun = Some(Gun {
+                    kind: GunKind::Laser,
+                    timer: GUN_DURATION_SECS,
+                });
+            }
+            PowerUpKind::SuperLaser => {
+                self.gun = Some(Gun {
+                    kind: GunKind::SuperLaser,
+                    timer: GUN_DURATION_SECS,
+                });
             }
             PowerUpKind::Glue => {
                 self.glue_timer = GLUE_DURATION_SECS;
@@ -1101,10 +1226,96 @@ impl Game {
         }
     }
 
+    /// Fires the paddle's gun if it has one and has cooled down: a Laser
+    /// pair from near the paddle's ends, or one Super laser bolt from its
+    /// center. Holding Space fires at the cooldown's rate.
+    fn fire_gun(&mut self) {
+        let Some(gun) = self.gun else {
+            return;
+        };
+        if self.gun_cooldown > 0.0 {
+            return;
+        }
+        let paddle = self.paddle;
+        let (xs, half_size, cooldown): (Vec<f32>, _, _) = match gun.kind {
+            GunKind::Laser => {
+                let reach = paddle.width / 2.0 - LASER_INSET;
+                (
+                    vec![paddle.x - reach, paddle.x + reach],
+                    LASER_HALF_SIZE,
+                    LASER_COOLDOWN_SECS,
+                )
+            }
+            GunKind::SuperLaser => (
+                vec![paddle.x],
+                SUPER_LASER_HALF_SIZE,
+                SUPER_LASER_COOLDOWN_SECS,
+            ),
+        };
+        for x in xs {
+            if self.bolts.len() < MAX_BOLTS {
+                self.bolts.push(Bolt {
+                    x,
+                    y: paddle.top() - half_size[1],
+                    half_size,
+                    kind: gun.kind,
+                });
+            }
+        }
+        self.gun_cooldown = cooldown;
+        self.events.push(GameEvent::GunFired(gun.kind));
+    }
+
+    /// Moves every bolt up one tick and resolves what it hits. A Laser bolt
+    /// gives the first brick it meets one hit and is spent; a Super laser
+    /// bolt destroys every destructible brick it meets and flies on. Either
+    /// stops at an indestructible brick and blows up an asteroid. One past
+    /// the top just leaves. A bolt moves at most 17 px a tick, under a
+    /// brick's 22 px height, so none can skip one.
+    fn update_bolts(&mut self, dt_fixed: f32) {
+        let mut bolts = std::mem::take(&mut self.bolts);
+        bolts.retain_mut(|bolt| {
+            let speed = match bolt.kind {
+                GunKind::Laser => LASER_SPEED,
+                GunKind::SuperLaser => SUPER_LASER_SPEED,
+            };
+            bolt.y -= speed * dt_fixed;
+            if let Some(index) = self.asteroids.iter().position(|a| bolt.touches_asteroid(a)) {
+                let asteroid = self.asteroids.remove(index);
+                self.explode_asteroid(asteroid.x, asteroid.y);
+                return bolt.kind == GunKind::SuperLaser;
+            }
+            while let Some(index) = self.bricks.iter().position(|b| bolt.touches_brick(b)) {
+                if self.bricks[index].kind == BrickKind::Indestructible {
+                    return false;
+                }
+                self.stall_secs = 0.0;
+                let brick = &mut self.bricks[index];
+                brick.hits_remaining = match bolt.kind {
+                    GunKind::Laser => brick.hits_remaining.saturating_sub(1),
+                    GunKind::SuperLaser => 0,
+                };
+                if brick.hits_remaining == 0 {
+                    let brick = self.bricks.remove(index);
+                    self.on_brick_destroyed(brick);
+                }
+                if bolt.kind == GunKind::Laser {
+                    return false;
+                }
+            }
+            bolt.y + bolt.half_size[1] > 0.0
+        });
+        self.bolts = bolts;
+        if self.destructible_bricks_remaining() == 0 {
+            self.advance_level();
+        }
+    }
+
     /// No asteroid on a fresh serve: a level start or a lost life clears
     /// them and restarts the countdown to the first.
     fn reset_asteroids(&mut self) {
         self.stall_secs = 0.0;
+        self.bolts.clear();
         self.asteroids.clear();
         self.asteroid_timer = ASTEROID_FIRST_SPAWN_SECS;
     }
@@ -1995,13 +2206,13 @@ mod tests {
     fn brick_destruction_drops_a_powerup_about_15_percent_of_the_time() {
         let mut game = playing_game();
         let mut spawned = 0;
-        let mut glue = 0;
+        let mut kinds = std::collections::HashMap::new();
         for _ in 0..2000 {
             game.powerups.clear();
             game.maybe_drop_powerup(400.0, 300.0);
             if let Some(powerup) = game.powerups.first() {
                 spawned += 1;
-                glue += usize::from(powerup.kind == PowerUpKind::Glue);
+                *kinds.entry(powerup.kind).or_insert(0) += 1;
             }
         }
         // Loose bounds around the spec'd 15% of 2000 (expect ~300, std
@@ -2011,10 +2222,11 @@ mod tests {
             (200..=400).contains(&spawned),
             "expected roughly 15% of 2000 destroyed bricks to drop a power-up, got {spawned}"
         );
-        // A quarter of the drops are Glue (expect ~75).
+        // Seven kinds, evenly: about 43 each out of ~300, std dev ~6.
+        assert_eq!(kinds.len(), 7, "{kinds:?}");
         assert!(
-            (30..=130).contains(&glue),
-            "{glue} Glue drops out of {spawned}"
+            kinds.values().all(|&n| (10..=90).contains(&n)),
+            "{kinds:?} out of {spawned}"
         );
     }
 
@@ -2141,6 +2353,215 @@ mod tests {
         game.tick(&Input::default(), DT);
         assert!(game.ball.glued.is_none());
         assert!(game.ball.vy < 0.0);
+    }
+
+    // -- power-ups: Tiny -----------------------------------------------------
+
+    #[test]
+    fn tiny_shrinks_the_paddle_for_its_duration_then_lets_it_grow_back() {
+        let mut game = playing_game();
+        game.apply_powerup(PowerUpKind::Tiny);
+        game.tick(&Input::default(), DT);
+        assert!((game.paddle.width - PADDLE_WIDTH * TINY_MULTIPLIER).abs() < 1e-4);
+        game.tiny_timer = DT / 2.0;
+        game.tick(&Input::default(), DT);
+        assert_eq!(game.paddle.width, PADDLE_WIDTH);
+    }
+
+    #[test]
+    fn tiny_and_widen_cancel_each_other_the_last_caught_wins() {
+        let mut game = playing_game();
+        game.apply_powerup(PowerUpKind::Widen);
+        game.apply_powerup(PowerUpKind::Tiny);
+        game.tick(&Input::default(), DT);
+        assert_eq!(game.widen_timer, 0.0);
+        assert!((game.paddle.width - PADDLE_WIDTH * TINY_MULTIPLIER).abs() < 1e-4);
+
+        game.apply_powerup(PowerUpKind::Widen);
+        game.tick(&Input::default(), DT);
+        assert_eq!(game.tiny_timer, 0.0);
+        assert!((game.paddle.width - PADDLE_WIDTH * WIDEN_MULTIPLIER).abs() < 1e-4);
+    }
+
+    // -- power-ups: Laser and Super laser -------------------------------------
+
+    /// A playing game with its ball in flight far from the bricks and the
+    /// paddle, and `kind`'s gun on the paddle.
+    fn armed(kind: PowerUpKind) -> Game {
+        let mut game = playing_game().with_features(Features {
+            asteroids: false,
+            ..Features::ALL
+        });
+        game.ball.attached = false;
+        game.ball.x = 20.0;
+        game.ball.y = 400.0;
+        game.ball.vx = 0.0;
+        game.ball.vy = -1.0;
+        game.apply_powerup(kind);
+        game
+    }
+
+    fn fire(game: &mut Game) {
+        game.tick(&held(|i| i.space = true), DT);
+    }
+
+    #[test]
+    fn a_laser_fires_a_pair_from_near_the_paddle_ends_at_its_cooldown_while_space_is_held() {
+        let mut game = armed(PowerUpKind::Laser);
+        fire(&mut game);
+        assert_eq!(game.bolts.len(), 2);
+        let reach = game.paddle.width / 2.0 - LASER_INSET;
+        let mut xs: Vec<f32> = game.bolts.iter().map(|b| b.x).collect();
+        xs.sort_by(f32::total_cmp);
+        assert!((xs[0] - (game.paddle.x - reach)).abs() < 1e-3);
+        assert!((xs[1] - (game.paddle.x + reach)).abs() < 1e-3);
+
+        for _ in 0..((LASER_COOLDOWN_SECS / DT) as usize - 2) {
+            fire(&mut game);
+        }
+        assert_eq!(game.bolts.len(), 2, "cooling down");
+        fire(&mut game);
+        fire(&mut game);
+        assert_eq!(game.bolts.len(), 4, "held Space fires again");
+    }
+
+    #[test]
+    fn a_laser_bolt_gives_the_first_brick_it_meets_one_hit_and_is_spent() {
+        let mut game = armed(PowerUpKind::Laser);
+        let reach = game.paddle.width / 2.0 - LASER_INSET;
+        let (left, right) = (game.paddle.x - reach, game.paddle.x + reach);
+        game.bricks = vec![
+            test_brick_at(left, 300.0, BrickKind::Normal, 1, 10),
+            test_brick_at(left, 278.0, BrickKind::Normal, 1, 10),
+            test_brick_at(right, 300.0, BrickKind::Armored, 2, 20),
+            test_brick_at(20.0, 100.0, BrickKind::Normal, 1, 10),
+        ];
+        fire(&mut game);
+        for _ in 0..60 {
+            game.tick(&Input::default(), DT);
+        }
+        assert!(game.bolts.is_empty(), "both spent");
+        assert_eq!(
+            game.bricks.len(),
+            3,
+            "only the first brick on the left broke"
+        );
+        let armored = game
+            .bricks
+            .iter()
+            .find(|b| b.kind == BrickKind::Armored)
+            .unwrap();
+        assert_eq!(armored.hits_remaining, 1, "armored: one hit");
+        assert_eq!(game.score, 10);
+    }
+
+    #[test]
+    fn a_super_laser_bolt_pierces_destructible_bricks_until_an_indestructible_one() {
+        let mut game = armed(PowerUpKind::SuperLaser);
+        let x = game.paddle.x;
+        game.bricks = vec![
+            test_brick_at(x, 300.0, BrickKind::Normal, 1, 10),
+            test_brick_at(x, 278.0, BrickKind::Armored, 2, 20),
+            test_brick_at(x, 256.0, BrickKind::Normal, 1, 30),
+            test_brick_at(x, 234.0, BrickKind::Indestructible, 1, 0),
+            test_brick_at(x, 212.0, BrickKind::Normal, 1, 40), // behind the wall
+            test_brick_at(20.0, 100.0, BrickKind::Normal, 1, 10),
+        ];
+        fire(&mut game);
+        assert_eq!(game.bolts.len(), 1, "one bolt, from the center");
+        for _ in 0..60 {
+            game.tick(&Input::default(), DT);
+        }
+        assert!(game.bolts.is_empty());
+        assert_eq!(game.score, 10 + 20 + 30, "armored destroyed outright");
+        assert_eq!(
+            game.bricks.len(),
+            3,
+            "the wall, the brick behind it, the far one"
+        );
+    }
+
+    #[test]
+    fn a_bolt_blows_up_an_asteroid_in_its_way() {
+        let mut game = armed(PowerUpKind::Laser);
+        let reach = game.paddle.width / 2.0 - LASER_INSET;
+        game.asteroids
+            .push(test_asteroid(game.paddle.x + reach, 400.0));
+        fire(&mut game);
+        for _ in 0..30 {
+            game.tick(&Input::default(), DT);
+        }
+        assert!(game.asteroids.is_empty());
+        assert!(game.score >= ASTEROID_SCORE);
+    }
+
+    #[test]
+    fn the_gun_does_not_fire_during_a_serve_and_goes_quiet_when_it_runs_out() {
+        let mut game = playing_game();
+        game.apply_powerup(PowerUpKind::Laser);
+        fire(&mut game); // the serve: Space launches the ball
+        assert!(game.bolts.is_empty(), "no bolt on the launching tick");
+
+        let mut game = armed(PowerUpKind::Laser);
+        game.gun.as_mut().unwrap().timer = DT / 2.0;
+        fire(&mut game);
+        assert!(game.gun.is_none());
+        assert!(game.bolts.is_empty());
+    }
+
+    #[test]
+    fn catching_either_gun_replaces_the_other_with_a_full_timer() {
+        let mut game = armed(PowerUpKind::Laser);
+        game.gun.as_mut().unwrap().timer = 1.0;
+        game.apply_powerup(PowerUpKind::SuperLaser);
+        assert_eq!(
+            game.gun,
+            Some(Gun {
+                kind: GunKind::SuperLaser,
+                timer: GUN_DURATION_SECS
+            })
+        );
+    }
+
+    #[test]
+    fn a_laser_that_takes_the_last_brick_clears_the_level() {
+        let mut game = armed(PowerUpKind::Laser);
+        let reach = game.paddle.width / 2.0 - LASER_INSET;
+        game.bricks = vec![test_brick_at(
+            game.paddle.x + reach,
+            300.0,
+            BrickKind::Normal,
+            1,
+            10,
+        )];
+        fire(&mut game);
+        for _ in 0..40 {
+            game.tick(&Input::default(), DT);
+            if game.level == 2 {
+                break;
+            }
+        }
+        assert_eq!(game.level, 2);
+        assert!(game.bolts.is_empty(), "a new level starts with none");
+    }
+
+    #[test]
+    fn without_the_lasers_and_tiny_features_none_of_them_ever_drops() {
+        let mut game = playing_game().with_features(Features {
+            glue: true,
+            asteroids: true,
+            ..Features::V1
+        });
+        for _ in 0..2000 {
+            game.powerups.clear();
+            game.maybe_drop_powerup(400.0, 300.0);
+            if let Some(powerup) = game.powerups.first() {
+                assert!(!matches!(
+                    powerup.kind,
+                    PowerUpKind::Laser | PowerUpKind::SuperLaser | PowerUpKind::Tiny
+                ));
+            }
+        }
     }
 
     // -- asteroids ----------------------------------------------------------

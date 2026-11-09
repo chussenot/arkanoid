@@ -36,7 +36,9 @@ use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
 use crate::events::{GameEvent, PowerUpKind};
-use crate::game::{Ball, Brick, Game, Paddle, ASTEROID_RADIUS, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH};
+use crate::game::{
+    Ball, Brick, Game, GunKind, Paddle, ASTEROID_RADIUS, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
+};
 use crate::levels::BrickKind;
 use crate::render::RenderState;
 use atlas::{Atlas, SpriteId};
@@ -73,9 +75,11 @@ const MAX_DESTROY_GHOSTS: usize = 20;
 /// `render.rs`'s own `TRAIL_LEN` (spec: "a 4-quad fading trail").
 const TRAIL_LEN: usize = 4;
 const MAX_CUBE_INSTANCES: usize =
-    1 /* paddle */ + MAX_BRICKS + MAX_POWERUPS + WALL_COUNT + MAX_DESTROY_GHOSTS;
+    1 /* paddle */ + MAX_BRICKS + MAX_POWERUPS + WALL_COUNT + MAX_DESTROY_GHOSTS + MAX_BOLTS;
 /// `game.rs` keeps at most 3 asteroids; a defensive bound like the others.
 const MAX_ASTEROIDS: usize = 8;
+/// `game.rs` caps bolts in flight at 16.
+const MAX_BOLTS: usize = 16;
 const MAX_SPHERE_INSTANCES: usize = 1 /* main ball */ + MAX_EXTRA_BALLS + TRAIL_LEN + MAX_ASTEROIDS;
 
 /// Maps a playfield-space (x right, y down, pixels) position to this
@@ -104,6 +108,17 @@ const POWERUP_WIDEN_COLOR: [f32; 4] = [0.35, 0.85, 0.40, 1.0];
 const POWERUP_SLOW_COLOR: [f32; 4] = [0.35, 0.55, 0.95, 1.0];
 const POWERUP_MULTIBALL_COLOR: [f32; 4] = [0.80, 0.35, 0.90, 1.0];
 const POWERUP_GLUE_COLOR: [f32; 4] = [0.95, 0.45, 0.65, 1.0];
+const POWERUP_LASER_COLOR: [f32; 4] = [0.95, 0.25, 0.20, 1.0];
+const POWERUP_SUPER_LASER_COLOR: [f32; 4] = [0.30, 0.95, 0.95, 1.0];
+const POWERUP_TINY_COLOR: [f32; 4] = [0.55, 0.55, 0.58, 1.0];
+/// The paddle while it carries a gun, tinted toward its capsule's color.
+const LASER_PADDLE_COLOR: [f32; 4] = [0.95, 0.55, 0.50, 1.0];
+const SUPER_LASER_PADDLE_COLOR: [f32; 4] = [0.60, 0.95, 0.95, 1.0];
+/// Bolts are thin glowing bars at ball height. Their glow is kept low:
+/// emissive adds white, and a hit flash's would wash out the color that
+/// tells a Laser bolt from a Super laser one.
+const BOLT_HEIGHT: f32 = 4.0;
+const BOLT_EMISSIVE: f32 = 0.25;
 
 /// Shared by `brick_color` (a standing brick) and `TumbleGhost::spawn` (a
 /// just-destroyed one, which by the time `BrickDestroyedAt` fires is
@@ -142,6 +157,9 @@ fn powerup_color(kind: PowerUpKind) -> [f32; 4] {
         PowerUpKind::Slow => POWERUP_SLOW_COLOR,
         PowerUpKind::Multiball => POWERUP_MULTIBALL_COLOR,
         PowerUpKind::Glue => POWERUP_GLUE_COLOR,
+        PowerUpKind::Laser => POWERUP_LASER_COLOR,
+        PowerUpKind::SuperLaser => POWERUP_SUPER_LASER_COLOR,
+        PowerUpKind::Tiny => POWERUP_TINY_COLOR,
     }
 }
 
@@ -1357,7 +1375,11 @@ impl Renderer3D {
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera_uniform));
 
         let mut cube_instances = Vec::with_capacity(
-            1 + curr.bricks.len() + curr.powerups.len() + WALL_COUNT + self.tumbling.len(),
+            1 + curr.bricks.len()
+                + curr.powerups.len()
+                + WALL_COUNT
+                + self.tumbling.len()
+                + curr.bolts.len(),
         );
         let mut sphere_instances = Vec::with_capacity(
             1 + curr.extra_balls.len() + self.ball_trail.len() + curr.asteroids.len(),
@@ -1373,10 +1395,11 @@ impl Renderer3D {
                     PADDLE_THICKNESS / 2.0,
                     drawn.paddle.height / 2.0,
                 ],
-                if curr.glue_timer > 0.0 {
-                    GLUE_PADDLE_COLOR
-                } else {
-                    PADDLE_COLOR
+                match curr.gun.map(|g| g.kind) {
+                    Some(GunKind::Laser) => LASER_PADDLE_COLOR,
+                    Some(GunKind::SuperLaser) => SUPER_LASER_PADDLE_COLOR,
+                    None if curr.glue_timer > 0.0 => GLUE_PADDLE_COLOR,
+                    None => PADDLE_COLOR,
                 },
             ));
         }
@@ -1451,6 +1474,20 @@ impl Renderer3D {
                 uv,
             )
             .with_emissive(emissive)
+        }));
+
+        // Bolts in flight.
+        cube_instances.extend(curr.bolts.iter().take(MAX_BOLTS).map(|bolt| {
+            let (x, z) = world_xz(bolt.x, bolt.y);
+            Instance3D::new(
+                [x, BOLT_HEIGHT, z],
+                [bolt.half_size[0], BOLT_HEIGHT / 2.0, bolt.half_size[1]],
+                match bolt.kind {
+                    GunKind::Laser => POWERUP_LASER_COLOR,
+                    GunKind::SuperLaser => POWERUP_SUPER_LASER_COLOR,
+                },
+            )
+            .with_emissive(BOLT_EMISSIVE)
         }));
 
         // Destroy-tumble ghosts: bricks destroyed recently enough that
