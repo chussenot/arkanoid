@@ -14,8 +14,12 @@ cargo run --release
 No assets or setup required — it builds and launches straight from a fresh
 clone, into a 32-level campaign: simple rows, staircases, frames, columns,
 and walls of armored and indestructible bricks. The HUD shows each level's
-name. `--classic` plays the three levels the
-game was first specified with instead.
+name. The menu picks what to play: the **Campaign**, **Classic** (the three
+levels the game was first specified with, under its first rules), one of
+the fetched **Levelsets** (see [Thousands of levels](#thousands-of-levels)),
+or a **Shuffle** of ten levels drawn from all of them. ↑/↓ choose the
+mode, ←/→ the set, Space plays. `--classic` and `--levelset` open the menu
+on that choice.
 
 ![The 32 campaign levels](docs/campaign.png)
 
@@ -74,11 +78,13 @@ changes it in game.
 
 | Key                | Action                  |
 |---------------------|--------------------------|
-| Left / Right, A / D | Move the paddle          |
+| Up / Down, W / S    | Menu: choose a mode      |
+| Left / Right, A / D | Move the paddle; menu: choose a levelset |
 | Space               | Launch the ball; press to release a glued ball; hold to fire a laser |
 | Escape (or P)       | Pause / resume           |
 | After a Game Over   | Space: continue from the start of the act (level 1, 9, 17 or 25); Escape or P: new game |
 | After a Victory     | Space: play again        |
+| Q                   | Back to the menu, from the pause and end screens |
 | M                   | Sound: on, effects only, off |
 
 Keyboard only; menu and pause screens show the same keys on-screen.
@@ -165,18 +171,18 @@ code would saddle the whole repo with the stricter license, so `levels/`
 stays out of version control (see `.gitignore` and `ATTRIBUTION`) and the
 fetch script is the one-command way to get it onto your own disk instead.
 
-Point the game at a fetched set with `--levelset`:
+Every set in `levels/` then appears in the menu: highlight **Levelset**
+and step through the sets with ←/→, or pick **Shuffle** for ten levels
+drawn from all of them. To open the menu on one set, or to offer another
+directory's sets, pass `--levelset`:
 
 ```bash
 cargo run --release -- --levelset levels/Classique
 ```
 
-A path to one file loads that set; a path to a directory (e.g.
-`--levelset levels/` for everything you fetched) lists every set found.
-Once a set is loaded, the in-game menu also offers **RANDOM10**: instead
-of playing a set's full level list top to bottom, it samples 10 random
-levels from it for a quicker session. Either way, completion is tracked
-per set, keyed by the same path you passed to `--levelset`.
+A path to one file highlights that set (added to the list if it lives
+elsewhere); a path to a directory offers that directory's sets instead of
+`levels/`'s.
 
 ![Twelve of the 3,435 levels in the fetched levelsets, as the game renders them](docs/levelsets-mosaic.png)
 

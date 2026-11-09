@@ -370,11 +370,17 @@ fn decode(bytes: Vec<u8>) -> String {
     }
 }
 
-/// Scans `dir` (non-recursive) for `.lbl` files and loads each one,
+/// Scans `dir` (non-recursive) for levelset files and loads each one,
 /// sorted by filename for a deterministic load order. `dir` is typically
 /// `levels/`, populated at runtime by `scripts/fetch-levelsets.sh`
 /// (arkanoid-v2-a3) -- gitignored, so this returns `Ok(vec![])` on a
 /// checkout where that script hasn't run yet, not an error.
+///
+/// A levelset is told by its content, not its name: LBreakoutHD ships its
+/// sets bare (`levels/NewBricks`), some named with dots (`P.I.T.A.`), and
+/// the fetch script leaves them that way. So every visible file is read,
+/// and kept if it holds a level; a `*.lbl` file is kept even when empty,
+/// since it says what it is. Hidden files are skipped unread.
 pub fn load_dir(dir: &Path) -> io::Result<Vec<(PathBuf, LevelSet)>> {
     if !dir.is_dir() {
         return Ok(Vec::new());
@@ -382,19 +388,27 @@ pub fn load_dir(dir: &Path) -> io::Result<Vec<(PathBuf, LevelSet)>> {
     let mut paths: Vec<PathBuf> = fs::read_dir(dir)?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
-        .filter(|p| {
-            p.extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("lbl"))
-        })
+        .filter(|p| p.is_file() && !is_hidden(p))
         .collect();
     paths.sort();
-    paths
-        .into_iter()
-        .map(|p| {
-            let level_set = load_file(&p)?;
-            Ok((p, level_set))
-        })
-        .collect()
+    let mut sets = Vec::new();
+    for path in paths {
+        let level_set = load_file(&path)?;
+        let named_lbl = path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("lbl"));
+        if named_lbl || !level_set.levels.is_empty() {
+            sets.push((path, level_set));
+        }
+    }
+    Ok(sets)
+}
+
+/// A dotfile (`.DS_Store`), or a name that is not UTF-8.
+fn is_hidden(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_none_or(|n| n.starts_with('.'))
 }
 
 /// Picks up to 10 distinct levels at random from `set`'s corpus (v2's
@@ -672,6 +686,24 @@ mod tests {
     fn load_dir_on_a_missing_directory_yields_no_levelsets_not_an_error() {
         let result = load_dir(Path::new("/nonexistent/path/for/bryx-tests"));
         assert_eq!(result.unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn load_dir_tells_a_levelset_by_its_content_not_its_name() {
+        let dir = std::env::temp_dir().join(format!("bryx-load-dir-{}", std::process::id()));
+        fs::create_dir_all(dir.join("subdir")).unwrap();
+        for name in ["Bare", "named.lbl", "P.I.T.A.", ".hidden"] {
+            fs::write(dir.join(name), homemade_fixture()).unwrap();
+        }
+        fs::write(dir.join("empty.lbl"), "").unwrap();
+        fs::write(dir.join("Makefile.am"), "EXTRA_DIST = Bare\n").unwrap();
+        let found = load_dir(&dir).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+        let names: Vec<_> = found
+            .iter()
+            .map(|(p, _)| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["Bare", "P.I.T.A.", "empty.lbl", "named.lbl"]);
     }
 
     // -- arkanoid-v2-a5: RANDOM10 menu mode + set-completion progress ------

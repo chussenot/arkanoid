@@ -193,6 +193,69 @@ pub struct Frame<'a> {
     /// The sound setting, shown by the M key on the menu and pause
     /// screens; `None` when there is no sound to set.
     pub sound: Option<&'static str>,
+    /// The menu's mode picker (`menu.rs`). `None` draws the one mode the
+    /// game already holds, as a single row.
+    pub menu: Option<&'a MenuView>,
+}
+
+/// The menu's mode picker as the HUD draws it: plain data, built by
+/// `menu.rs` from what it found on disk, so this layer stays pure.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MenuView {
+    pub rows: Vec<MenuRow>,
+    /// Index into `rows` of the highlighted one.
+    pub selected: usize,
+}
+
+/// One playable mode in the picker.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MenuRow {
+    /// The mode, in capitals: CAMPAIGN, CLASSIC, LEVELSET, SHUFFLE.
+    pub name: &'static str,
+    /// A value ←/→ cycles through (a levelset's name), drawn between
+    /// chevrons ahead of the detail.
+    pub value: Option<String>,
+    /// What the mode plays, in one short dim line.
+    pub detail: String,
+    /// The right column.
+    pub aside: Aside,
+    /// False when the mode has nothing to play (no levelset found): drawn
+    /// dim, and ↑/↓ step over it.
+    pub enabled: bool,
+}
+
+/// A picker row's right column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Aside {
+    Nothing,
+    /// The stored best for this mode (`record.rs`); hidden at 0.
+    Best(u32),
+    /// Which of `count` values is showing, 1-based: "012/136".
+    Position {
+        index: usize,
+        count: usize,
+    },
+}
+
+impl MenuView {
+    /// The fallback: the mode the game holds, alone.
+    fn single(game: &Game, record: Record) -> Self {
+        let name = match game.level_set() {
+            LevelSetKind::Campaign => "CAMPAIGN",
+            LevelSetKind::Classic => "CLASSIC",
+            LevelSetKind::Loaded => "LEVELSET",
+        };
+        Self {
+            rows: vec![MenuRow {
+                name,
+                value: None,
+                detail: format!("{} levels", game.level_count()),
+                aside: record.best.map_or(Aside::Nothing, Aside::Best),
+                enabled: true,
+            }],
+            selected: 0,
+        }
+    }
 }
 
 /// The best score as the HUD shows it: `best` is `None` where no record is
@@ -283,7 +346,7 @@ pub fn layout(frame: &Frame, cue: Option<LifeCue>) -> Layout {
                 serve_prompt(&mut out, game);
             }
         }
-        state => state_screen(&mut out, game, state, frame.record, frame.sound),
+        state => state_screen(&mut out, frame, state),
     }
     out
 }
@@ -547,7 +610,7 @@ fn keycap(out: &mut Layout, label: &str, x: f32, y: f32) -> f32 {
 /// The controls, as a two-column table: drawn keys right-aligned on the
 /// field's center line, the action left of it. Keys in a group are
 /// alternatives; groups are separated by a wider gap.
-fn controls(out: &mut Layout, top: f32, pause_label: &str, sound: Option<&str>) {
+fn controls(out: &mut Layout, top: f32, pause_label: &str, sound: Option<&str>, menu_key: bool) {
     let mut rows: Vec<(&[&[&str]], String)> = vec![
         (&[&["←", "→"], &["A", "D"]], "Move".into()),
         (&[&["SPACE"]], "Launch, release, fire".into()),
@@ -556,14 +619,61 @@ fn controls(out: &mut Layout, top: f32, pause_label: &str, sound: Option<&str>) 
     if let Some(sound) = sound {
         rows.push((&[&["M"]], sound.into()));
     }
+    if menu_key {
+        rows.push((MENU_KEY_ROW.0, MENU_KEY_ROW.1.into()));
+    }
     key_rows(out, top, &rows);
+}
+
+/// Q leaves a run for the menu, from the pause and end screens.
+const MENU_KEY_ROW: (&[&[&str]], &str) = (&[&["Q"]], "Main menu");
+
+/// Height of [`key_rows`]' rows, in canvas pixels.
+const KEY_ROW_PITCH: f32 = 34.0;
+
+/// Drawn keys and their actions on one centered line: each item's keys,
+/// then its action, items spaced apart. For the menu's navigation, which
+/// reads left to right as a sentence of three verbs.
+fn key_line(out: &mut Layout, y: f32, items: &[(&[&str], &str)]) {
+    let (key_gap, label_gap, item_gap) = (4.0, 8.0, 28.0);
+    let cap = |key: &str| (text_width(key, size::KEY, 0.04) + 14.0).max(22.0);
+    let label = |text: &str| text_width(text, size::BODY, 0.0);
+    let item_width = |(keys, action): &(&[&str], &str)| {
+        keys.iter().map(|k| cap(k)).sum::<f32>()
+            + key_gap * (keys.len() - 1) as f32
+            + label_gap
+            + label(action)
+    };
+    let total = items.iter().map(item_width).sum::<f32>() + item_gap * (items.len() - 1) as f32;
+    let mut x = (CANVAS_WIDTH - total) / 2.0;
+    for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+            x += item_gap;
+        }
+        for (k, key) in item.0.iter().enumerate() {
+            if k > 0 {
+                x += key_gap;
+            }
+            x += keycap(out, key, x, y);
+        }
+        x += label_gap;
+        out.lines.push(Line {
+            spans: vec![span(item.1, palette::TEXT, false)],
+            size: size::BODY,
+            tracking: 0.0,
+            x,
+            y: y + 2.0,
+            align: Align::Left,
+        });
+        x += label(item.1);
+    }
 }
 
 /// Rows of drawn keys and the action they do: keys right-aligned on the
 /// field's center line, the action left of it. Keys in a group are
 /// alternatives; groups are separated by a wider gap.
 fn key_rows(out: &mut Layout, top: f32, rows: &[(&[&[&str]], String)]) {
-    let (key_gap, group_gap, pitch) = (4.0, 14.0, 34.0);
+    let (key_gap, group_gap, pitch) = (4.0, 14.0, KEY_ROW_PITCH);
     let column = CANVAS_WIDTH / 2.0 - 8.0;
     for (i, (groups, action)) in rows.iter().enumerate() {
         let y = top + i as f32 * pitch;
@@ -664,13 +774,8 @@ fn serve_prompt(out: &mut Layout, game: &Game) {
     key_rows(out, y + 30.0, &[(&[&["SPACE"]], "Launch".into())]);
 }
 
-fn state_screen(
-    out: &mut Layout,
-    game: &Game,
-    state: GameState,
-    record: Record,
-    sound: Option<&str>,
-) {
+fn state_screen(out: &mut Layout, frame: &Frame, state: GameState) {
+    let (game, record, sound) = (frame.game, frame.record, frame.sound);
     out.overlay.push(Quad::rect(
         0.0,
         BAND_HEIGHT,
@@ -681,44 +786,23 @@ fn state_screen(
     let dim = palette::TEXT_DIM;
     match state {
         GameState::Menu => {
-            slate(out, FIELD_CENTER_Y - 134.0, FIELD_CENTER_Y + 210.0);
-            out.lines
-                .push(title("BRYX", size::DISPLAY, 0.28, FIELD_CENTER_Y - 118.0));
-            let set = match game.level_set() {
-                LevelSetKind::Campaign => "CAMPAIGN",
-                LevelSetKind::Classic => "CLASSIC",
-                LevelSetKind::Loaded => "LEVELSET",
+            let fallback;
+            let view = match frame.menu {
+                Some(view) => view,
+                None => {
+                    fallback = MenuView::single(game, record);
+                    &fallback
+                }
             };
-            let mut subtitle = vec![span(
-                format!("{set} · {} LEVELS", game.level_count()),
-                dim,
-                true,
-            )];
-            if let Some(best) = record.best.filter(|&b| b > 0) {
-                let (zeros, digits) = score_digits(best);
-                subtitle.push(span(" · BEST ", dim, true));
-                subtitle.push(span(zeros, palette::TEXT_FAINT, true));
-                subtitle.push(span(digits, palette::TEXT, true));
-            }
-            out.lines.push(centered(
-                subtitle,
-                size::NOTE,
-                CAPTION_TRACKING,
-                FIELD_CENTER_Y - 30.0,
-            ));
-            controls(out, FIELD_CENTER_Y + 22.0, "Pause", sound);
-            out.lines.push(centered(
-                vec![span("PRESS SPACE TO START", palette::TEXT, true)],
-                size::NOTE,
-                CAPTION_TRACKING,
-                FIELD_CENTER_Y + 178.0,
-            ));
+            menu_screen(out, view, sound);
         }
         GameState::Paused => {
-            slate(out, FIELD_CENTER_Y - 112.0, FIELD_CENTER_Y + 130.0);
+            let rows = 4 + usize::from(sound.is_some());
+            let bottom = FIELD_CENTER_Y - 10.0 + rows as f32 * KEY_ROW_PITCH + 6.0;
+            slate(out, FIELD_CENTER_Y - 112.0, bottom);
             out.lines
                 .push(title("PAUSED", size::TITLE, 0.2, FIELD_CENTER_Y - 96.0));
-            controls(out, FIELD_CENTER_Y - 10.0, "Resume", sound);
+            controls(out, FIELD_CENTER_Y - 10.0, "Resume", sound, true);
         }
         GameState::GameOver | GameState::Victory => {
             let victory = state == GameState::Victory;
@@ -734,7 +818,7 @@ fn state_screen(
                 ];
                 ("GAME OVER", reached)
             };
-            slate(out, FIELD_CENTER_Y - 136.0, FIELD_CENTER_Y + 140.0);
+            slate(out, FIELD_CENTER_Y - 136.0, FIELD_CENTER_Y + 174.0);
             out.lines
                 .push(title(heading, size::TITLE, 0.2, FIELD_CENTER_Y - 120.0));
             let (zeros, digits) = score_digits(game.score);
@@ -775,7 +859,7 @@ fn state_screen(
             }
             // What the keys do now (`Game::tick`'s terminal states).
             let checkpoint = game.checkpoint();
-            let rows: Vec<(&[&[&str]], String)> = if victory || checkpoint == 1 {
+            let mut rows: Vec<(&[&[&str]], String)> = if victory || checkpoint == 1 {
                 vec![(&[&["SPACE"]], "Play again".into())]
             } else {
                 vec![
@@ -786,15 +870,151 @@ fn state_screen(
                     (&[&["ESC"], &["P"]], "New game".into()),
                 ]
             };
+            rows.push((MENU_KEY_ROW.0, MENU_KEY_ROW.1.into()));
             key_rows(out, FIELD_CENTER_Y + 20.0, &rows);
             out.lines.push(centered(
                 vec![span("Close the window to quit", dim, false)],
                 size::NOTE,
                 0.0,
-                FIELD_CENTER_Y + 106.0,
+                FIELD_CENTER_Y + 140.0,
             ));
         }
         GameState::Playing => {}
+    }
+}
+
+/// The picker's geometry: rows of [`MENU_ROW_HEIGHT`] in a column
+/// [`MENU_ROW_WIDTH`] wide, centered on the canvas.
+const MENU_ROW_WIDTH: f32 = 560.0;
+const MENU_ROW_HEIGHT: f32 = 40.0;
+const MENU_ROW_GAP: f32 = 6.0;
+/// Where a row's detail column starts, from the row's left edge: past the
+/// longest mode name.
+const MENU_DETAIL_X: f32 = 168.0;
+/// Longest levelset name shown whole; longer ones are cut with an ellipsis.
+const MENU_VALUE_CHARS: usize = 14;
+
+/// The menu: the wordmark, the mode picker, how to move through it, and
+/// the game's controls (PRODUCT.md: controls on screen in the menu).
+///
+/// The picker is a list, one mode a row, because a list is the menu
+/// pattern every player already reads: ↑/↓ moves the highlight, ←/→
+/// changes the value of the one row that has one, Space plays. The
+/// highlighted row is filled, outlined and barred on its left edge, so
+/// the selection never rides on color alone.
+fn menu_screen(out: &mut Layout, view: &MenuView, sound: Option<&str>) {
+    let rows_top = BAND_HEIGHT + 138.0;
+    let rows_bottom =
+        rows_top + view.rows.len() as f32 * (MENU_ROW_HEIGHT + MENU_ROW_GAP) - MENU_ROW_GAP;
+    let nav_y = rows_bottom + 18.0;
+    let rule_y = nav_y + 40.0;
+    let controls_top = rule_y + 16.0;
+    let control_rows = 3 + usize::from(sound.is_some());
+    let bottom = controls_top + control_rows as f32 * KEY_ROW_PITCH + 6.0;
+
+    slate(out, BAND_HEIGHT + 28.0, bottom);
+    out.lines
+        .push(title("BRYX", size::DISPLAY, 0.28, BAND_HEIGHT + 40.0));
+    for (i, row) in view.rows.iter().enumerate() {
+        let y = rows_top + i as f32 * (MENU_ROW_HEIGHT + MENU_ROW_GAP);
+        menu_row(out, row, y, i == view.selected);
+    }
+
+    let mut nav: Vec<(&[&str], &str)> = vec![(&["↑", "↓"], "Mode")];
+    if view.rows.iter().any(|r| r.value.is_some() && r.enabled) {
+        nav.push((&["←", "→"], "Set"));
+    }
+    nav.push((&["SPACE"], "Play"));
+    key_line(out, nav_y, &nav);
+
+    // The picker above, the game's controls below: one hairline between
+    // them, like the ceiling's.
+    let x = (CANVAS_WIDTH - MENU_ROW_WIDTH) / 2.0;
+    out.overlay.push(Quad::rect(
+        x,
+        rule_y,
+        MENU_ROW_WIDTH,
+        1.0,
+        palette::RULE.linear(),
+    ));
+    controls(out, controls_top, "Pause", sound, false);
+}
+
+/// One picker row: name, value and detail, and the right column.
+fn menu_row(out: &mut Layout, row: &MenuRow, y: f32, selected: bool) {
+    let x = (CANVAS_WIDTH - MENU_ROW_WIDTH) / 2.0;
+    let (w, h) = (MENU_ROW_WIDTH, MENU_ROW_HEIGHT);
+    if selected {
+        out.overlay
+            .push(Quad::rect(x, y, w, h, palette::BAND.linear()));
+        outline(&mut out.overlay, x, y, w, h, palette::RULE_STRONG.linear());
+        out.overlay
+            .push(Quad::rect(x, y, 3.0, h, palette::TEXT.linear()));
+    }
+    let (ink, dim) = if row.enabled {
+        (palette::TEXT, palette::TEXT_DIM)
+    } else {
+        (palette::TEXT_DIM, palette::TEXT_DIM)
+    };
+    let name_size = size::SUMMARY;
+    out.lines.push(Line {
+        spans: vec![span(row.name, ink, true)],
+        size: name_size,
+        tracking: 0.08,
+        x: x + 18.0,
+        y: y + (h - (name_size * 1.2).ceil()) / 2.0,
+        align: Align::Left,
+    });
+
+    let note_y = y + (h - (size::NOTE * 1.2).ceil()) / 2.0;
+    let mut detail = Vec::new();
+    if let Some(value) = &row.value {
+        // The chevrons are the affordance: bright on the highlighted row,
+        // where ←/→ act.
+        let chevron = if selected && row.enabled { ink } else { dim };
+        let mut shown: String = value.chars().take(MENU_VALUE_CHARS).collect();
+        if value.chars().count() > MENU_VALUE_CHARS {
+            shown.pop();
+            shown.push('…');
+        }
+        detail.push(span("‹ ", chevron, true));
+        detail.push(span(shown, ink, true));
+        detail.push(span(" ›  ", chevron, true));
+    }
+    detail.push(span(row.detail.clone(), dim, false));
+    out.lines.push(Line {
+        spans: detail,
+        size: size::NOTE,
+        tracking: 0.0,
+        x: x + MENU_DETAIL_X,
+        y: note_y,
+        align: Align::Left,
+    });
+
+    let aside = match row.aside {
+        Aside::Best(best) if best > 0 => {
+            let (zeros, digits) = score_digits(best);
+            vec![
+                span("BEST ", palette::TEXT_DIM, true),
+                span(zeros, palette::TEXT_FAINT, true),
+                span(digits, ink, true),
+            ]
+        }
+        Aside::Position { index, count } => vec![
+            span(format!("{index:03}"), ink, true),
+            span(format!("/{count:03}"), palette::TEXT_DIM, true),
+        ],
+        _ => Vec::new(),
+    };
+    if !aside.is_empty() {
+        out.lines.push(Line {
+            spans: aside,
+            size: size::NOTE,
+            tracking: CAPTION_TRACKING,
+            x: x + w - 16.0,
+            y: note_y,
+            align: Align::Right,
+        });
     }
 }
 
@@ -1104,6 +1324,50 @@ mod tests {
             capsules: &[],
             record: Record::default(),
             sound: None,
+            menu: None,
+        }
+    }
+
+    /// A full picker, with the longest values each column can hold.
+    fn picker(selected: usize) -> MenuView {
+        let row = |name, value: Option<&str>, detail: &str, aside| MenuRow {
+            name,
+            value: value.map(String::from),
+            detail: detail.into(),
+            aside,
+            enabled: true,
+        };
+        MenuView {
+            rows: vec![
+                row(
+                    "CAMPAIGN",
+                    None,
+                    "32 named levels in four acts",
+                    Aside::Best(999_999),
+                ),
+                row(
+                    "CLASSIC",
+                    None,
+                    "3 levels, the original rules",
+                    Aside::Best(12_340),
+                ),
+                row(
+                    "LEVELSET",
+                    Some("AVeryLongLevelsetName"),
+                    "125 levels",
+                    Aside::Position {
+                        index: 136,
+                        count: 136,
+                    },
+                ),
+                row(
+                    "SHUFFLE",
+                    None,
+                    "10 levels drawn from all 136 sets",
+                    Aside::Nothing,
+                ),
+            ],
+            selected,
         }
     }
 
@@ -1351,6 +1615,7 @@ mod tests {
                         new_best: true,
                     },
                     sound: Some("Sound: effects only"),
+                    menu: Some(&picker(2)),
                     ..frame(&game)
                 },
                 Some(LifeCue {
@@ -1380,6 +1645,91 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn the_menu_lists_every_mode_and_marks_the_one_highlighted() {
+        let game = Game::new();
+        let view = picker(2);
+        let layout = layout(
+            &Frame {
+                menu: Some(&view),
+                ..frame(&game)
+            },
+            None,
+        );
+        let text = all_text(&layout);
+        for name in ["CAMPAIGN", "CLASSIC", "LEVELSET", "SHUFFLE"] {
+            assert!(text.lines().any(|l| l == name), "{name}: {text}");
+        }
+        assert!(text.contains("BEST 999999") && text.contains("BEST 012340"));
+        assert!(text.contains("136/136"));
+        assert!(
+            text.contains("‹ AVeryLongLeve… ›"),
+            "a long set name is cut: {text}"
+        );
+        for verb in ["Mode", "Set", "Play"] {
+            assert!(text.lines().any(|l| l == verb), "{verb}");
+        }
+
+        // The highlight: a bar on the row's left edge, there and only there.
+        let bar = |selected: usize| {
+            let view = picker(selected);
+            layout_with_menu(&game, &view)
+                .overlay
+                .iter()
+                .filter(|q| q.half_size[0] == 1.5 && q.half_size[1] == MENU_ROW_HEIGHT / 2.0)
+                .map(|q| q.center[1])
+                .collect::<Vec<_>>()
+        };
+        let (first, third) = (bar(0), bar(2));
+        assert_eq!((first.len(), third.len()), (1, 1));
+        assert!((third[0] - first[0] - 2.0 * (MENU_ROW_HEIGHT + MENU_ROW_GAP)).abs() < 1e-3);
+    }
+
+    fn layout_with_menu(game: &Game, view: &MenuView) -> Layout {
+        layout(
+            &Frame {
+                menu: Some(view),
+                ..frame(game)
+            },
+            None,
+        )
+    }
+
+    #[test]
+    fn a_disabled_mode_says_why_and_offers_no_set_keys() {
+        let game = Game::new();
+        let view = MenuView {
+            rows: vec![MenuRow {
+                name: "LEVELSET",
+                value: None,
+                detail: "none found: run scripts/fetch-levelsets.sh".into(),
+                aside: Aside::Nothing,
+                enabled: false,
+            }],
+            selected: 0,
+        };
+        let text = all_text(&layout_with_menu(&game, &view));
+        assert!(text.contains("fetch-levelsets.sh"));
+        assert!(!text.lines().any(|l| l == "Set"), "{text}");
+    }
+
+    #[test]
+    fn q_leads_back_to_the_menu_from_the_pause_and_end_screens_only() {
+        let mut game = Game::new();
+        for state in [GameState::Paused, GameState::GameOver, GameState::Victory] {
+            game.state = state;
+            let text = all_text(&layout(&frame(&game), None));
+            assert!(
+                text.lines().any(|l| l == "Q") && text.contains("Main menu"),
+                "{state:?}: {text}"
+            );
+        }
+        for state in [GameState::Menu, GameState::Playing] {
+            game.state = state;
+            assert!(!all_text(&layout(&frame(&game), None)).contains("Main menu"));
         }
     }
 }

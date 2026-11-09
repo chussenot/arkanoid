@@ -9,12 +9,13 @@ mod game;
 mod hud;
 mod levels;
 mod levelset;
+mod menu;
 mod palette;
 mod record;
 mod render;
 mod render3d;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -68,6 +69,13 @@ impl AnyRenderer {
         match self {
             Self::Classic(r) => r.set_sound(label),
             Self::ThreeD(r) => r.set_sound(label),
+        }
+    }
+
+    fn set_menu(&mut self, view: &hud::MenuView) {
+        match self {
+            Self::Classic(r) => r.set_menu(view),
+            Self::ThreeD(r) => r.set_menu(view),
         }
     }
 
@@ -151,6 +159,15 @@ struct App {
     record: hud::Record,
     /// Last frame's state, to catch the moment a run ends.
     last_state: game::GameState,
+    /// The menu's mode picker (`menu.rs`): what the next run plays.
+    menu: menu::Menu,
+    /// `menu` as the HUD draws it, rebuilt whenever it or a record changes.
+    menu_view: hud::MenuView,
+    /// The stored bests of the two built-in progressions, read once at
+    /// start and kept current here, so the menu never reads a file per
+    /// frame.
+    best_campaign: Option<u32>,
+    best_classic: Option<u32>,
     /// Sound (`audio/`), opened in `main`; `None` only before that.
     audio: Option<audio::Audio>,
 }
@@ -173,6 +190,60 @@ impl App {
             record: hud::Record::default(),
             last_state: game::GameState::Menu,
             audio: None,
+            menu: menu::Menu::new(Vec::new(), false),
+            menu_view: hud::MenuView::default(),
+            best_campaign: None,
+            best_classic: None,
+        }
+    }
+
+    /// The stored best for `set`, `None` where no record is kept.
+    fn best(&self, set: game::LevelSetKind) -> Option<u32> {
+        match set {
+            game::LevelSetKind::Campaign => self.best_campaign,
+            game::LevelSetKind::Classic => self.best_classic,
+            game::LevelSetKind::Loaded => None,
+        }
+    }
+
+    /// Back to the menu with a fresh game of the highlighted mode: at
+    /// start, after every change in the picker, and on Q. Space then starts
+    /// it through `Game::tick`'s own `Menu -> Playing`.
+    fn show_menu(&mut self) {
+        self.game = self.menu.build(&mut rand::rng());
+        self.render_prev = RenderState::from(&self.game);
+        self.record = hud::Record {
+            best: self.best(self.game.level_set()),
+            new_best: false,
+        };
+        self.last_state = self.game.state;
+        self.refresh_menu_view();
+    }
+
+    fn refresh_menu_view(&mut self) {
+        self.menu_view = self.menu.view(|set| self.best(set));
+    }
+
+    /// Interface keys: moving through the picker on the menu, and Q back
+    /// to it from the pause and end screens. Never simulation input. Held
+    /// arrows repeat (the OS's key repeat), so a long list of sets scrolls.
+    fn interface_key(&mut self, code: KeyCode, repeat: bool) {
+        use game::GameState::{GameOver, Menu, Paused, Victory};
+        match self.game.state {
+            Menu => {
+                let nav = match code {
+                    KeyCode::ArrowUp | KeyCode::KeyW => menu::Nav::Up,
+                    KeyCode::ArrowDown | KeyCode::KeyS => menu::Nav::Down,
+                    KeyCode::ArrowLeft | KeyCode::KeyA => menu::Nav::Left,
+                    KeyCode::ArrowRight | KeyCode::KeyD => menu::Nav::Right,
+                    _ => return,
+                };
+                if self.menu.nav(nav) {
+                    self.show_menu();
+                }
+            }
+            Paused | GameOver | Victory if code == KeyCode::KeyQ && !repeat => self.show_menu(),
+            _ => {}
         }
     }
 }
@@ -256,12 +327,16 @@ impl ApplicationHandler for App {
                         audio.cycle_mode();
                     }
                 }
+                if let (PhysicalKey::Code(code), ElementState::Pressed) = (physical_key, state) {
+                    self.interface_key(code, repeat);
+                }
                 self.set_input_key(physical_key, state)
             }
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
                     renderer.set_record(self.record);
                     renderer.set_sound(self.audio.as_ref().and_then(audio::Audio::label));
+                    renderer.set_menu(&self.menu_view);
                     renderer.render(
                         palette::LETTERBOX.clear(),
                         &self.render_prev,
@@ -341,9 +416,16 @@ impl App {
         if ended && !matches!(self.last_state, GameOver | Victory) {
             if let Some(best) = self.record.best {
                 if self.autopilot.is_none() && self.game.score > best {
-                    record::save(self.game.level_set(), self.game.score);
+                    let set = self.game.level_set();
+                    record::save(set, self.game.score);
                     self.record.best = Some(self.game.score);
                     self.record.new_best = true;
+                    match set {
+                        game::LevelSetKind::Campaign => self.best_campaign = Some(self.game.score),
+                        game::LevelSetKind::Classic => self.best_classic = Some(self.game.score),
+                        game::LevelSetKind::Loaded => {}
+                    }
+                    self.refresh_menu_view();
                 }
             }
         } else if !ended {
@@ -373,37 +455,109 @@ impl App {
     }
 }
 
-/// Resolves `--levelset <path>` into a loaded [`levelset::LevelSet`].
-/// `path_arg` naming a file loads it directly; naming a directory loads
-/// every `.lbl` file in it (`levelset::load_dir`) and logs each one found
-/// -- that printed list is the "menu" of what was available -- picking
-/// the first (sorted-by-path) as active. `None` here (bad path, empty
-/// directory, I/O error) means the caller falls back to the built-in 3
-/// levels; `main` never panics on a bad `--levelset` value.
+/// Where `scripts/fetch-levelsets.sh` leaves the LBreakoutHD sets, and so
+/// where the menu looks for them unless `--levelset` names a directory.
+const LEVELSET_DIR: &str = "levels";
+
+/// The levelsets the menu offers, and the one `--levelset` asked for.
 ///
-/// ponytail: picking the directory's first entry rather than presenting
-/// an in-game selection screen is deliberately minimal -- an interactive
-/// menu needs `game.rs`/`render.rs` (both out of this bead's file scope,
-/// and `game.rs` doesn't yet accept an external level source at all).
-/// Real progression through a loaded set is arkanoid-v2-a5's job.
-fn resolve_levelset(path_arg: &str) -> Option<levelset::LevelSet> {
-    let path = Path::new(path_arg);
+/// - No flag: every set in `default_dir`.
+/// - `--levelset <dir>`: every set in that directory instead, the first
+///   highlighted (as the flag has always started the directory's first).
+/// - `--levelset <file>`: every set in `default_dir`, plus that file if it
+///   is not one of them, highlighted.
+/// - A path that holds no set: a warning, then as with no flag.
+///
+/// Each set is named for its file. Load warnings are printed only for a
+/// set the player named; a whole directory's would bury the terminal.
+fn discover_levelsets(
+    arg: Option<&str>,
+    default_dir: &Path,
+) -> (Vec<menu::NamedSet>, Option<String>) {
+    // Named for the file: `NewBricks`, `P.I.T.A.`; a `.lbl` file without
+    // its extension.
+    let named = |path: &Path, set: levelset::LevelSet| {
+        let lbl = path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("lbl"));
+        let name = if lbl {
+            path.file_stem()
+        } else {
+            path.file_name()
+        };
+        menu::NamedSet {
+            name: name.map_or_else(
+                || path.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            ),
+            levels: set.levels,
+        }
+    };
+    let scan = |dir: &Path| -> Vec<(PathBuf, menu::NamedSet)> {
+        levelset::load_dir(dir)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(path, set)| {
+                let set = named(&path, set);
+                (path, set)
+            })
+            .collect()
+    };
+    let sets_only = |found: Vec<(PathBuf, menu::NamedSet)>| -> Vec<menu::NamedSet> {
+        found.into_iter().map(|(_, set)| set).collect()
+    };
+    let Some(arg) = arg else {
+        return (sets_only(scan(default_dir)), None);
+    };
+    let path = Path::new(arg);
     if path.is_dir() {
-        let mut found = levelset::load_dir(path).ok()?;
-        if found.is_empty() {
-            return None;
+        let sets = sets_only(scan(path));
+        if sets.is_empty() {
+            eprintln!("--levelset {arg}: no levelset found there; showing the built-in levels");
+            return (sets_only(scan(default_dir)), None);
         }
-        for (p, set) in &found {
-            println!(
-                "levelset menu: {} ({} level(s))",
-                p.display(),
-                set.levels.len()
-            );
-        }
-        Some(found.remove(0).1)
-    } else {
-        levelset::load_file(path).ok()
+        println!("--levelset {arg}: {} levelset(s) in the menu", sets.len());
+        let first = sets.first().map(|s| s.name.clone());
+        return (sets, first);
     }
+    let set = match levelset::load_file(path) {
+        Ok(set) if !set.levels.is_empty() => set,
+        _ => {
+            eprintln!("--levelset {arg}: no levelset found there; showing the built-in levels");
+            return (sets_only(scan(default_dir)), None);
+        }
+    };
+    for warning in &set.warnings {
+        eprintln!("levelset warning: {warning}");
+    }
+    println!(
+        "--levelset {arg}: loaded {} level(s){}",
+        set.levels.len(),
+        if set.warnings.is_empty() {
+            ""
+        } else {
+            " (see warnings above)"
+        }
+    );
+    let wanted = named(path, set);
+    let found = scan(default_dir);
+    let canonical = |p: &Path| std::fs::canonicalize(p).ok();
+    // The flag's set, found in the directory too: highlight that copy (its
+    // name), rather than list it twice.
+    let in_dir = found
+        .iter()
+        .find(|(p, _)| canonical(p).is_some() && canonical(p) == canonical(path))
+        .map(|(_, set)| set.name.clone());
+    let mut sets = sets_only(found);
+    let name = match in_dir {
+        Some(name) => name,
+        None => {
+            let name = wanted.name.clone();
+            sets.insert(0, wanted);
+            name
+        }
+    };
+    (sets, Some(name))
 }
 
 /// The autopilot `--autopilot` asked for: TypeSafe-advised when built with
@@ -452,52 +606,27 @@ fn main() {
     };
     let atlas = texture_source.load();
 
-    let loaded_levelset = args
-        .levelset
-        .as_deref()
-        .and_then(|path| match resolve_levelset(path) {
-            Some(set) => {
-                for warning in &set.warnings {
-                    eprintln!("levelset warning: {warning}");
-                }
-                println!(
-                    "--levelset {path}: loaded {} level(s){}",
-                    set.levels.len(),
-                    if set.warnings.is_empty() {
-                        ""
-                    } else {
-                        " (see warnings above)"
-                    }
-                );
-                Some(set)
-            }
-            None => {
-                eprintln!(
-                "--levelset {path}: no levelset found there; falling back to the built-in levels"
-            );
-                None
-            }
-        });
+    // The menu's picker (`menu.rs`): every fetched levelset, and the mode
+    // the flags ask for highlighted, so Space at once plays what the flags
+    // always played.
+    let (sets, wanted) = discover_levelsets(args.levelset.as_deref(), Path::new(LEVELSET_DIR));
+    if args.levelset.is_none() && !sets.is_empty() {
+        println!("levelsets: {} in {LEVELSET_DIR}/, in the menu", sets.len());
+    }
+    let mut picker = menu::Menu::new(sets, args.classic);
+    match wanted {
+        Some(name) => picker.select_set(&name),
+        None if args.classic => picker.select(menu::Mode::Classic),
+        None => {}
+    }
 
     let event_loop = EventLoop::new().expect("failed to create event loop");
     let mut app = App::new(atlas);
     app.renderer_kind = args.renderer;
-    // A normal game plays the campaign; `--classic` plays v1 as specified,
-    // its three levels and its rules.
-    app.game = if args.classic {
-        Game::new().with_features(game::Features::V1)
-    } else {
-        Game::new().with_campaign()
-    };
-    // Feed a successfully-resolved `--levelset` load into `Game` before the
-    // event loop starts driving frames (arkanoid-v2-a8's integration job --
-    // see `Game::load_external_levels`'s doc comment). A `None` here (no
-    // flag, bad path, empty directory) leaves the built-in levels active:
-    // the campaign, or v1's three under `--classic`.
-    if let Some(set) = loaded_levelset {
-        app.game.load_external_levels(set.levels);
-    }
-    app.record.best = record::load(app.game.level_set());
+    app.best_campaign = record::load(game::LevelSetKind::Campaign);
+    app.best_classic = record::load(game::LevelSetKind::Classic);
+    app.menu = picker;
+    app.show_menu();
     app.audio = Some(audio::Audio::new(audio::SoundMode::from_env()));
     if args.autopilot {
         let autopilot = build_autopilot(args.autopilot_every.unwrap_or(1));
@@ -510,45 +639,75 @@ fn main() {
 }
 
 #[cfg(test)]
-mod resolve_levelset_tests {
+mod discover_levelsets_tests {
     use super::*;
 
-    #[test]
-    fn missing_path_falls_back_to_none() {
-        assert!(resolve_levelset("does/not/exist.lbl").is_none());
+    /// A default directory that holds no set, as on a checkout where the
+    /// fetch script never ran.
+    const NO_SETS: &str = "does/not/exist";
+
+    fn names(sets: &[menu::NamedSet]) -> Vec<&str> {
+        sets.iter().map(|s| s.name.as_str()).collect()
     }
 
     #[test]
-    fn file_path_loads_directly() {
-        let set = resolve_levelset("tests/fixtures/homemade.lbl").expect("fixture should load");
-        assert_eq!(set.levels.len(), 3);
+    fn without_the_flag_the_menu_offers_the_default_directory() {
+        let (sets, wanted) = discover_levelsets(None, Path::new("tests/fixtures"));
+        assert_eq!(names(&sets), ["homemade"]);
+        assert_eq!(wanted, None);
+        let (sets, _) = discover_levelsets(None, Path::new(NO_SETS));
+        assert!(sets.is_empty());
     }
 
     #[test]
-    fn directory_path_picks_the_first_sorted_entry() {
-        let set = resolve_levelset("tests/fixtures").expect("fixture dir should load");
-        // `tests/fixtures/homemade.lbl` is the only `.lbl` file there today.
-        assert_eq!(set.levels.len(), 3);
-    }
-
-    /// Exercises the actual `main()` wiring (arkanoid-v2-a8's integration
-    /// job): a resolved levelset's levels reach `Game` via
-    /// `load_external_levels`, not just `resolve_levelset`'s own parsing.
-    /// Uses the checked-in MIT fixture rather than a fetched GPL levelset
-    /// so this runs in every `cargo test`, no `scripts/fetch-levelsets.sh`
-    /// required.
-    #[test]
-    fn resolved_levelset_reaches_game_via_load_external_levels() {
-        let set = resolve_levelset("tests/fixtures/homemade.lbl").expect("fixture should load");
-        let expected_first_level_bricks = set.levels[0].bricks.len();
-
-        let mut game = Game::new();
-        game.load_external_levels(set.levels);
-
+    fn a_missing_path_falls_back_to_the_default_directory() {
+        let (sets, wanted) =
+            discover_levelsets(Some("does/not/exist.lbl"), Path::new("tests/fixtures"));
+        assert_eq!(names(&sets), ["homemade"]);
         assert_eq!(
-            game.bricks.len(),
-            expected_first_level_bricks,
-            "Game should be playing the external set's first level, not the built-in levels"
+            wanted, None,
+            "nothing highlighted: the menu opens on Campaign"
         );
+    }
+
+    #[test]
+    fn a_file_is_added_and_highlighted() {
+        let (sets, wanted) =
+            discover_levelsets(Some("tests/fixtures/homemade.lbl"), Path::new(NO_SETS));
+        assert_eq!(names(&sets), ["homemade"]);
+        assert_eq!(sets[0].levels.len(), 3);
+        assert_eq!(wanted.as_deref(), Some("homemade"));
+    }
+
+    #[test]
+    fn a_file_already_in_the_directory_is_listed_once() {
+        let (sets, wanted) = discover_levelsets(
+            Some("tests/fixtures/homemade.lbl"),
+            Path::new("tests/fixtures"),
+        );
+        assert_eq!(names(&sets), ["homemade"]);
+        assert_eq!(wanted.as_deref(), Some("homemade"));
+    }
+
+    #[test]
+    fn a_directory_replaces_the_default_one_and_starts_on_its_first_set() {
+        let (sets, wanted) = discover_levelsets(Some("tests/fixtures"), Path::new(NO_SETS));
+        assert_eq!(names(&sets), ["homemade"]);
+        assert_eq!(wanted.as_deref(), Some("homemade"));
+    }
+
+    /// The picker's choice reaches `Game` (what `main` wires): Space on
+    /// the highlighted set plays that set's levels, not the built-in ones.
+    #[test]
+    fn the_highlighted_set_is_the_game_space_starts() {
+        let (sets, wanted) =
+            discover_levelsets(Some("tests/fixtures/homemade.lbl"), Path::new(NO_SETS));
+        let expected_first_level_bricks = sets[0].levels[0].bricks.len();
+        let mut picker = menu::Menu::new(sets, false);
+        picker.select_set(&wanted.unwrap());
+        let game = picker.build(&mut rand::rng());
+        assert_eq!(game.level_set(), game::LevelSetKind::Loaded);
+        assert_eq!(game.level_count(), 3);
+        assert_eq!(game.bricks.len(), expected_first_level_bricks);
     }
 }

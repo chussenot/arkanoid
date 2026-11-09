@@ -17,8 +17,8 @@ use winit::window::Window;
 use crate::assets::{Atlas, SpriteId, UvRect, CAPSULE_SIZE};
 use crate::events::GameEvent;
 use crate::game::{
-    Ball, BallMode, Brick, Game, GunKind, Paddle, ASTEROID_BLAST_RADIUS, ASTEROID_RADIUS,
-    BALL_BLAST_RADIUS, GATE_REACH_ABOVE_PADDLE, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
+    Ball, BallMode, Brick, Game, GameState, GunKind, Paddle, ASTEROID_BLAST_RADIUS,
+    ASTEROID_RADIUS, BALL_BLAST_RADIUS, GATE_REACH_ABOVE_PADDLE, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
 };
 use crate::hud::{self, Hud, BAND_HEIGHT};
 use crate::levels::BrickKind;
@@ -515,6 +515,8 @@ pub struct Renderer {
     record: hud::Record,
     /// The sound setting the HUD shows by the M key (`set_sound`).
     sound: Option<&'static str>,
+    /// The menu's mode picker, as `main.rs` last set it.
+    menu: hud::MenuView,
     // -- juice: ball trail, brick hit-flash/destroy-ghosts, shake -- see
     // the module-level "-- juice --" comment for why this is diffed here
     // rather than read off `Game::events`.
@@ -692,6 +694,7 @@ impl Renderer {
             autopilot,
             record: hud::Record::default(),
             sound: None,
+            menu: hud::MenuView::default(),
             ball_trail: VecDeque::new(),
             prev_bricks: Vec::new(),
             prev_level: 0,
@@ -839,6 +842,13 @@ impl Renderer {
     }
 
     /// The sound setting to show by the M key (`None`: no sound to set).
+    /// The menu's mode picker, drawn on the Menu screen.
+    pub fn set_menu(&mut self, view: &hud::MenuView) {
+        if self.menu != *view {
+            self.menu = view.clone();
+        }
+    }
+
     pub fn set_sound(&mut self, label: Option<&'static str>) {
         self.sound = label;
     }
@@ -878,7 +888,9 @@ impl Renderer {
         // than only removing what combat actually destroyed, so the diff
         // below would misread every leftover brick as "destroyed" -- skip
         // it for this one frame instead (see `bricks_just_destroyed`'s doc).
-        let level_changed = curr.level != self.prev_level;
+        // On the menu the whole game is swapped for the picked mode's
+        // (`menu.rs`), with no brick broken: no diff either.
+        let level_changed = curr.level != self.prev_level || curr.state == GameState::Menu;
         self.prev_level = curr.level;
         let (hit_flash, destroyed_ghosts) = if level_changed {
             (Vec::new(), Vec::new())
@@ -1070,6 +1082,8 @@ impl Renderer {
                 capsules: &capsules,
                 record: self.record,
                 sound: self.sound,
+                // Unset (no rows) draws the game's own mode alone.
+                menu: (!self.menu.rows.is_empty()).then_some(&self.menu),
             },
         );
 

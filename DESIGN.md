@@ -232,6 +232,8 @@ bright value. No kicker sits above a title on the state screens.
 - **State screens** sit centered in the field over the scrim, their text on
   a slate (below). The controls table puts keycaps right-aligned and actions
   left-aligned on the field's center line, 34 px per row.
+- **Menu**: the wordmark, the mode picker (below), the picker's keys on one
+  centered line, a hairline, then the controls table, all on one slate.
 
 ## Elevation & Depth
 
@@ -275,6 +277,21 @@ top and bottom in Rule (1 px), like the ceiling. The scrim dims the scene;
 the slate clears it from behind the words, which matters in 3D, where the
 perspective puts the bricks and paddle where the title and prompt sit.
 Full-bleed, so it reads as a band across the instrument, not a card.
+
+### Mode picker
+The menu's list of what to play (`docs/design/level-select.md`). Rows
+560×40 px, 6 px apart, centered; three columns:
+- the mode name in Summary bold, tracked 0.08em;
+- from 168 px in, the detail in dim Note, with a cyclable value (the
+  levelset) first in bold between chevrons `‹ ›`, cut at 14 characters;
+- right-aligned, the aside in Note bold, caption-tracked: the mode's best
+  (`BEST 012340`) or the value's position (`004/135`).
+
+The highlighted row is filled with band ink, outlined in Rule Strong and
+barred on its left edge in Text (3 px): shape, not hue, carries the
+selection. Its chevrons brighten, since ←/→ act there. A row with nothing
+to play is set in Text Dim and says why. The picker's keys follow on one
+centered line, as verbs: `[↑][↓] Mode  [←][→] Set  [SPACE] Play`.
 
 ### Life cue
 One beat of 0.9 s, eased out, when the lives count changes:

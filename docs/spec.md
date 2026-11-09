@@ -36,8 +36,8 @@ in the order of the milestones, and ask before deviating.
   emitted by the simulation each tick; the render layer consumes them for
   effects, a future audio layer subscribes here.
 - Game states: `Menu → Playing ⇄ Paused → GameOver/Victory → Playing`
-  (see "Ending a run"), an explicit enum-driven state machine, no ad-hoc
-  booleans.
+  (see "Ending a run"), and back to `Menu` (see "Choosing what to play"),
+  an explicit enum-driven state machine, no ad-hoc booleans.
 
 ## Gameplay spec
 
@@ -78,7 +78,8 @@ a power-up the game has switched off (`--classic`) drops nothing:
   ball (added after v1, see below)
 
 **HUD**: score (top-left), lives as icons (top-right), level number
-(top-center). Menu and pause screens: title + key hints, keyboard only.
+(top-center). Menu and pause screens: title + key hints, keyboard only;
+the menu also picks what to play (see "Choosing what to play").
 
 ## Levels
 
@@ -117,11 +118,32 @@ rally does not count):
 - Victory: Space (or Escape or P) plays again from level 1.
 
 So the state machine is `Menu → Playing ⇄ Paused → GameOver/Victory →
-Playing`.
+Playing`, with Q leading back to `Menu` (below).
+
+**Choosing what to play (added after v1)**, designed in
+`docs/design/level-select.md`: the menu lists the modes, one per row, and
+Space plays the highlighted one:
+- Campaign: the 32 named levels, every addition on (the default);
+- Classic: v1's three levels under v1's rules;
+- Levelset: one fetched LBreakoutHD set, its name on the row, changed with
+  ←/→ (A/D);
+- Shuffle: ten levels drawn at random from every fetched set, a new draw
+  each time the row is picked.
+
+↑/↓ (W/S) move the highlight, wrapping. With no set fetched, the Levelset
+row is shown disabled with how to fetch one, skipped by ↑/↓, and Shuffle
+is not offered. Each built-in mode's row shows its best score. Q on the
+pause, Game Over and Victory screens returns to the menu, which keeps its
+highlight; it ends the run, unscored. The flags preselect: `--classic`
+highlights Classic, `--levelset <file>` that set, `--levelset <dir>`
+offers that directory's sets instead of `levels/`'s. These are interface
+keys, never simulation input: `Input` and the pinned replay hash are
+unchanged.
 
 **Best score (added after v1)**: the best campaign and `--classic` scores
 are kept in a small per-user file (`src/record.rs`; never sent anywhere).
-The menu shows the best; the end screen marks a new one. Runs played by
+The menu shows each mode's best on its row; the end screen marks a new
+one. Runs played by
 `--autopilot` show the record but never set it. Loaded levelsets keep no
 record.
 
