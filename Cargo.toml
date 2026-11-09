@@ -41,7 +41,7 @@ typesafe = ["dep:judgment", "dep:tokio", "dep:serde_json"]
 # The typed System One client: questions with typed answers, every answer
 # verified against the question before it is read (an off-list lane is an
 # error, never a default), and the official SDKs' retry semantics.
-version = "0.13"
+version = "0.17"
 optional = true
 
 [dependencies.tokio]
