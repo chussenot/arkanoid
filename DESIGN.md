@@ -1,114 +1,298 @@
 ---
 name: BRYX
-description: Incumbent visual system as found before the visual overhaul (scan-mode record).
+description: Open-source arcade craft. A measured field, legible at a glance through either lens.
 colors:
-  clear: "#3F4555"
-  brick-normal: "#ED8989"
-  brick-armored: "#95B3D7"
-  brick-armored-hit: "#F3CB6C"
-  brick-indestructible: "#898990"
-  ball: "#FFE57C"
-  paddle: "#E7EDF9"
-  wall-3d: "#6F7686"
-  capsule-widen: "#A0EDAA"
-  capsule-slow: "#A0C4F9"
-  capsule-multiball: "#E7A0F3"
-  capsule-glue: "#F9B3D3"
-  capsule-laser: "#F9897C"
-  capsule-super-laser: "#95F9F9"
-  capsule-tiny: "#C4C4C8"
-  capsule-player: "#FFE57C"
-  capsule-break: "#FFC459"
-  asteroid: "#EDB389"
-  hud-text: "#E6E8F0"
-  title-text: "#FFD25A"
+  letterbox: "#040507"
+  band: "#080A0F"
+  field: "#10141C"
+  rule: "#2C3445"
+  rule-strong: "#56617A"
+  wall-3d: "#2A3140"
+  text: "#E9ECF3"
+  text-dim: "#8E97AB"
+  text-faint: "#485166"
+  ball: "#FFF2CF"
+  paddle: "#C6CEDC"
+  brick-normal: "#E0533F"
+  brick-armored: "#4D7FD6"
+  brick-armored-hit: "#DE9A2C"
+  brick-indestructible: "#4A5160"
+  capsule-widen: "#3DC46B"
+  capsule-slow: "#3F8EF5"
+  capsule-multiball: "#9C66F2"
+  capsule-glue: "#EE62A0"
+  capsule-laser: "#EE463B"
+  capsule-super-laser: "#2BCFD8"
+  capsule-tiny: "#9BA5B9"
+  capsule-player: "#F0C232"
+  capsule-break: "#FF8A2B"
+  asteroid: "#8B7F9A"
+  explosion: "#FFB55E"
 typography:
+  display:
+    fontFamily: "JetBrains Mono"
+    fontSize: "64px"
+    fontWeight: 700
+    letterSpacing: "0.28em"
   title:
-    fontFamily: "system sans-serif (glyphon Family::SansSerif)"
-    fontSize: "52px"
-    lineHeight: "58px"
-  hud:
-    fontFamily: "system sans-serif (glyphon Family::SansSerif)"
-    fontSize: "22px"
-    lineHeight: "26px"
-  detail:
-    fontFamily: "system sans-serif (glyphon Family::SansSerif)"
+    fontFamily: "JetBrains Mono"
+    fontSize: "44px"
+    fontWeight: 700
+    letterSpacing: "0.2em"
+  value:
+    fontFamily: "JetBrains Mono"
     fontSize: "20px"
-    lineHeight: "26px"
+    fontWeight: 700
+  summary:
+    fontFamily: "JetBrains Mono"
+    fontSize: "16px"
+    fontWeight: 700
+  body:
+    fontFamily: "JetBrains Mono"
+    fontSize: "15px"
+    fontWeight: 400
+  note:
+    fontFamily: "JetBrains Mono"
+    fontSize: "13px"
+    fontWeight: 400
+  key:
+    fontFamily: "JetBrains Mono"
+    fontSize: "11px"
+    fontWeight: 700
+  caption:
+    fontFamily: "JetBrains Mono"
+    fontSize: "10px"
+    fontWeight: 700
+    letterSpacing: "0.16em"
 spacing:
-  hud-margin: "18px"
-  life-icon: "16px"
-  life-gap: "8px"
+  band-height: "48px"
+  margin-x: "20px"
+  caption-top: "8px"
+  value-top: "20px"
+  control-row: "34px"
+  keycap-height: "22px"
+components:
+  keycap:
+    backgroundColor: "{colors.band}"
+    textColor: "{colors.text}"
+    typography: "{typography.key}"
+    height: "22px"
+    padding: "0 7px"
+  capsule:
+    textColor: "{colors.field}"
+    typography: "{typography.caption}"
+    width: "26px"
+    height: "13px"
+  autopilot-tag:
+    textColor: "{colors.text}"
+    typography: "{typography.caption}"
+    height: "17px"
+    padding: "0 7px"
 ---
 
-# Design System: BRYX (incumbent record)
+# Design System: BRYX
 
-<!-- Scan-mode record of the system as it stood before the visual overhaul
-(branch claude/impeccable-visual). It is kept in git history as the
-"before" reference; the overhaul replaces this file with the new system. -->
+<!-- Source of truth in code: src/palette.rs (every color), src/hud.rs
+(canvas, type scale, band, state screens), src/assets.rs (sprite recipes and
+brick marks). This file explains them; when they disagree, the code wins and
+this file is stale. -->
 
 ## Overview
 
-There is no named direction yet. The game reads as a working prototype:
-a flat blue-gray field, pastel bricks and capsules, a white metallic paddle,
-a yellow ball, and default sans-serif text for the HUD and the four overlay
-screens. Color constants are duplicated in `src/render.rs`,
-`src/render3d/mod.rs` and `src/assets.rs`.
+**Creative North Star: "The Measured Field"**
 
-**Key characteristics:**
-- Every color is authored as an sRGB-looking triple but written to an sRGB
-  surface as if it were linear, so the screen shows a lighter, paler color
-  than the one authored. For example, `brick-normal` is authored `#D94040`
-  and shows as `#ED8989`, and the clear color is authored `#0D0F17` and
-  shows as `#3F4555`. The frontmatter records the colors as **shown**.
-- Brick kinds and capsules are identified by hue alone.
-- The 2D renderer draws a HUD (score, level, lives) and overlay screens. The
-  3D renderer draws neither.
+BRYX is a precise instrument for a fast game. The field is a dark,
+calibrated 800×600 surface: a graduated ceiling rule says so, and every
+object on it is told apart by more than color. The HUD reads like an
+instrument readout, with captions over values and fixed-width numerals that
+never jitter. It sits in its own band above the field, so it never competes
+with the ball. Both renderers, the 2D quads and the 3D perspective view,
+show the same words, numbers, colors and marks: one game, two lenses.
+
+The look comes from the code's own discipline rather than from nostalgia.
+One palette module, one HUD layer, one type family, procedural sprites
+whose recipes fit on a screen. It is playful through color and motion in
+the field, and restrained everywhere else.
+
+**Key Characteristics:**
+- A dark blue-black field. Warm and cool entity hues both read against it,
+  and the ball is the brightest thing on screen.
+- Hue never carries meaning alone. Capsules carry letters, brick kinds
+  carry patterns, and the asteroid has its own silhouette.
+- One family, JetBrains Mono (SIL OFL 1.1), bundled. Uppercase tracked
+  captions sit over bold values.
+- Flat chrome: no shadows or gradients in the interface. Depth lives in the
+  sprites (bevels, gloss) and in the 3D lighting.
+- Drawn keys. Controls appear as outlined keycaps, never as a sentence.
 
 ## Colors
 
-Pastel and low-contrast, because the colors are lifted by the gamma issue
-above.
-- **Field** (`clear`): the background of both renderers.
-- **Brick kinds**: normal (coral), armored (steel blue), armored after one
-  hit (amber), indestructible (gray).
-- **Ball and Player capsule** share one yellow, and the life icons use it
-  too.
-- **Nine capsule hues**, most of them pastel. Laser, Break and Asteroid are
-  all warm oranges and reds.
+Every color is authored once in `src/palette.rs` as sRGB hex and converted
+at the point of use:
+- **Linear** for shader colors and clears. The surface is sRGB; this fixed
+  a gamma error that washed the whole game out.
+- **sRGB bytes** for the atlas recipes, uploaded as `Rgba8UnormSrgb`.
+
+### Surfaces
+- **Letterbox** (#040507): outside the canvas when the window's aspect
+  differs.
+- **Band** (#080A0F): the HUD band, darker than the field so the two read as
+  separate zones.
+- **Field** (#10141C): the ground of both renderers. It is also the scrim
+  (95%) and the ink for capsule letters.
+- **Rule** (#2C3445) and **Rule Strong** (#56617A): the ceiling rule and its
+  ticks, and keycap and tag outlines.
+- **Wall** (#2A3140): the 3D renderer's side and top walls.
+
+### Text
+- **Text** (#E9ECF3): values, titles, keys. 16.7:1 on the band.
+- **Text Dim** (#8E97AB): captions and secondary lines. 6.8:1 on the band,
+  6.3:1 on the field.
+- **Text Faint** (#485166): the score's leading zeros only, never content.
+
+### Field objects
+- **Ball** (#FFF2CF): warm white, the highest luminance of any moving object
+  (pinned by a test). Its trail is the same sprite, fading.
+- **Paddle** (#C6CEDC): brushed metal, tinted toward the active capsule's
+  hue: Glue, Laser or Super laser.
+- **Bricks**:
+  - normal: Vermilion (#E0533F), a plain panel;
+  - armored: Steel (#4D7FD6), a recessed plate and four rivets;
+  - armored after one hit: Amber (#DE9A2C), the same plate with a crack;
+  - indestructible: Graphite (#4A5160), diagonal hatching.
+- **Capsules** (hue and letter):
+  - Widen W (#3DC46B), Slow S (#3F8EF5), Multiball M (#9C66F2);
+  - Glue G (#EE62A0), Laser L (#EE463B), Super laser X (#2BCFD8);
+  - Tiny T (#9BA5B9), Player P (#F0C232), Break B (#FF8A2B).
+- **Effects**: the Break gate and the laser bolts reuse their capsule's hue,
+  so cause and effect read as one thing.
+- **Hazards**: Asteroid (#8B7F9A) is cool cratered stone; its Explosion
+  (#FFB55E) is the only warm thing about it.
+
+### Named Rules
+**The Never-Alone Rule.** No meaning rides on hue alone. A new capsule needs
+a unique letter; a new brick kind needs a mark that the
+`brick_kinds_differ_by_mark_not_only_by_color` test can tell apart.
+
+**The One-Palette Rule.** A color literal outside `src/palette.rs` is a bug.
+Both renderers import the same constants.
+
+**The Brightest-Ball Rule.** Nothing that moves is brighter than the ball.
 
 ## Typography
 
-A single system sans-serif at three sizes:
-- **Title**: 52 px, used for BRYX, PAUSED, GAME OVER and VICTORY!
-- **HUD**: 22 px, used for "Score: N" and "Level N: name".
-- **Detail**: 20 px, used for the line under the title.
+**Family:** JetBrains Mono, Regular and Bold, bundled in `assets/fonts/` and
+loaded from the binary. The system font database is never scanned.
 
-The text is laid out in physical pixels, so it does not scale with the
-window.
+**Character:** a typeface made for reading code, used here for numbers that
+change sixty times a second and for labels set like an instrument's. It is
+monospace for a measured reason: fixed advances keep the score from
+jittering, and they let `hud::text_width` size keycaps and tags without
+shaping text.
+
+### Hierarchy (canvas pixels)
+- **Display** (700, 64 px, tracking 0.28em): the BRYX wordmark on the menu
+  only.
+- **Title** (700, 44 px, tracking 0.2em): PAUSED, GAME OVER, VICTORY.
+- **Value** (700, 20 px): the score.
+- **Summary** (700, 16 px): the level line and the final-score line.
+- **Body** (400, 15 px): control actions.
+- **Note** (400, 13 px): the quit hint and the menu subtitle (bold,
+  tracked).
+- **Key** (700, 11 px): keycap labels.
+- **Caption** (700, 10 px, tracking 0.16em, uppercase): SCORE, LEVEL, LIVES,
+  the AUTOPILOT tag, capsule letters (11 px).
+
+### Named Rules
+**The Caption-Value Rule.** Band data is always a dim tracked caption over a
+bright value. No kicker sits above a title on the state screens.
 
 ## Layout
 
-- The 800×600 playfield fills the window and is stretched non-uniformly on
-  resize; letterboxing is not implemented yet.
-- The HUD sits inside the playfield, 18 px from the top, which is inside the
-  ball's flight space.
-- Overlay screens put the title 40 px above center and the detail 30 px
-  below it, over a 62% black scrim.
+- **Canvas**: 800×648 = a 48 px band plus the fixed 800×600 field. The window
+  opens at canvas size and scales uniformly, letterboxed, never stretched
+  (`hud::Letterbox`).
+- **Field**: the simulation's own coordinates, untouched. Both renderers draw
+  the world in the field's viewport, so a resize changes nothing the
+  simulation sees.
+- **Band**:
+  - score left (20 px margin), with the autopilot tag beside it while
+    `--autopilot` plays;
+  - level centered: number, count, name;
+  - lives right, one small paddle each, "+N" past six.
+- **Ceiling rule**: 1 px at the field's top edge, a tick every 25 px and a
+  major tick every 100 px. Ticks rise into the band, never into the field.
+  This is the signature move: the field drawn as the measured instrument it
+  is.
+- **State screens** sit centered in the field over the scrim. The controls
+  table puts keycaps right-aligned and actions left-aligned on the field's
+  center line, 34 px per row.
 
 ## Elevation & Depth
 
-- **2D**: the procedural sprites carry bevels, gloss and specular highlights.
-- **3D**: Blinn-Phong lighting (ambient 0.32), with tumble ghosts for
-  destroyed bricks and camera shake.
+The interface is flat: no shadows, no blur, no gradients. Separation comes
+from tone (band darker than field) and 1 px rules. Depth belongs to the
+world only:
+- **2D**: beveled bricks with a top-down gloss ramp, a brushed-metal paddle,
+  a specular ball, a cratered asteroid, all lit from the top left.
+- **3D**: Blinn-Phong lighting in linear space. Brick patterns are textured
+  on both the top and the front faces.
+
+## Shapes
+
+- **Rectilinear by default**: bricks, paddle, band, keycaps and tags are
+  square-cornered.
+- **Round only where it carries meaning**: the ball is round; the capsule is
+  a pill so it can never be mistaken for a brick; the asteroid has an
+  irregular outline so it can never be mistaken for the ball.
+- **Keycaps**: a 1 px outline with a 2 px heavier bottom edge, the one hint
+  of affordance in the chrome.
 
 ## Components
 
-- **Bricks**: beveled panels.
-- **Paddle**: brushed metal; tinted pink while Glue is active, red with
-  Laser, and cyan with Super laser.
-- **Ball**: specular sphere sprite with a four-step trail.
-- **Capsules**: 18 px flat squares in their hue.
-- **Asteroids**: the ball sprite tinted orange.
-- **Explosions**: a growing, fading disc lasting 0.35 s.
-- **Lives**: 16 px yellow squares at the top right.
+### Capsule
+A 26×13 near-white pill sprite tinted with its hue, with its letter set as
+text in field ink at its center. In 3D, a box with pill proportions at 1.5×
+scale rolls about its long axis; its letter is projected flat onto it.
+Letters appear only while playing; on state screens the scrim covers the
+capsules.
+
+### Keycap
+Band fill, Rule Strong outline and bottom edge, Key-style label, 22 px
+tall, at least square. Keys in a group are alternatives (4 px apart);
+groups are 14 px apart.
+
+### Autopilot tag
+An outlined box with a solid 4 px square and AUTOPILOT in caption style,
+beside the score. Shown whenever `--autopilot` drives the input (PRODUCT.md,
+"Honest about the machine").
+
+### Motion
+- Effects follow game events and are brief: brick flash (one frame), shake
+  (2D 3 px for 80 ms, 3D camera 26 units for 150 ms), a four-step trail,
+  explosions (350 ms), 3D tumble ghosts (500 ms).
+- Nothing flashes above 3 Hz, and no interface element animates.
+- `BRYX_REDUCED_MOTION=1` turns shake off in both renderers.
+
+## Do's and Don'ts
+
+### Do:
+- **Do** take every color from `src/palette.rs` and convert it with
+  `linear()` for shaders, or `srgb()` for recipes.
+- **Do** give any new capsule a unique letter and any new brick kind a
+  distinct mark.
+- **Do** put new interface text through `hud::layout`, so both renderers
+  show it and the off-canvas test covers it.
+- **Do** keep band text inside the 48 px band and field furniture out of the
+  field.
+
+### Don't:
+- **Don't** borrow any element of Arkanoid's or Taito's presentation: logo,
+  lettering, palette, sprites or screens (PRODUCT.md, "Brand Commitments").
+- **Don't** write a color as a linear float triple by eye. That is how the
+  pastel wash happened.
+- **Don't** draw interface text inside the field during play. Capsule
+  letters are the one exception, and they belong to their capsules.
+- **Don't** add shadows, glows or gradients to the chrome.
+- **Don't** load system fonts. The bundled face is what makes every machine
+  read the same.
