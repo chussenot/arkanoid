@@ -181,18 +181,25 @@ untouched.
 
 - **Real-hardware check**: verification ran on llvmpipe under Xvfb. A run on
   a GPU, on a HiDPI display, and with a hand-resized window is still owed.
-- **3D state screens over the scene**: the perspective places the 3D bricks
-  where the shared layout puts the titles. At 95% scrim they read as a dark
-  band behind the title, which stays legible, but a renderer-aware title
-  position would be cleaner.
-- **Life lost**: nothing on screen marks the moment beyond the icon count; a
-  brief band flash on `BallLost` is the obvious next step.
-- **3D asteroid** is a smooth sphere; it is told apart from the ball by its
-  much lower luminance (stone vs. warm white) and its lack of a trail, not
-  by shape. A low-poly rock mesh would close the gap.
-- **The 3D renderer's tumble ghosts** keep the flat brick color, without the
-  pattern, for their 0.5 s.
+
+Resolved in the follow-up pass (see the "Follow-ups" section below): the
+3D titles over the scene, the missing life-lost moment, the spherical 3D
+asteroid, and the unpatterned tumble ghosts.
 - **Pack art**: marks are composited onto pack bricks; a pack whose bricks
   are already busy may need its own marks.
 - **No in-game restart** from GameOver or Victory; the screen honestly says
   to close the window. Adding a key would be a controls change, out of scope.
+
+## Follow-ups
+
+The four interface issues the first pass left open, each fixed in the
+shared layer where it applies to both renderers.
+
+| Issue | Fix | Verified by |
+|---|---|---|
+| 3D titles sat over the dimmed bricks and paddle | A **slate**: an opaque, ruled, full-width band of field ink behind each state screen's text (`hud::slate`). It is drawn in both renderers; in 2D it covers nothing that mattered. | Screenshots of menu and pause in both renderers |
+| A lost life had no on-screen moment | A **life cue** in `hud.rs`: for 0.9 s, the LIVES caption turns red, the lost icon fades in its slot, and the field's floor lights once. A Player capsule gets the same beat in gold. It is a render-side diff of `Game::lives` (`LivesWatch`) and honors `BRYX_REDUCED_MOTION`. | `a_lost_life_lights_the_floor_once_then_clears`; a frame captured 0.4 s after a forced loss, in both renderers |
+| The 3D asteroid was a sphere | A **rock mesh**: a coarse sphere with each vertex pushed in or out by a hash of its quantized position (so seam and pole duplicates move together), flat-shaded per face, turning slowly. It takes one more draw call. | `rock_mesh_is_jagged_closed_and_flat_shaded` (checks jag range, flat normals, and that every edge is shared by exactly two faces); zoomed screenshot |
+| 3D tumble ghosts lost their pattern | Ghosts carry their brick's sprite, and the shader picks textured faces by the *object-space* normal, so the pattern stays on its faces while the cube spins. | `a_tumbling_brick_keeps_its_pattern`. Not screenshotted: a ghost lives 0.5 s and the harness cannot freeze one mid-tumble. |
+
+`docs/design/followups.png`: a life lost 0.4 s ago in 2D and 3D, and the 3D rock enlarged. `after-2d.png` and `after-3d.png` are refreshed with the slate.

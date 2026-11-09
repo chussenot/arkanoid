@@ -224,9 +224,9 @@ bright value. No kicker sits above a title on the state screens.
   major tick every 100 px. Ticks rise into the band, never into the field.
   This is the signature move: the field drawn as the measured instrument it
   is.
-- **State screens** sit centered in the field over the scrim. The controls
-  table puts keycaps right-aligned and actions left-aligned on the field's
-  center line, 34 px per row.
+- **State screens** sit centered in the field over the scrim, their text on
+  a slate (below). The controls table puts keycaps right-aligned and actions
+  left-aligned on the field's center line, 34 px per row.
 
 ## Elevation & Depth
 
@@ -236,7 +236,8 @@ world only:
 - **2D**: beveled bricks with a top-down gloss ramp, a brushed-metal paddle,
   a specular ball, a cratered asteroid, all lit from the top left.
 - **3D**: Blinn-Phong lighting in linear space. Brick patterns are textured
-  on both the top and the front faces.
+  on the top and front faces, and stay on them while a destroyed brick
+  tumbles away. The asteroid is a jagged, flat-shaded rock mesh.
 
 ## Shapes
 
@@ -244,7 +245,8 @@ world only:
   square-cornered.
 - **Round only where it carries meaning**: the ball is round; the capsule is
   a pill so it can never be mistaken for a brick; the asteroid has an
-  irregular outline so it can never be mistaken for the ball.
+  irregular outline (2D sprite, 3D faceted mesh) so it can never be mistaken
+  for the ball.
 - **Keycaps**: a 1 px outline with a 2 px heavier bottom edge, the one hint
   of affordance in the chrome.
 
@@ -262,6 +264,24 @@ Band fill, Rule Strong outline and bottom edge, Key-style label, 22 px
 tall, at least square. Keys in a group are alternatives (4 px apart);
 groups are 14 px apart.
 
+### Slate
+A full-width band of opaque field ink behind a state screen's text, ruled
+top and bottom in Rule (1 px), like the ceiling. The scrim dims the scene;
+the slate clears it from behind the words, which matters in 3D, where the
+perspective puts the bricks and paddle where the title and prompt sit.
+Full-bleed, so it reads as a band across the instrument, not a card.
+
+### Life cue
+One beat of 0.9 s, eased out, when the lives count changes:
+- **Lost**: the LIVES caption turns Laser red; the lost life's icon stays in
+  its slot in red, fading (and dropping 5 px unless reduced motion is set);
+  a 3 px line at the field's floor lights red and fades.
+- **Gained** (Player capsule): the caption turns Player gold, and the new
+  icon starts gold and settles to metal.
+
+It is drawn by the shared HUD layer, so both renderers show it, and it is
+diffed render-side from `Game::lives`, never hooked into the simulation.
+
 ### Autopilot tag
 An outlined box with a solid 4 px square and AUTOPILOT in caption style,
 beside the score. Shown whenever `--autopilot` drives the input (PRODUCT.md,
@@ -271,7 +291,8 @@ beside the score. Shown whenever `--autopilot` drives the input (PRODUCT.md,
 - Effects follow game events and are brief: brick flash (one frame), shake
   (2D 3 px for 80 ms, 3D camera 26 units for 150 ms), a four-step trail,
   explosions (350 ms), 3D tumble ghosts (500 ms).
-- Nothing flashes above 3 Hz, and no interface element animates.
+- Nothing flashes above 3 Hz. The only interface animation is the single
+  0.9 s life cue.
 - `BRYX_REDUCED_MOTION=1` turns shake off in both renderers.
 
 ## Do's and Don'ts
