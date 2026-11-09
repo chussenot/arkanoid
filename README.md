@@ -67,7 +67,9 @@ Two additions on top of the original design ([`docs/spec.md`](docs/spec.md),
   or on its own after 3 s.
 - **Asteroids** (orange): they drift down from the top, over the bricks,
   wobbling side to side. A ball that hits one blows it up and bounces off
-  it, which can send it somewhere you didn't plan. The paddle blows them up
+  it, which can send it somewhere you didn't plan. The explosion also
+  breaks the bricks around it (armored ones take one hit), so hitting one
+  while it crosses the wall clears a cluster. The paddle blows them up
   harmlessly. Each is worth 100 points.
 
 `cargo run --release -- --classic` plays without either, as the game was

@@ -22,7 +22,8 @@ use winit::window::Window;
 use crate::assets::{Atlas, SpriteId, UvRect};
 use crate::events::{GameEvent, PowerUpKind};
 use crate::game::{
-    Ball, Brick, Game, GameState, Paddle, ASTEROID_RADIUS, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
+    Ball, Brick, Game, GameState, Paddle, ASTEROID_BLAST_RADIUS, ASTEROID_RADIUS, PLAYFIELD_HEIGHT,
+    PLAYFIELD_WIDTH,
 };
 use crate::levels::BrickKind;
 
@@ -182,8 +183,6 @@ const ASTEROID_TINT: [f32; 4] = [0.85, 0.45, 0.25, 1.0];
 /// A blown-up asteroid: the same round sprite, hot and growing as it fades.
 const EXPLOSION_TINT: [f32; 3] = [1.0, 0.75, 0.3];
 const EXPLOSION_SECS: f32 = 0.35;
-/// Radius at the end of an explosion, as a multiple of the asteroid's.
-const EXPLOSION_GROWTH: f32 = 3.0;
 /// The paddle while Glue is active: the same sprite, tinted the Glue
 /// capsule's color so the player can tell a hit will stick.
 const GLUE_PADDLE_TINT: [f32; 4] = [1.0, 0.7, 0.85, 1.0];
@@ -210,10 +209,11 @@ struct Explosion {
 }
 
 impl Explosion {
-    /// Radius and alpha at its current age: grows out, fades away.
+    /// Radius and alpha at its current age: grows from the asteroid's size
+    /// out to the blast radius, which shows what it reached, and fades.
     fn look(&self) -> (f32, f32) {
         let t = (self.age / EXPLOSION_SECS).clamp(0.0, 1.0);
-        let radius = ASTEROID_RADIUS * (1.0 + (EXPLOSION_GROWTH - 1.0) * t);
+        let radius = ASTEROID_RADIUS + (ASTEROID_BLAST_RADIUS - ASTEROID_RADIUS) * t;
         (radius, 1.0 - t)
     }
 }

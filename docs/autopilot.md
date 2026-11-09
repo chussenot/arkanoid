@@ -32,7 +32,8 @@ autopilot: #15 level 1 -> left (confidence 0.29, 157 ms): below the confidence b
 Where the ball will meet the paddle comes from `game::forecast_crossing`.
 It runs the ball forward tick by tick through the simulation's own
 collision functions: walls, bricks (which break or lose a hit as they
-would) and asteroids (which drift and blow up as they would). The forecast
+would) and asteroids (which drift, blow up and break the bricks around
+them as they would). The forecast
 is replayed a tick at a time while the ball stays on it, and recomputed
 only when something it left out happens (the paddle, a new asteroid,
 another ball breaking a brick first), so it costs about one simulation per
@@ -115,8 +116,8 @@ Heuristic only, 20 seeds per feature set, the three built-in levels
 |---|---|---|---|
 | v1 (`--classic`) | 20/20 | 1 | 406 s / 480 s |
 | Glue only | 20/20 | 2 | 438 s / 600 s |
-| Asteroids only | 20/20 | 4 | 452 s / 562 s |
-| Both (default) | 20/20 | 5 | 472 s / 683 s |
+| Asteroids only | 20/20 | 3 | 414 s / 524 s |
+| Both (default) | 20/20 | 6 | 442 s / 540 s |
 
 Before the exact forecast and stall breaking, the same benchmark lost
 27–40 lives per feature set and won 12–18 of 20.
@@ -124,12 +125,12 @@ Before the exact forecast and stall breaking, the same benchmark lost
 | Model run | Three built-in levels won in | Lives lost | Consultations |
 |---|---|---|---|
 | `jev-latest`, seed 42, v1 rules, blocking | 403 s | 0 | 277: 146 used, 32 below the bar, 111 set aside while looping, 0 failed; 139 ms mean |
-| `jev-latest`, seed 42, Glue and asteroids on, exact forecast, blocking | 303 s | 0 | 156: 105 used, 51 below the bar, 0 set aside, 0 failed; 104 ms mean |
+| `jev-latest`, seed 42, Glue and asteroids on (blasts included), exact forecast, blocking | 480 s | 0 | 293: 162 used, 60 below the bar, 84 set aside while looping, 0 failed; 133 ms mean |
 
 Read the model runs as a working integration, not as proof that the model
-plays better. Each is one run. In the first, 111 answers named a lane the
-shot could not reach through level 3's gate, which the loop override
-caught. The second, with the exact forecast, never looped. To
+plays better. Each is one run, and in both a good share of answers named
+a lane the shot could not reach through level 3's gate (111 and 84), which
+the loop override caught. To
 compare them properly, run both over many seeds and look at the spread.
 The live test below is the harness for that.
 

@@ -116,6 +116,10 @@ const ASTEROID_FIRST_SPAWN_SECS: f32 = 4.0;
 const ASTEROID_SPAWN_SECS: std::ops::Range<f32> = 5.0..10.0;
 /// Points for blowing one up, with the ball or the paddle.
 const ASTEROID_SCORE: u32 = 100;
+/// An asteroid's explosion hits every brick within this distance of its
+/// center (closest point of the brick): a little under a brick's width,
+/// so a blast takes out a small cluster, never a whole row.
+pub const ASTEROID_BLAST_RADIUS: f32 = 40.0;
 
 /// Gameplay added after the v1 spec. Each can be switched off, so v1's
 /// rules (and its pinned replay hash) stay reproducible: `--classic` plays
@@ -921,6 +925,13 @@ impl Game {
         }
 
         let brick = self.bricks.remove(index);
+        self.on_brick_destroyed(brick);
+        false
+    }
+
+    /// Scores a destroyed brick, announces it and rolls its power-up drop,
+    /// whatever destroyed it (a ball, or an asteroid's blast).
+    fn on_brick_destroyed(&mut self, brick: Brick) {
         self.score += brick.score;
         self.events.push(GameEvent::BrickDestroyed);
         self.events.push(GameEvent::BrickDestroyedAt {
@@ -931,7 +942,6 @@ impl Game {
             kind: brick.kind,
         });
         self.maybe_drop_powerup(brick.x, brick.y);
-        false
     }
 
     /// Spec: 15% of destroyed bricks drop one of the three power-ups,
@@ -1142,6 +1152,11 @@ impl Game {
             a.y - a.radius <= paddle.bottom()
         });
         self.asteroids = asteroids;
+        // A paddle-triggered blast can take the level's last bricks; a
+        // ball-triggered one is caught by `advance_balls`' own check.
+        if self.destructible_bricks_remaining() == 0 {
+            self.advance_level();
+        }
     }
 
     /// A ball touching an asteroid blows it up and bounces off it like off
@@ -1160,10 +1175,15 @@ impl Game {
         self.explode_asteroid(asteroid.x, asteroid.y);
     }
 
+    /// An asteroid blows up at (`x`, `y`): it scores, and its blast hits
+    /// the bricks around it (see `blast_bricks`).
     fn explode_asteroid(&mut self, x: f32, y: f32) {
         self.stall_secs = 0.0;
         self.score += ASTEROID_SCORE;
         self.events.push(GameEvent::AsteroidExploded { x, y });
+        for brick in blast_bricks(&mut self.bricks, x, y) {
+            self.on_brick_destroyed(brick);
+        }
     }
 
     /// Turns a stalled ball by `STALL_NUDGE_DEG`, alternating direction,
@@ -1201,6 +1221,31 @@ impl Asteroid {
             self.phase += std::f32::consts::PI; // Flip the wobble too.
         }
     }
+}
+
+/// An asteroid's blast at (`x`, `y`): every destructible brick within
+/// `ASTEROID_BLAST_RADIUS` takes one hit, the hit a ball would give it (a
+/// normal brick breaks, an armored one loses one of its two). Returns the
+/// bricks it destroyed, already removed from `bricks`.
+fn blast_bricks(bricks: &mut Vec<Brick>, x: f32, y: f32) -> Vec<Brick> {
+    let in_range = |brick: &Brick| {
+        let dx = x - x.clamp(brick.left(), brick.right());
+        let dy = y - y.clamp(brick.top(), brick.bottom());
+        dx * dx + dy * dy <= ASTEROID_BLAST_RADIUS * ASTEROID_BLAST_RADIUS
+    };
+    let mut destroyed = Vec::new();
+    bricks.retain_mut(|brick| {
+        if brick.kind == BrickKind::Indestructible || !in_range(brick) {
+            return true;
+        }
+        brick.hits_remaining = brick.hits_remaining.saturating_sub(1);
+        if brick.hits_remaining > 0 {
+            return true;
+        }
+        destroyed.push(*brick);
+        false
+    });
+    destroyed
 }
 
 fn ball_touches_asteroid(ball: &Ball, asteroid: &Asteroid) -> bool {
@@ -1294,6 +1339,7 @@ pub fn forecast_crossing(
             {
                 let asteroid = asteroids.remove(index);
                 bounce_off_asteroid(&mut ball, &asteroid);
+                blast_bricks(&mut bricks, asteroid.x, asteroid.y);
             }
             if ball.vy > 0.0 && ball.y >= line_y {
                 path.push((ball.x, ball.y));
@@ -2203,6 +2249,109 @@ mod tests {
             .events
             .iter()
             .any(|e| matches!(e, GameEvent::AsteroidExploded { .. })));
+    }
+
+    #[test]
+    fn an_asteroid_blast_hits_every_destructible_brick_in_range_once() {
+        let mut game = playing_game();
+        game.bricks = vec![
+            test_brick_at(400.0, 300.0, BrickKind::Normal, 1, 10), // under it
+            test_brick_at(452.0, 300.0, BrickKind::Normal, 1, 20), // next door
+            test_brick_at(400.0, 322.0, BrickKind::Armored, 2, 30), // below
+            test_brick_at(348.0, 300.0, BrickKind::Indestructible, 1, 0),
+            test_brick_at(600.0, 300.0, BrickKind::Normal, 1, 40), // too far
+        ];
+        game.explode_asteroid(400.0, 300.0);
+
+        let at = |x: f32, y: f32| game.bricks.iter().find(|b| b.x == x && b.y == y);
+        assert!(
+            at(400.0, 300.0).is_none() && at(452.0, 300.0).is_none(),
+            "in range: gone"
+        );
+        assert_eq!(
+            at(400.0, 322.0).map(|b| b.hits_remaining),
+            Some(1),
+            "armored: one hit"
+        );
+        assert!(at(348.0, 300.0).is_some(), "indestructible: untouched");
+        assert!(at(600.0, 300.0).is_some(), "out of range: untouched");
+        assert_eq!(game.score, ASTEROID_SCORE + 10 + 20);
+        let destroyed = game
+            .events
+            .iter()
+            .filter(|e| matches!(e, GameEvent::BrickDestroyedAt { .. }))
+            .count();
+        assert_eq!(
+            destroyed, 2,
+            "each destroyed brick is announced, for the renderers"
+        );
+    }
+
+    #[test]
+    fn a_blast_that_takes_the_last_bricks_clears_the_level() {
+        let mut game = playing_game();
+        game.ball.attached = false;
+        game.ball.x = 100.0;
+        game.ball.y = 300.0;
+        game.ball.vy = -300.0;
+        let paddle = game.paddle;
+        // The level's only brick, right above where the paddle meets an
+        // asteroid: the paddle blows it up, the blast takes the brick.
+        game.bricks = vec![test_brick_at(
+            paddle.x,
+            paddle.top() - ASTEROID_RADIUS * 2.0 - 11.0,
+            BrickKind::Normal,
+            1,
+            10,
+        )];
+        game.asteroids.push(test_asteroid(
+            paddle.x,
+            paddle.top() - ASTEROID_RADIUS - 0.1,
+        ));
+        game.tick(&Input::default(), DT);
+        assert!(game.events.contains(&GameEvent::LevelCleared));
+        assert_eq!(game.level, 2);
+    }
+
+    #[test]
+    fn the_forecast_reproduces_a_blast_the_ball_sets_off() {
+        // A ball blowing up an asteroid among bricks, then coming down:
+        // the forecast must break the same bricks the game does to land
+        // where the game's ball lands.
+        let mut game = playing_game().with_features(Features::ALL);
+        game.asteroid_timer = f32::INFINITY; // no new asteroid mid-test
+        game.ball = Ball {
+            x: 300.0,
+            y: 250.0,
+            vx: 150.0,
+            vy: -260.0,
+            radius: BALL_RADIUS,
+            attached: false,
+            glued: None,
+        };
+        game.asteroids = vec![test_asteroid(360.0, 160.0)];
+        game.paddle.x = 60.0;
+        let line_y = game.paddle.top() - BALL_RADIUS;
+        let forecast =
+            forecast_crossing(&game.ball, &game.bricks, &game.asteroids, line_y, DT, 600)
+                .expect("it comes down within five seconds");
+        let bricks_before = game.bricks.len();
+        for step in 1..=forecast.ticks as usize {
+            game.tick(&Input::default(), DT);
+            if step < forecast.ticks as usize {
+                let (x, y) = forecast.path[step];
+                assert!(
+                    (x - game.ball.x).abs() < 1e-3 && (y - game.ball.y).abs() < 1e-3,
+                    "tick {step}: forecast ({x}, {y}), game ({}, {})",
+                    game.ball.x,
+                    game.ball.y
+                );
+            }
+        }
+        assert!(
+            game.bricks.len() + 2 <= bricks_before,
+            "the blast broke bricks"
+        );
     }
 
     #[test]

@@ -132,9 +132,13 @@ move.
   40 px/s with a sideways drift and wobble that flip at the walls. A ball
   touching one blows it up (+100) and bounces off it as off a round
   obstacle (velocity mirrored about the line between centers, speed
-  unchanged); the paddle touching one blows it up too (+100, harmless). One
-  that passes the paddle just leaves. A lost life or a new level clears
-  them.
+  unchanged); the paddle touching one blows it up too (+100, harmless). The
+  explosion hits every destructible brick within 40 px of the asteroid's
+  center (closest point of the brick) once, as a ball would: normal bricks
+  break (scored, and rolling their power-up drop), armored ones lose a hit,
+  indestructible ones are untouched; a blast that takes a level's last
+  bricks clears it. One that passes the paddle just leaves. A lost life or
+  a new level clears them.
 
 One rule applies whatever the features: **stall breaking**. After 10 s of
 flight with no ball touching the paddle, hitting a destructible brick or
