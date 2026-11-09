@@ -99,7 +99,8 @@ Module boundaries (the strict separation is the architectural point — don't bl
 - Fixed logical playfield 800×600; window resize scales/letterboxes, never changes physics.
 - Ball exit angle is a linear map from paddle-hit-offset to 30°–150°, clamped away from 90°±5° (no perfectly vertical trajectories); speed +4% per paddle hit, capped at 700 px/s.
 - Collision is AABB-vs-circle resolved against the nearest face; tunneling at max ball speed is prevented by substepping the tick — this needs a property-style test (random angles at 700 px/s never cross a 22 px brick uncaught), not just an implementation.
-- Exactly three power-ups: Widen (paddle ×1.5, 15s, timers refresh not stack-add), Slow (ball ×0.7 once, floored at launch speed), Multiball (2 extra balls; life lost only when the *last* ball drops). Do not add a fourth without updating the spec first.
+- Exactly four power-ups: Widen (paddle ×1.5, 15s, timers refresh not stack-add), Slow (ball ×0.7 once, floored at launch speed), Multiball (2 extra balls; life lost only when the *last* ball drops), Glue (ball sticks to the paddle, a Space press releases it). Do not add a fifth without updating the spec first.
+- Post-v1 additions (Glue, asteroids) sit behind `game::Features`; `--classic` turns them off and the pinned replay hash runs under `Features::V1`. See the spec's "Additions after v1".
 
 ## Conventions
 

@@ -27,7 +27,27 @@ autopilot: #15 level 1 -> left (confidence 0.29, 157 ms): below the confidence b
 | Layer | Decides | How often | Where |
 |---|---|---|---|
 | **Strategy** | which of five 160 px lanes to attack next | at every serve, and every N paddle hits (`--autopilot-every N`, default 1) | `src/autopilot/advisor.rs` (model) or `board.rs` (heuristic) |
-| **Piloting** | where the ball meets the paddle, which hit offset sends it to the lane, whether a power-up catch is safe | every tick | `src/autopilot/pilot.rs` |
+| **Piloting** | where the ball meets the paddle, which hit offset sends it to the lane, when to release a glued ball, whether a power-up catch is safe | every tick | `src/autopilot/pilot.rs`, `game::forecast_crossing` |
+
+Where the ball will meet the paddle comes from `game::forecast_crossing`.
+It runs the ball forward tick by tick through the simulation's own
+collision functions: walls, bricks (which break or lose a hit as they
+would) and asteroids (which drift and blow up as they would). The forecast
+is replayed a tick at a time while the ball stays on it, and recomputed
+only when something it left out happens (the paddle, a new asteroid,
+another ball breaking a brick first), so it costs about one simulation per
+rally. A ball still among the bricks after three seconds gets a
+straight-line guess, and the pilot aims only on an exact forecast. This
+replaced a straight-line estimate that ignored bricks. On level 3, where
+the ball rattles around inside the box before dropping out of the gate,
+that estimate sent the paddle after phantom landings, and it was where
+nearly every life was lost.
+
+A glued ball leaves with the velocity its paddle hit already gave it, from
+wherever the paddle carries it. The pilot moves the paddle so that launch
+point and angle line up with the target, then presses Space. If another
+ball is in flight it releases at once, because the paddle is needed under
+that one.
 
 The model is never asked to move the paddle. Moving it is geometry the
 simulation already defines: where a ball crosses the paddle line (walls
@@ -73,8 +93,13 @@ Otherwise the deterministic pick stands: the lane with the most exposed and
 remaining bricks, nearest the middle on a tie. After four paddle hits in a
 row with no brick broken, the shot is looping (typically between
 indestructible bricks and the paddle). The autopilot then overrides the
-model's lane, sets its answers aside until a brick breaks, and rotates lanes
-until something does. Setting the answers aside matters on level 3, whose
+model's lane, sets its answers aside until a brick breaks, and sweeps its
+aim across the whole field in golden-ratio steps until something does. The
+last bricks of a level are often reachable only by a bank shot no lane
+target describes, and an aim this precise would otherwise replay the same
+few trajectories. A ball caught in an orbit no shot can reach (inside level
+3's box, say) is the game's job, not the pilot's: the spec's stall-breaking
+rule turns it a few degrees per bounce after 10 s without progress. Setting the answers aside matters on level 3, whose
 bricks are reached only through a gate in its indestructible floor. A model
 that keeps naming a lane behind the wall would otherwise put the shot back
 into the loop on its very next answer. The consequence: the game plays the
@@ -83,16 +108,28 @@ where the shots go.
 
 ## Measured
 
-| Run | Three built-in levels won in | Lives lost | Consultations |
-|---|---|---|---|
-| Heuristic, seeds 1/2/3/5/7/9/11/42 | 348–626 s of game time | 0–2 | — |
-| Heuristic, seed 42 | 510 s | 2 | — |
-| `jev-latest`, seed 42, blocking | 403 s | 0 | 277: 146 used, 32 below the bar, 111 set aside while looping, 0 failed; 139 ms mean |
+Heuristic only, 20 seeds per feature set, the three built-in levels
+(`cargo test --release -- --ignored --nocapture benchmark_`):
 
-Read this as a working integration, not as proof that the model plays
-better. On this seed the model-steered run won faster and without losing a
-life. But it's one run, and 111 of its answers named a lane the shot could
-not reach through level 3's gate, which the loop override caught. To
+| Features | Won | Lives lost (total over 20 games) | Game time to win, mean / max |
+|---|---|---|---|
+| v1 (`--classic`) | 20/20 | 1 | 406 s / 480 s |
+| Glue only | 20/20 | 2 | 438 s / 600 s |
+| Asteroids only | 20/20 | 4 | 452 s / 562 s |
+| Both (default) | 20/20 | 5 | 472 s / 683 s |
+
+Before the exact forecast and stall breaking, the same benchmark lost
+27–40 lives per feature set and won 12–18 of 20.
+
+| Model run | Three built-in levels won in | Lives lost | Consultations |
+|---|---|---|---|
+| `jev-latest`, seed 42, v1 rules, blocking | 403 s | 0 | 277: 146 used, 32 below the bar, 111 set aside while looping, 0 failed; 139 ms mean |
+| `jev-latest`, seed 42, Glue and asteroids on, exact forecast, blocking | 303 s | 0 | 156: 105 used, 51 below the bar, 0 set aside, 0 failed; 104 ms mean |
+
+Read the model runs as a working integration, not as proof that the model
+plays better. Each is one run. In the first, 111 answers named a lane the
+shot could not reach through level 3's gate, which the loop override
+caught. The second, with the exact forecast, never looped. To
 compare them properly, run both over many seeds and look at the spread.
 The live test below is the harness for that.
 
@@ -104,8 +141,9 @@ Every test is headless and runs in CI. The `typesafe` ones use
 - `pilot.rs`: intercept prediction through walls and the ceiling, aim
   checked against the simulation's own angle mapping, steering deadband.
 - `board.rs`: lane counts, exposure behind indestructible bricks, the map.
-- `mod.rs`: the heuristic wins the three built-in levels on three seeds and
-  the whole fixture levelset. A confident model lane is used, and a model
+- `mod.rs`: the heuristic wins the three built-in levels, Glue and
+  asteroids on, on three seeds, and the whole fixture levelset; it aims and
+  releases glued balls itself rather than waiting out the hold limit. A confident model lane is used, and a model
   stuck on an unreachable lane is set aside while it loops; a model below
   the bar never is; a silent model delays serves but never stops the game;
   `--autopilot-every` spaces out consultations.
