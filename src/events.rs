@@ -97,4 +97,30 @@ pub enum GameEvent {
         height: f32,
         kind: crate::levels::BrickKind,
     },
+    /// Something struck a brick: a ball, or a gun's bolt. The contact
+    /// itself, for presentation (`fx/`): the brick's rect (center x, y,
+    /// width, height), the striker's center at contact, the outward
+    /// normal of the face it came through, and the hits the brick has left
+    /// after it (0: it broke, and `BrickDestroyedAt` follows in the same
+    /// tick). Pushed for indestructible bricks too: their rebound is an
+    /// event with no other trace. No rule reads it.
+    BrickStruck {
+        rect: [f32; 4],
+        at: [f32; 2],
+        normal: [f32; 2],
+        kind: crate::levels::BrickKind,
+        hits_left: u8,
+        by: Striker,
+    },
+}
+
+/// What struck a brick (`GameEvent::BrickStruck`): each one's impact reads
+/// differently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Striker {
+    Ball,
+    MetalBall,
+    ExplosiveBall,
+    Laser,
+    SuperLaser,
 }

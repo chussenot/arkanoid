@@ -6,7 +6,7 @@
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
-use crate::events::{GameEvent, PowerUpKind};
+use crate::events::{GameEvent, PowerUpKind, Striker};
 use crate::levels::{self, BrickKind};
 use crate::levelset::{AuthoredDrop, ExternalBrickSpawn, ExternalLevel, GRID_WIDTH};
 
@@ -595,14 +595,55 @@ enum Strike {
     /// The ball touches no brick.
     Miss,
     /// It bounced off an indestructible brick.
-    Indestructible,
+    Indestructible(Contact),
     /// It hit a destructible brick. `destroyed` holds the bricks that
     /// broke, already removed (none on an armored brick's first hit);
     /// `blast` is where an explosive ball blew up.
     Hit {
+        contact: Contact,
         destroyed: Vec<Brick>,
         blast: Option<(f32, f32)>,
     },
+}
+
+/// Where a ball met a brick: the brick as the contact left it (its hits
+/// remaining already reduced), the ball's center, and the outward normal
+/// of the face it came through. Presentation reads it from
+/// `GameEvent::BrickStruck`; no rule depends on it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Contact {
+    brick: Brick,
+    at: [f32; 2],
+    normal: [f32; 2],
+}
+
+impl Contact {
+    fn event(self, by: Striker) -> GameEvent {
+        let b = self.brick;
+        GameEvent::BrickStruck {
+            rect: [b.x, b.y, b.width, b.height],
+            at: self.at,
+            normal: self.normal,
+            kind: b.kind,
+            hits_left: b.hits_remaining,
+            by,
+        }
+    }
+}
+
+/// The outward normal of the face a ball came through, from its velocity
+/// before (`vx`, `vy`) and after the contact: the axis that flipped, on
+/// the side the ball left toward. A ball that passed through (Metal)
+/// flipped nothing: the face it entered, against its motion.
+fn face_normal(before: (f32, f32), ball: &Ball) -> [f32; 2] {
+    if ball.vx != before.0 && ball.vx.signum() != before.0.signum() {
+        [ball.vx.signum(), 0.0]
+    } else if ball.vy != before.1 && ball.vy.signum() != before.1.signum() {
+        [0.0, ball.vy.signum()]
+    } else {
+        let speed = before.0.hypot(before.1).max(f32::EPSILON);
+        [-before.0 / speed, -before.1 / speed]
+    }
 }
 
 /// Resolves `ball` against the first brick it overlaps, under the balls'
@@ -622,18 +663,39 @@ fn strike_brick(bricks: &mut Vec<Brick>, ball: &mut Ball, mode: Option<BallMode>
         return Strike::Miss;
     };
     let struck = bricks[index];
+    let before = (ball.vx, ball.vy);
+    let contact = |ball: &Ball, brick: Brick| Contact {
+        brick,
+        at: [ball.x, ball.y],
+        normal: face_normal(before, ball),
+    };
     if struck.kind == BrickKind::Indestructible {
         reflect_off_brick_face(ball, &struck);
-        return Strike::Indestructible;
+        return Strike::Indestructible(contact(ball, struck));
     }
     match mode {
         Some(BallMode::Metal) => Strike::Hit {
+            contact: contact(
+                ball,
+                Brick {
+                    hits_remaining: 0,
+                    ..struck
+                },
+            ),
             destroyed: vec![bricks.remove(index)],
             blast: None,
         },
         Some(BallMode::Explosive) => {
             reflect_off_brick_face(ball, &struck);
+            let contact = contact(
+                ball,
+                Brick {
+                    hits_remaining: struck.hits_remaining.saturating_sub(1),
+                    ..struck
+                },
+            );
             Strike::Hit {
+                contact,
                 destroyed: blast_bricks(bricks, struck.x, struck.y, BALL_BLAST_RADIUS),
                 blast: Some((struck.x, struck.y)),
             }
@@ -642,12 +704,14 @@ fn strike_brick(bricks: &mut Vec<Brick>, ball: &mut Ball, mode: Option<BallMode>
             reflect_off_brick_face(ball, &struck);
             let brick = &mut bricks[index];
             brick.hits_remaining = brick.hits_remaining.saturating_sub(1);
+            let contact = contact(ball, *brick);
             let destroyed = if brick.hits_remaining == 0 {
                 vec![bricks.remove(index)]
             } else {
                 Vec::new()
             };
             Strike::Hit {
+                contact,
                 destroyed,
                 blast: None,
             }
@@ -1360,11 +1424,24 @@ impl Game {
     /// one kind of brick hit that is not progress; see `STALL_SECS`).
     fn resolve_brick_collisions(&mut self, ball: &mut Ball) -> bool {
         let mode = self.ball_power.map(|power| power.mode);
+        let by = match mode {
+            None => Striker::Ball,
+            Some(BallMode::Metal) => Striker::MetalBall,
+            Some(BallMode::Explosive) => Striker::ExplosiveBall,
+        };
         match strike_brick(&mut self.bricks, ball, mode) {
             Strike::Miss => false,
-            Strike::Indestructible => true,
-            Strike::Hit { destroyed, blast } => {
+            Strike::Indestructible(contact) => {
+                self.events.push(contact.event(by));
+                true
+            }
+            Strike::Hit {
+                contact,
+                destroyed,
+                blast,
+            } => {
                 self.stall_secs = 0.0;
+                self.events.push(contact.event(by));
                 if let Some((x, y)) = blast {
                     self.events.push(GameEvent::BallExploded { x, y });
                 }
@@ -1699,7 +1776,18 @@ impl Game {
                 return bolt.kind == GunKind::SuperLaser;
             }
             while let Some(index) = self.bricks.iter().position(|b| bolt.touches_brick(b)) {
+                let by = match bolt.kind {
+                    GunKind::Laser => Striker::Laser,
+                    GunKind::SuperLaser => Striker::SuperLaser,
+                };
+                // A bolt flies straight up: it meets a brick's bottom face.
+                let mut contact = Contact {
+                    brick: self.bricks[index],
+                    at: [bolt.x, bolt.y - bolt.half_size[1]],
+                    normal: [0.0, 1.0],
+                };
                 if self.bricks[index].kind == BrickKind::Indestructible {
+                    self.events.push(contact.event(by));
                     return false;
                 }
                 self.stall_secs = 0.0;
@@ -1708,6 +1796,8 @@ impl Game {
                     GunKind::Laser => brick.hits_remaining.saturating_sub(1),
                     GunKind::SuperLaser => 0,
                 };
+                contact.brick = *brick;
+                self.events.push(contact.event(by));
                 if brick.hits_remaining == 0 {
                     let brick = self.bricks.remove(index);
                     self.on_brick_destroyed(brick);
