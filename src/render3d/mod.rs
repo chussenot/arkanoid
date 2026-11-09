@@ -1042,6 +1042,8 @@ pub struct Renderer3D {
     hud: Hud,
     /// `--autopilot` is playing; the HUD says so.
     autopilot: bool,
+    /// The best score the HUD shows, set by `main` (`set_record`).
+    record: hud::Record,
 }
 
 impl Renderer3D {
@@ -1362,6 +1364,7 @@ impl Renderer3D {
             powerup_spin_angle: 0.0,
             hud,
             autopilot,
+            record: hud::Record::default(),
         }
     }
 
@@ -1380,6 +1383,11 @@ impl Renderer3D {
     /// stream".
     pub fn ingest_tick_events(&mut self, events: &[GameEvent]) {
         ingest_brick_destroyed_events(&mut self.tumbling, events);
+    }
+
+    /// The best score to show from the next frame on (see `record.rs`).
+    pub fn set_record(&mut self, record: hud::Record) {
+        self.record = record;
     }
 
     /// Reconfigures the surface and depth buffer after a window resize.
@@ -1702,6 +1710,7 @@ impl Renderer3D {
                 game: curr,
                 autopilot: self.autopilot,
                 capsules: &capsules,
+                record: self.record,
             },
         );
 

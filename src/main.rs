@@ -9,6 +9,7 @@ mod hud;
 mod levels;
 mod levelset;
 mod palette;
+mod record;
 mod render;
 mod render3d;
 
@@ -52,6 +53,13 @@ impl AnyRenderer {
             cli::RendererKind::ThreeD => Self::ThreeD(Box::new(render3d::Renderer3D::new(
                 window, atlas, autopilot,
             ))),
+        }
+    }
+
+    fn set_record(&mut self, record: hud::Record) {
+        match self {
+            Self::Classic(r) => r.set_record(record),
+            Self::ThreeD(r) => r.set_record(record),
         }
     }
 
@@ -130,6 +138,11 @@ struct App {
     /// `--autopilot`: when set, it produces each tick's `Input` in place of
     /// the keyboard (Pause stays the player's).
     autopilot: Option<Autopilot>,
+    /// The stored best score (`record.rs`), `None` where no record is kept;
+    /// `new_best` while the end screen of a record-breaking run is up.
+    record: hud::Record,
+    /// Last frame's state, to catch the moment a run ends.
+    last_state: game::GameState,
 }
 
 impl App {
@@ -147,6 +160,8 @@ impl App {
             last_update: Instant::now(),
             render_alpha: 0.0,
             autopilot: None,
+            record: hud::Record::default(),
+            last_state: game::GameState::Menu,
         }
     }
 }
@@ -221,6 +236,7 @@ impl ApplicationHandler for App {
             } => self.set_input_key(physical_key, state),
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
+                    renderer.set_record(self.record);
                     renderer.render(
                         palette::LETTERBOX.clear(),
                         &self.render_prev,
@@ -280,10 +296,33 @@ impl ApplicationHandler for App {
         // One render per redraw regardless of how many ticks ran above --
         // this is what decouples the 120 Hz sim from the display's vsync.
         window.request_redraw();
+        self.update_record();
     }
 }
 
 impl App {
+    /// Keeps the best score: when a run ends (Game Over or Victory) with a
+    /// score above the stored best, store it and flag the end screen; clear
+    /// the flag when the next run starts. Autopilot runs show the record
+    /// but never set it (PRODUCT.md: honest about the machine).
+    fn update_record(&mut self) {
+        use game::GameState::{GameOver, Victory};
+        let state = self.game.state;
+        let ended = matches!(state, GameOver | Victory);
+        if ended && !matches!(self.last_state, GameOver | Victory) {
+            if let Some(best) = self.record.best {
+                if self.autopilot.is_none() && self.game.score > best {
+                    record::save(self.game.level_set(), self.game.score);
+                    self.record.best = Some(self.game.score);
+                    self.record.new_best = true;
+                }
+            }
+        } else if !ended {
+            self.record.new_best = false;
+        }
+        self.last_state = state;
+    }
+
     /// Updates the held-key `Input` state from one physical key transition.
     /// Bound per spec: paddle on Left/Right *and* A/D, launch on Space.
     /// Matched on `PhysicalKey`/`KeyCode` (key position) rather than the
@@ -429,6 +468,7 @@ fn main() {
     if let Some(set) = loaded_levelset {
         app.game.load_external_levels(set.levels);
     }
+    app.record.best = record::load(app.game.level_set());
     if args.autopilot {
         let autopilot = build_autopilot(args.autopilot_every.unwrap_or(1));
         println!("autopilot: {}", autopilot.describe());
