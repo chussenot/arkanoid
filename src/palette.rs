@@ -223,6 +223,37 @@ pub const ASTEROID: Rgb = hex(0x8B7F9A);
 /// An asteroid's explosion.
 pub const EXPLOSION: Rgb = hex(0xFFB55E);
 
+// -- kinetic effects: light (src/fx/, docs/design/kinetic-fx.md) ----------
+// Light, not objects: these color brief emissive effects (flashes, rings,
+// glints, sparks) drawn above 1.0, where the bloom takes them. Nothing the
+// player tracks wears them.
+
+/// The rally's light, one hue per step of the pentatonic scale the brick
+/// notes climb (`rally.rs`), root first: warm at the root, cooling as the
+/// run climbs. The upper octave reuses them, with a ring added.
+pub const FX_SCALE: [Rgb; 5] = [
+    hex(0xFFD58A),
+    hex(0xFFA474),
+    hex(0xFF7FAE),
+    hex(0xB59BFF),
+    hex(0x7CCBFF),
+];
+/// The light inside an armored brick's crack: hot, like the amber plate.
+pub const FX_CRACK: Rgb = hex(0xFFB347);
+/// A crack's own line, after its light has gone: a fissure.
+pub const FX_FISSURE: Rgb = hex(0x1A100A);
+/// An indestructible brick's rebound: cold, hard light.
+pub const FX_DEFLECT: Rgb = hex(0xC9E2FF);
+/// The white-hot core of a blast, before it turns to `EXPLOSION`.
+pub const FX_BLAST_CORE: Rgb = hex(0xFFF1D6);
+/// Sparks off a metal ball.
+pub const FX_SPARK: Rgb = hex(0xFFF4DC);
+
+/// The rally color for a step on the scale.
+pub fn rally(step: usize) -> Rgb {
+    FX_SCALE[step % FX_SCALE.len()]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -15,10 +15,11 @@ use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
 use crate::assets::{Atlas, SpriteId, UvRect, CAPSULE_SIZE};
-use crate::events::GameEvent;
+use crate::fx::gpu::{field_view_proj, FxGpu, Projection, ScreenMap, SCENE_FORMAT};
+use crate::fx::{FxFrame, Quality};
 use crate::game::{
-    Ball, BallMode, Brick, Game, GameState, GunKind, Paddle, ASTEROID_BLAST_RADIUS,
-    ASTEROID_RADIUS, BALL_BLAST_RADIUS, GATE_REACH_ABOVE_PADDLE, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
+    Ball, BallMode, Brick, Game, GameState, GunKind, Paddle, GATE_REACH_ABOVE_PADDLE,
+    PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
 };
 use crate::hud::{self, Hud, BAND_HEIGHT};
 use crate::levels::BrickKind;
@@ -122,10 +123,9 @@ const MAX_BRICKS: usize = 14 * 8;
 /// gameplay limit; `.take(N)` at the draw site is the enforcement.
 const MAX_EXTRA_BALLS: usize = 16;
 const MAX_POWERUPS: usize = 16;
-/// `game.rs` keeps at most 3 asteroids; these bound the instance buffer
-/// the same defensive way, explosions included (several can overlap).
+/// `game.rs` keeps at most 3 asteroids; this bounds the instance buffer
+/// the same defensive way.
 const MAX_ASTEROIDS: usize = 8;
-const MAX_EXPLOSIONS: usize = 8;
 /// `game.rs` caps bolts in flight at 16.
 const MAX_BOLTS: usize = 16;
 
@@ -156,11 +156,8 @@ const MAX_QUADS: usize = 2
     + MAX_EXTRA_BALLS
     + MAX_POWERUPS
     + MAX_ASTEROIDS
-    + MAX_EXPLOSIONS
     + MAX_BOLTS
     + 1 /* the Break gate */;
-
-const EXPLOSION_SECS: f32 = 0.35;
 
 /// The open Break gate: a bar this half-width down the right edge.
 const GATE_HALF_WIDTH: f32 = 3.0;
@@ -187,66 +184,6 @@ fn ball_tint(mode: Option<BallMode>) -> [f32; 4] {
 
 /// How strongly a capsule's hue tints the paddle while its effect lasts.
 const PADDLE_TINT_STRENGTH: f32 = 0.55;
-
-/// One explosion playing out, an asteroid's or an explosive ball's,
-/// render-side only: spawned from its `GameEvent` (what blew up is already
-/// gone from `Game` by then, so its spot comes from the event), aged by
-/// wall-clock time.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Explosion {
-    x: f32,
-    y: f32,
-    /// Radius at birth: the size of what blew up.
-    from: f32,
-    /// Radius at the end: the blast's reach.
-    to: f32,
-    age: f32,
-}
-
-impl Explosion {
-    /// Radius and alpha at its current age: grows from the size of what
-    /// blew up out to the blast radius, which shows what it reached, and
-    /// fades.
-    fn look(&self) -> (f32, f32) {
-        let t = (self.age / EXPLOSION_SECS).clamp(0.0, 1.0);
-        let radius = self.from + (self.to - self.from) * t;
-        (radius, 1.0 - t)
-    }
-}
-
-/// Adds one explosion per `AsteroidExploded` or `BallExploded` in
-/// `events`, up to the cap.
-fn ingest_explosions(explosions: &mut Vec<Explosion>, events: &[GameEvent]) {
-    for event in events {
-        let (x, y, from, to) = match *event {
-            GameEvent::AsteroidExploded { x, y } => (x, y, ASTEROID_RADIUS, ASTEROID_BLAST_RADIUS),
-            // From the struck brick's half-height: the blast starts inside
-            // the brick it centers on.
-            GameEvent::BallExploded { x, y } => (x, y, BALL_BLAST_START, BALL_BLAST_RADIUS),
-            _ => continue,
-        };
-        if explosions.len() < MAX_EXPLOSIONS {
-            explosions.push(Explosion {
-                x,
-                y,
-                from,
-                to,
-                age: 0.0,
-            });
-        }
-    }
-}
-
-/// An explosive ball's blast is first drawn this big.
-const BALL_BLAST_START: f32 = crate::levels::BRICK_HEIGHT / 2.0;
-
-/// Ages every explosion by `dt` seconds and drops the finished ones.
-fn step_explosions(explosions: &mut Vec<Explosion>, dt: f32) {
-    for explosion in explosions.iter_mut() {
-        explosion.age += dt;
-    }
-    explosions.retain(|e| e.age < EXPLOSION_SECS);
-}
 
 /// Picks a brick's sprite from its kind and remaining hits. Armored bricks
 /// are the one kind with two sprites: `hits_remaining` alone (no separate
@@ -408,10 +345,13 @@ fn vs_main(vert: VertexInput, inst: InstanceInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    var c = in.color;
     if in.textured > 0.5 {
-        return textureSample(atlas_tex, atlas_sampler, in.uv) * in.color;
+        c = textureSample(atlas_tex, atlas_sampler, in.uv) * in.color;
     }
-    return in.color;
+    // The scene target is HDR (`fx::gpu`); the world stays within the
+    // palette, so only effect light passes the bloom's 1.0 threshold.
+    return vec4<f32>(min(c.rgb, vec3<f32>(1.0)), c.a);
 }
 "#;
 
@@ -458,7 +398,7 @@ impl RenderState {
     /// draw a one-frame streak from off-screen back up to the paddle.
     /// Snapping to `curr` for that single frame instead is the simplest
     /// fix for what is otherwise a real (if small) visible glitch.
-    fn lerp(prev: &Self, curr: &Self, alpha: f32) -> Self {
+    pub fn lerp(prev: &Self, curr: &Self, alpha: f32) -> Self {
         let alpha = alpha.clamp(0.0, 1.0);
         let just_respawned = !prev.ball.attached && curr.ball.attached;
         Self {
@@ -496,6 +436,8 @@ pub struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
+    /// The same, drawing straight to the surface (`FxGpu::direct`).
+    direct_pipeline: wgpu::RenderPipeline,
     quad_vertex_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
     /// Sprite pixels this session is drawing with -- kept around so
@@ -539,8 +481,9 @@ pub struct Renderer {
     /// real elapsed `dt` the shake timer decays by (frames don't map 1:1 to
     /// fixed simulation ticks, so a tick-count-based timer would drift).
     last_frame_instant: Instant,
-    /// Asteroid explosions still playing; see `Explosion`.
-    explosions: Vec<Explosion>,
+    /// The kinetic effects' GPU side: scene target, effect geometry,
+    /// bloom and composite (`fx::gpu`).
+    fx: FxGpu,
 }
 
 impl Renderer {
@@ -555,7 +498,12 @@ impl Renderer {
     /// guarantees it's always a drawable atlas either way) -- uploaded once
     /// here as a texture the whole session's paddle/ball/brick quads sample
     /// from.
-    pub fn new(window: Arc<Window>, sprite_atlas: Atlas, autopilot: bool) -> Self {
+    pub fn new(
+        window: Arc<Window>,
+        sprite_atlas: Atlas,
+        autopilot: bool,
+        quality: Quality,
+    ) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::default();
         let surface = instance
@@ -617,52 +565,58 @@ impl Renderer {
             bind_group_layouts: &[Some(&sprite_atlas_bind_group_layout)],
             immediate_size: 0,
         });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("quad pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[
-                    Some(wgpu::VertexBufferLayout {
-                        array_stride: size_of::<Vertex>() as wgpu::BufferAddress,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &VERTEX_ATTRS,
-                    }),
-                    Some(wgpu::VertexBufferLayout {
-                        array_stride: size_of::<QuadInstance>() as wgpu::BufferAddress,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &INSTANCE_ATTRS,
-                    }),
-                ],
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    // Alpha blending, not `REPLACE`: every opaque quad
-                    // (paddle/ball/bricks) has alpha 1.0, so
-                    // blending produces the exact same pixels `REPLACE`
-                    // did -- but it's also what lets the semi-transparent
-                    // ball trail and explosions actually blend instead of just
-                    // painting over the scene as a solid rectangle.
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        // One pipeline per target: the HDR scene for frames with effect
+        // light or a shockwave, the surface itself for the rest (`fx::gpu`).
+        let pipeline_for = |format: wgpu::TextureFormat| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("quad pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[
+                        Some(wgpu::VertexBufferLayout {
+                            array_stride: size_of::<Vertex>() as wgpu::BufferAddress,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &VERTEX_ATTRS,
+                        }),
+                        Some(wgpu::VertexBufferLayout {
+                            array_stride: size_of::<QuadInstance>() as wgpu::BufferAddress,
+                            step_mode: wgpu::VertexStepMode::Instance,
+                            attributes: &INSTANCE_ATTRS,
+                        }),
+                    ],
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        // Alpha blending, not `REPLACE`: every opaque quad
+                        // (paddle/ball/bricks) has alpha 1.0, so
+                        // blending produces the exact same pixels `REPLACE`
+                        // did -- but it's also what lets the semi-transparent
+                        // ball trail and explosions actually blend instead of just
+                        // painting over the scene as a solid rectangle.
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let pipeline = pipeline_for(SCENE_FORMAT);
+        let direct_pipeline = pipeline_for(config.format);
 
         let quad_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("quad vertices"),
@@ -678,7 +632,14 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
-        let hud = Hud::new(&device, &queue, config.format);
+        let hud = Hud::new(&device, &queue, config.format, SCENE_FORMAT);
+        let fx = FxGpu::new(
+            &device,
+            config.format,
+            (config.width, config.height),
+            Projection::Field,
+            quality,
+        );
 
         Self {
             surface,
@@ -686,6 +647,7 @@ impl Renderer {
             queue,
             config,
             pipeline,
+            direct_pipeline,
             quad_vertex_buffer,
             instance_buffer,
             sprite_atlas,
@@ -701,7 +663,7 @@ impl Renderer {
             prev_score: 0,
             shake_remaining: 0.0,
             last_frame_instant: Instant::now(),
-            explosions: Vec::new(),
+            fx,
         }
     }
 
@@ -813,6 +775,8 @@ impl Renderer {
         self.config.width = new_size.width;
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
+        self.fx
+            .resize(&self.device, (new_size.width, new_size.height));
     }
 
     /// Clears the surface to `clear_color`, then draws the paddle, ball, and
@@ -828,14 +792,6 @@ impl Renderer {
     /// interpolation -- a level transition (bricks cleared, the next
     /// level's grid loaded) is just `curr.bricks` already being a different
     /// `Vec` by the time this runs; there's no separate state to reconcile.
-    /// Reads one tick's events before `main.rs` drains them. The rest of
-    /// this renderer's juice is diffed from `Game` state (see the
-    /// "-- juice --" comment), but an exploded asteroid leaves no state
-    /// behind to diff: it is only in the event.
-    pub fn ingest_tick_events(&mut self, events: &[GameEvent]) {
-        ingest_explosions(&mut self.explosions, events);
-    }
-
     /// The best score to show from the next frame on (see `record.rs`).
     pub fn set_record(&mut self, record: hud::Record) {
         self.record = record;
@@ -853,12 +809,79 @@ impl Renderer {
         self.sound = label;
     }
 
+    /// Draws one frame to the window's surface and presents it.
     pub fn render(
         &mut self,
         clear_color: wgpu::Color,
         prev: &RenderState,
         curr: &Game,
         alpha: f32,
+        fx: &FxFrame,
+    ) {
+        let surface_texture = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(t)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+            // Surface config no longer matches the window; reconfigure and
+            // pick it up next frame instead of presenting a stale frame.
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                self.surface.configure(&self.device, &self.config);
+                return;
+            }
+            // Transient: nothing to draw to right now, try again next frame.
+            wgpu::CurrentSurfaceTexture::Timeout
+            | wgpu::CurrentSurfaceTexture::Occluded
+            | wgpu::CurrentSurfaceTexture::Validation => return,
+        };
+
+        let view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.render_into(clear_color, prev, curr, alpha, fx, &view);
+        self.queue.present(surface_texture);
+    }
+
+    /// The same frame into an offscreen texture, waiting for the GPU to
+    /// finish it: for `src/bin/bench_render3d.rs`, which times real work
+    /// with no swapchain pacing in the loop (see `Renderer3D`'s twin).
+    #[allow(dead_code)]
+    pub fn render_offscreen_for_bench(
+        &mut self,
+        clear_color: wgpu::Color,
+        prev: &RenderState,
+        curr: &Game,
+        alpha: f32,
+        fx: &FxFrame,
+    ) {
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("render offscreen bench target"),
+            size: wgpu::Extent3d {
+                width: self.config.width.max(1),
+                height: self.config.height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.render_into(clear_color, prev, curr, alpha, fx, &view);
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("device poll failed");
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_into(
+        &mut self,
+        clear_color: wgpu::Color,
+        prev: &RenderState,
+        curr: &Game,
+        alpha: f32,
+        fx: &FxFrame,
+        view: &wgpu::TextureView,
     ) {
         let drawn = RenderState::lerp(prev, &RenderState::from(curr), alpha);
 
@@ -868,7 +891,6 @@ impl Renderer {
         let now = Instant::now();
         let dt = now.duration_since(self.last_frame_instant).as_secs_f32();
         self.last_frame_instant = now;
-        step_explosions(&mut self.explosions, dt);
 
         let score_increased = curr.score > self.prev_score;
         self.prev_score = curr.score;
@@ -892,7 +914,11 @@ impl Renderer {
         // (`menu.rs`), with no brick broken: no diff either.
         let level_changed = curr.level != self.prev_level || curr.state == GameState::Menu;
         self.prev_level = curr.level;
-        let (hit_flash, destroyed_ghosts) = if level_changed {
+        // With the kinetic effects on, impact light is theirs (`fx/`): these
+        // one-frame white flashes are the fallback for `BRYX_FX=off`, not
+        // a second flash stacked on the first.
+        let legacy = self.fx.quality() == Quality::Off;
+        let (hit_flash, destroyed_ghosts) = if level_changed || !legacy {
             (Vec::new(), Vec::new())
         } else {
             (
@@ -913,7 +939,6 @@ impl Renderer {
                 + curr.extra_balls.len().min(MAX_EXTRA_BALLS)
                 + curr.powerups.len().min(MAX_POWERUPS)
                 + curr.asteroids.len().min(MAX_ASTEROIDS)
-                + self.explosions.len()
                 + curr.bolts.len().min(MAX_BOLTS)
                 + 1,
         );
@@ -1058,15 +1083,6 @@ impl Renderer {
                 palette::ASTEROID.linear(),
             )
         }));
-        instances.extend(self.explosions.iter().map(|explosion| {
-            let (radius, alpha) = explosion.look();
-            QuadInstance::new_textured(
-                shaken(explosion.x, explosion.y),
-                [radius, radius],
-                ball_uv,
-                palette::EXPLOSION.linear_alpha(alpha),
-            )
-        }));
 
         self.queue
             .write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instances));
@@ -1087,36 +1103,39 @@ impl Renderer {
             },
         );
 
-        let surface_texture = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(t)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
-            // Surface config no longer matches the window; reconfigure and
-            // pick it up next frame instead of presenting a stale frame.
-            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                self.surface.configure(&self.device, &self.config);
-                return;
-            }
-            // Transient: nothing to draw to right now, try again next frame.
-            wgpu::CurrentSurfaceTexture::Timeout
-            | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Validation => return,
-        };
-
-        let view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame encoder"),
             });
+        // The effects follow the field's rect on the surface, like the
+        // world: the same letterbox, so a resize or a HiDPI scale moves
+        // them with everything else.
+        let (fx_x, fx_y, fx_w, fx_h) = self.hud.letterbox().field_viewport();
+        let project = |p: [f32; 2], _h: f32| {
+            Some([
+                fx_x + p[0] / PLAYFIELD_WIDTH * fx_w,
+                fx_y + p[1] / PLAYFIELD_HEIGHT * fx_h,
+            ])
+        };
+        let scale = |_p: [f32; 2], _h: f32| fx_w / PLAYFIELD_WIDTH;
+        let map = ScreenMap {
+            surface: (self.config.width, self.config.height),
+            field: (fx_x, fx_y, fx_w, fx_h),
+            project: &project,
+            scale: &scale,
+        };
+        self.fx.prepare(&self.queue, fx, field_view_proj(), &map);
+        let direct = self.fx.direct();
         {
-            // Scoped: the render pass borrows `encoder` and must be dropped
-            // (ending the pass) before `encoder.finish()` below.
+            // The scene: band and field ground, then the world inside the
+            // field's letterboxed rect, then the effects' geometry over it,
+            // into the HDR target, or straight onto the surface on a frame
+            // with nothing to post-process (`fx::gpu`).
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("quad pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: self.fx.scene_view(view),
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -1129,20 +1148,48 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            // Band and field ground, then the world inside the field's
-            // letterboxed rect, then the HUD over it (see `hud.rs`).
-            self.hud.draw_backdrop(&mut pass);
+            self.hud.draw_backdrop(&mut pass, direct);
             let (x, y, w, h) = self.hud.letterbox().field_viewport();
             pass.set_viewport(x, y, w, h, 0.0, 1.0);
-            pass.set_pipeline(&self.pipeline);
+            pass.set_pipeline(if direct {
+                &self.direct_pipeline
+            } else {
+                &self.pipeline
+            });
             pass.set_bind_group(0, &self.sprite_atlas_bind_group, &[]);
             pass.set_vertex_buffer(0, self.quad_vertex_buffer.slice(..));
             pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             pass.draw(0..QUAD_VERTICES.len() as u32, 0..instances.len() as u32);
+            self.fx.draw_geometry(&mut pass);
+            if direct {
+                // Nothing to post-process: the HUD goes on in the same
+                // pass, one pass for the whole frame, as before effects.
+                self.hud.draw_overlay(&mut pass);
+            }
+        }
+        if !direct {
+            // Bloom and shockwaves, scene to surface; then the HUD on top,
+            // never post-processed.
+            self.fx.finish(&mut encoder, view);
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("hud pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
             self.hud.draw_overlay(&mut pass);
         }
         self.queue.submit(std::iter::once(encoder.finish()));
-        self.queue.present(surface_texture);
         // Reclaims glyph atlas space for text that stopped being drawn.
         self.hud.trim();
     }
@@ -1372,35 +1419,6 @@ mod tests {
         // The paddle (unaffected by the respawn) still interpolates
         // normally -- the snap is ball-specific, not a whole-frame freeze.
         assert!((drawn.paddle.x - 400.0).abs() < 1e-4);
-    }
-
-    #[test]
-    fn each_explosion_grows_from_what_blew_up_to_its_own_blast_reach() {
-        let mut explosions = Vec::new();
-        ingest_explosions(
-            &mut explosions,
-            &[
-                GameEvent::AsteroidExploded { x: 1.0, y: 2.0 },
-                GameEvent::BrickDestroyed,
-                GameEvent::BallExploded { x: 3.0, y: 4.0 },
-            ],
-        );
-        assert_eq!(explosions.len(), 2);
-        let ends = |e: &Explosion| {
-            let start = e.look().0;
-            let end = Explosion {
-                age: EXPLOSION_SECS,
-                ..*e
-            }
-            .look()
-            .0;
-            (start, end)
-        };
-        assert_eq!(
-            ends(&explosions[0]),
-            (ASTEROID_RADIUS, ASTEROID_BLAST_RADIUS)
-        );
-        assert_eq!(ends(&explosions[1]), (BALL_BLAST_START, BALL_BLAST_RADIUS));
     }
 
     #[test]

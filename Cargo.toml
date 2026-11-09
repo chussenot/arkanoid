@@ -30,6 +30,14 @@ winit = "0.30.13"
 # convention wrong. Used only by render3d/ -- the classic 2D renderer has
 # no matrices to justify pulling this in for itself.
 glam = "0.33.3"
+# The kinetic effects (src/fx/, docs/design/kinetic-fx.md) tessellate the
+# shapes a quad cannot be: crack paths stroked with joins and caps from a
+# real impact point, the concave fracture pieces cut along those cracks,
+# arcs and rings with exact widths. Only the tessellator (and the path and
+# geometry crates it re-exports): pure Rust, CPU-side, no GPU coupling, so
+# it cannot clash with wgpu. Rectangles and lines stay on the quad fast
+# path; Lyon builds only what needs a path.
+lyon_tessellation = "1.0.23"
 
 # --- autopilot (src/autopilot/) ---------------------------------------------
 # Off by default so a fresh clone builds with the spec's dependency budget
@@ -50,6 +58,15 @@ audio = ["dep:cpal", "dep:cc"]
 # decoding or engine of its own. On Linux it needs libasound2-dev.
 version = "0.17.3"
 optional = true
+
+[build-dependencies.wesl]
+# The effects' shaders are WESL modules (src/shaders/): shared color,
+# glow, distortion and noise functions imported by the geometry, bloom and
+# composite shaders instead of being pasted or `format!`ed together.
+# build.rs compiles them to plain WGSL in OUT_DIR (unused functions
+# stripped), so the game itself carries no WESL code at run time and the
+# output is independent of the wgpu version. Needs Rust 1.97.1 or later.
+version = "0.6.0"
 
 [build-dependencies.cc]
 # Finds the platform's C compiler for build.rs, which builds the Electric

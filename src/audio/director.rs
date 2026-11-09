@@ -22,6 +22,7 @@
 use crate::events::{GameEvent, PowerUpKind};
 use crate::game::{Game, GameState, GunKind, LevelSetKind, PLAYFIELD_WIDTH};
 use crate::levels::BrickKind;
+use crate::rally::Rally;
 
 use super::cues::{Cue, LEVEL_TRACKS};
 use super::mixer::Command;
@@ -69,7 +70,8 @@ impl SoundMode {
 }
 
 /// The E minor pentatonic scale, in semitones above the brick cue's E5.
-const PENTATONIC: [f32; 10] = [0.0, 3.0, 5.0, 7.0, 10.0, 12.0, 15.0, 17.0, 19.0, 22.0];
+const PENTATONIC: [f32; crate::rally::STEPS] =
+    [0.0, 3.0, 5.0, 7.0, 10.0, 12.0, 15.0, 17.0, 19.0, 22.0];
 /// Brick sounds per tick at most: an explosion breaking eight bricks at
 /// once is one chord, not eight pops stacked into noise.
 const MAX_BRICK_SOUNDS_PER_TICK: usize = 3;
@@ -155,8 +157,10 @@ pub struct Director {
     last_state: Option<GameState>,
     last_music: Option<Option<Cue>>,
     /// Bricks broken since the ball last left the paddle: the rally's
-    /// place on the scale.
-    combo: usize,
+    /// place on the scale, counted as the effects layer counts it.
+    rally: Rally,
+    /// This tick's breaks as (event index, step), reused tick to tick.
+    steps: Vec<(usize, usize)>,
     /// Armored bricks still on their first hit, by position, to hear the
     /// hit that cracks one (no event carries it).
     intact_armor: Vec<(f32, f32)>,
@@ -174,7 +178,8 @@ impl Director {
             playlist: shuffled_playlist(seed),
             last_state: None,
             last_music: None,
-            combo: 0,
+            rally: Rally::default(),
+            steps: Vec::new(),
             intact_armor: Vec::new(),
             level: 0,
             ball_attached: false,
@@ -186,8 +191,13 @@ impl Director {
     /// state or music since the last tick.
     pub fn observe(&mut self, game: &Game, events: &[GameEvent]) -> Vec<Command> {
         let mut out = Vec::new();
+        let mut steps = std::mem::take(&mut self.steps);
+        steps.clear();
+        self.rally
+            .observe(game, events, |i, step| steps.push((i, step)));
         self.transitions(game, &mut out);
-        self.events(game, events, &mut out);
+        self.events(game, events, &steps, &mut out);
+        self.steps = steps;
         self.armor(game, &mut out);
         self.launch(game, &mut out);
         let mut music = music_for(game, &self.playlist);
@@ -224,7 +234,6 @@ impl Director {
                     out.push(Command::CutHeld);
                     out.push(play(Cue::Select, 0.55, PLAYFIELD_WIDTH / 2.0));
                     out.push(Command::MusicLevel(1.0));
-                    self.combo = 0;
                 }
                 // Q, from the pause or an end screen, back to the menu: the
                 // same clean cut, and the pause's dimming lifted for the
@@ -233,7 +242,6 @@ impl Director {
                     out.push(Command::CutHeld);
                     out.push(play(Cue::Select, 0.5, PLAYFIELD_WIDTH / 2.0));
                     out.push(Command::MusicLevel(1.0));
-                    self.combo = 0;
                 }
                 _ => {}
             }
@@ -247,7 +255,13 @@ impl Director {
         self.last_state = Some(state);
     }
 
-    fn events(&mut self, game: &Game, events: &[GameEvent], out: &mut Vec<Command>) {
+    fn events(
+        &mut self,
+        game: &Game,
+        events: &[GameEvent],
+        steps: &[(usize, usize)],
+        out: &mut Vec<Command>,
+    ) {
         let paddle_x = game.paddle.x;
         let has = |want: &GameEvent| events.iter().any(|e| e == want);
         let run_over = has(&GameEvent::GameOver);
@@ -256,11 +270,11 @@ impl Director {
         let mut bricks = 0;
         // Several balls can blow up in one tick: one blast is heard.
         let mut ball_blast = false;
-        for event in events {
+        for (i, event) in events.iter().enumerate() {
             match *event {
                 GameEvent::BrickDestroyedAt { x, .. } => {
-                    let degree = PENTATONIC[self.combo.min(PENTATONIC.len() - 1)];
-                    self.combo += 1;
+                    let step = steps.iter().find(|&&(j, _)| j == i).map_or(0, |&(_, s)| s);
+                    let degree = PENTATONIC[step];
                     if bricks < MAX_BRICK_SOUNDS_PER_TICK {
                         out.push(pitched(Cue::Brick, 0.6, x, semitones(degree)));
                     }
@@ -272,7 +286,6 @@ impl Director {
                     let speed = ball.vx.hypot(ball.vy);
                     let t = ((speed - 300.0) / 400.0).clamp(0.0, 1.0);
                     out.push(pitched(Cue::Paddle, 0.65, paddle_x, semitones(3.0 * t)));
-                    self.combo = 0;
                 }
                 GameEvent::GunFired(GunKind::Laser) => {
                     out.push(play(Cue::Laser, 0.28, paddle_x));
@@ -310,13 +323,11 @@ impl Director {
                 }
                 GameEvent::LifeLost if !run_over => {
                     out.push(stinger(Cue::LifeLost, 0.7, 1.6));
-                    self.combo = 0;
                 }
                 // A warp skips the level: its whoosh is the transition, and
                 // the fanfare is for a level cleared brick by brick.
                 GameEvent::LevelCleared if !won && !warped => {
                     out.push(stinger(Cue::LevelClear, 0.7, 2.7));
-                    self.combo = 0;
                 }
                 // The run's music fades out under these; the duck keeps its
                 // tail from sounding over their first notes.
@@ -357,7 +368,6 @@ impl Director {
         let attached = game.ball.attached;
         if self.ball_attached && !attached && game.state == GameState::Playing {
             out.push(play(Cue::Launch, 0.4, game.paddle.x));
-            self.combo = 0;
             self.served_level = Some(game.level);
         }
         self.ball_attached = attached;
