@@ -95,6 +95,16 @@ of playing a set's full level list top to bottom, it samples 10 random
 levels from it for a quicker session. Either way, completion is tracked
 per set, keyed by the same path you passed to `--levelset`.
 
+![Twelve of the 3,435 levels in the fetched levelsets, as the game renders them](docs/levelsets-mosaic.png)
+
+Twelve of the 3,435 levels in the 136 fetched sets, rendered by this game
+(set name and level number under each). The layouts are the LBreakoutHD
+levelset authors' work (GPLv3, credited in `ATTRIBUTION`). Regenerate the
+image, or render other levels, with `scripts/levelset-mosaic.sh [OUT.png]
+[SET:LEVEL ...]` after a release build. It plays each level on
+`--autopilot` and screenshots it, so it needs an X display, and starts
+Xvfb when there is none.
+
 ## Screenshots
 
 Every entity draws from the same `Atlas` layout (`src/assets.rs`); the only

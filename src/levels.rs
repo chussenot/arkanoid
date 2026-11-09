@@ -76,14 +76,16 @@ pub const LEVEL_2: &[&str] = &[
 ];
 
 /// Level 3: indestructible bricks shape a corridor — ceiling/floor walls,
-/// side walls, and a clear lane (row 3) the ball can travel through.
+/// side walls, and a clear lane (row 3) the ball can travel through. The
+/// floor has a four-brick gate in the middle: the only way in, so every
+/// destructible brick is reached through it.
 pub const LEVEL_3: &[&str] = &[
     "XXXXXXXXXXXXXX",
     "X111111111111X",
     "X122222222221X",
     "X1..........1X",
     "X111111111111X",
-    "XXXXXXXXXXXXXX",
+    "XXXXX....XXXXX",
 ];
 
 /// All built-in levels, in play order.
@@ -128,6 +130,18 @@ mod tests {
         let spawns = parse_level(&[LEVEL_3[0]]);
         assert_eq!(spawns.len(), 14);
         assert!(spawns.iter().all(|b| b.kind == BrickKind::Indestructible));
+    }
+
+    #[test]
+    fn level_3_floor_has_a_gate_into_the_box() {
+        // Without it the box is closed on all four sides and its
+        // destructible bricks can never be hit, so the level (and the game)
+        // could not be won.
+        let floor = parse_level(&[LEVEL_3[LEVEL_3.len() - 1]]);
+        assert_eq!(floor.len(), 10);
+        assert!(floor.iter().all(|b| b.kind == BrickKind::Indestructible));
+        let gate: Vec<f32> = (5..9).map(|col| col as f32 * BRICK_WIDTH).collect();
+        assert!(floor.iter().all(|b| !gate.contains(&b.x)));
     }
 
     #[test]
