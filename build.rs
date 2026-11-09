@@ -41,8 +41,24 @@ include!("src/audio/mulaw.rs");
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    compile_shaders();
     #[cfg(feature = "audio")]
     render_cues();
+}
+
+/// The effects' WESL shaders (`src/shaders/`), each entry module compiled
+/// with its imports to one plain WGSL file in OUT_DIR, which `fx/gpu.rs`
+/// `include_str!`s. Functions no entry point uses are stripped. A WESL
+/// error fails the build with the compiler's own diagnostic.
+fn compile_shaders() {
+    println!("cargo:rerun-if-changed=src/shaders");
+    for entry in ["fx_geometry", "bloom", "composite"] {
+        let compiled = wesl::Compiler::default()
+            .compile(format!("src/shaders/{entry}.wesl"))
+            .inspect_err(|e| eprintln!("{e}"))
+            .unwrap_or_else(|_| panic!("WESL: src/shaders/{entry}.wesl did not compile"));
+        compiled.write_artifact(entry);
+    }
 }
 
 #[cfg(feature = "audio")]

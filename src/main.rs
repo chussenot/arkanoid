@@ -5,6 +5,7 @@ mod audio;
 mod autopilot;
 mod cli;
 mod events;
+mod fx;
 mod game;
 mod hud;
 mod levels;
@@ -48,13 +49,19 @@ enum AnyRenderer {
 impl AnyRenderer {
     /// Both renderers draw their sprites from the same `atlas` (procedural
     /// or `--assets`), so a brick kind looks the same through either lens.
-    fn new(kind: cli::RendererKind, window: Arc<Window>, atlas: Atlas, autopilot: bool) -> Self {
+    fn new(
+        kind: cli::RendererKind,
+        window: Arc<Window>,
+        atlas: Atlas,
+        autopilot: bool,
+        quality: fx::Quality,
+    ) -> Self {
         match kind {
             cli::RendererKind::Classic => {
-                Self::Classic(Box::new(Renderer::new(window, atlas, autopilot)))
+                Self::Classic(Box::new(Renderer::new(window, atlas, autopilot, quality)))
             }
             cli::RendererKind::ThreeD => Self::ThreeD(Box::new(render3d::Renderer3D::new(
-                window, atlas, autopilot,
+                window, atlas, autopilot, quality,
             ))),
         }
     }
@@ -87,22 +94,27 @@ impl AnyRenderer {
         }
     }
 
-    fn render(&mut self, clear_color: wgpu::Color, prev: &RenderState, curr: &Game, alpha: f32) {
+    fn render(
+        &mut self,
+        clear_color: wgpu::Color,
+        prev: &RenderState,
+        curr: &Game,
+        alpha: f32,
+        fx: &fx::FxFrame,
+    ) {
         match self {
-            Self::Classic(r) => r.render(clear_color, prev, curr, alpha),
-            Self::ThreeD(r) => r.render(clear_color, prev, curr, alpha),
+            Self::Classic(r) => r.render(clear_color, prev, curr, alpha, fx),
+            Self::ThreeD(r) => r.render(clear_color, prev, curr, alpha, fx),
         }
     }
 
     /// Forwards one tick's `GameEvent`s to the renderer before
     /// `about_to_wait` drains `Game::events` for that tick (see events.rs's
-    /// drain contract). Both renderers need them for effects whose subject
-    /// is already gone from `Game` by then: a destroyed brick's tumble
-    /// (3D only) and an asteroid's explosion (both).
+    /// drain contract). The 3D renderer's destroyed bricks tumble from
+    /// them; every other effect is the shared `fx::FxSystem`'s.
     fn ingest_tick_events(&mut self, events: &[GameEvent]) {
-        match self {
-            Self::Classic(r) => r.ingest_tick_events(events),
-            Self::ThreeD(r) => r.ingest_tick_events(events),
+        if let Self::ThreeD(r) = self {
+            r.ingest_tick_events(events);
         }
     }
 }
@@ -160,6 +172,11 @@ struct App {
     record: hud::Record,
     /// Last frame's state, to catch the moment a run ends.
     last_state: game::GameState,
+    /// The kinetic effects (`fx/`): fed each tick's events, built each
+    /// frame, drawn by whichever renderer runs.
+    fx: fx::FxSystem,
+    /// When `fx` last advanced, for its wall-clock ages.
+    fx_clock: Instant,
     /// The menu's mode picker (`menu.rs`): what the next run plays.
     menu: menu::Menu,
     /// `menu` as the HUD draws it, rebuilt whenever it or a record changes.
@@ -191,6 +208,8 @@ impl App {
             record: hud::Record::default(),
             last_state: game::GameState::Menu,
             audio: None,
+            fx: fx::FxSystem::new(fx::Quality::from_env()),
+            fx_clock: Instant::now(),
             menu: menu::Menu::new(Vec::new(), false),
             menu_view: hud::MenuView::default(),
             best_campaign: None,
@@ -273,6 +292,7 @@ impl ApplicationHandler for App {
             Arc::clone(&window),
             self.atlas.clone(),
             self.autopilot.is_some(),
+            self.fx.quality(),
         ));
         self.window = Some(window);
         self.last_update = Instant::now();
@@ -338,11 +358,23 @@ impl ApplicationHandler for App {
                     renderer.set_record(self.record);
                     renderer.set_sound(self.audio.as_ref().and_then(audio::Audio::label));
                     renderer.set_menu(&self.menu_view);
+                    let now = Instant::now();
+                    let dt = now.duration_since(self.fx_clock).as_secs_f32();
+                    self.fx_clock = now;
+                    // The streaks follow the ball where it is drawn, between
+                    // ticks, not where the last tick left it.
+                    let drawn = RenderState::lerp(
+                        &self.render_prev,
+                        &RenderState::from(&self.game),
+                        self.render_alpha,
+                    );
+                    let frame = self.fx.update(dt, &self.game, &drawn.ball);
                     renderer.render(
                         palette::LETTERBOX.clear(),
                         &self.render_prev,
                         &self.game,
                         self.render_alpha,
+                        frame,
                     );
                 }
             }
@@ -382,10 +414,19 @@ impl ApplicationHandler for App {
             // consumer yet (later milestone); events are still drained
             // right after so they never pile up across ticks, per the
             // contract documented in events.rs.
-            if let Some(renderer) = &mut self.renderer {
-                renderer.ingest_tick_events(&self.game.events);
+            // The 3D renderer's tumbling bricks are the fallback when the
+            // effects are off: with them on, `fx` breaks the brick (and
+            // the asteroid) in both lenses, and a brick does not both
+            // tumble away whole and shatter.
+            if self.fx.quality() == fx::Quality::Off {
+                if let Some(renderer) = &mut self.renderer {
+                    renderer.ingest_tick_events(&self.game.events);
+                }
             }
-            // Sound reads the same tick's events, before they are drained.
+            // So do the effects, and the sound, before they are drained:
+            // the same events, the same tick, so a brick's note and its
+            // light start together.
+            self.fx.observe(&self.game, &self.game.events);
             if let Some(audio) = &mut self.audio {
                 audio.observe(&self.game, &self.game.events);
             }

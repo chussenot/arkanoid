@@ -1094,7 +1094,10 @@ const INSTANCE_ATTRS: [wgpu::VertexAttribute; 3] =
 
 /// The GPU half of the HUD layer: see the module doc for the draw order.
 pub struct Hud {
+    /// Overlay and text: on the surface.
     pipeline: wgpu::RenderPipeline,
+    /// Band and field ground: in the HDR scene, under the world.
+    backdrop_pipeline: wgpu::RenderPipeline,
     instances: wgpu::Buffer,
     backdrop_count: u32,
     overlay_count: u32,
@@ -1109,7 +1112,14 @@ pub struct Hud {
 }
 
 impl Hud {
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
+    /// `format` is the surface's, where the overlay and text go; the
+    /// backdrop goes into the scene, in `scene_format` (`fx::gpu`).
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+        scene_format: wgpu::TextureFormat,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("hud shader"),
             source: wgpu::ShaderSource::Wgsl(shader_source().into()),
@@ -1119,39 +1129,43 @@ impl Hud {
             bind_group_layouts: &[],
             immediate_size: 0,
         });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("hud pipeline"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: size_of::<Quad>() as wgpu::BufferAddress,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &INSTANCE_ATTRS,
-                })],
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let pipeline_for = |format: wgpu::TextureFormat| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("hud pipeline"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: size_of::<Quad>() as wgpu::BufferAddress,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &INSTANCE_ATTRS,
+                    })],
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let pipeline = pipeline_for(format);
+        let backdrop_pipeline = pipeline_for(scene_format);
         let instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("hud quads"),
             size: (size_of::<Quad>() * MAX_QUADS) as wgpu::BufferAddress,
@@ -1173,6 +1187,7 @@ impl Hud {
 
         Self {
             pipeline,
+            backdrop_pipeline,
             instances,
             backdrop_count: 0,
             overlay_count: 0,
@@ -1280,10 +1295,15 @@ impl Hud {
         pass.set_viewport(x, y, w, h, 0.0, 1.0);
     }
 
-    /// Band and field ground: draw first, before the world.
-    pub fn draw_backdrop(&self, pass: &mut wgpu::RenderPass<'_>) {
+    /// Band and field ground: draw first, before the world, into the HDR
+    /// scene, or onto the surface itself on a `direct` frame (`fx::gpu`).
+    pub fn draw_backdrop(&self, pass: &mut wgpu::RenderPass<'_>, direct: bool) {
         self.set_canvas_viewport(pass);
-        pass.set_pipeline(&self.pipeline);
+        pass.set_pipeline(if direct {
+            &self.pipeline
+        } else {
+            &self.backdrop_pipeline
+        });
         pass.set_vertex_buffer(0, self.instances.slice(..));
         pass.draw(0..6, 0..self.backdrop_count);
     }

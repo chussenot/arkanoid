@@ -27,6 +27,8 @@
 mod assets;
 #[path = "../events.rs"]
 mod events;
+#[path = "../fx/mod.rs"]
+mod fx;
 #[path = "../game.rs"]
 mod game;
 #[path = "../hud.rs"]
@@ -37,6 +39,8 @@ mod levels;
 mod levelset;
 #[path = "../palette.rs"]
 mod palette;
+#[path = "../rally.rs"]
+mod rally;
 #[path = "../render.rs"]
 mod render;
 #[path = "../render3d/mod.rs"]
@@ -51,11 +55,79 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
-use events::GameEvent;
+use events::{GameEvent, Striker};
 use game::{Ball, Brick, Game, GameState, PowerUp};
 use levels::BrickKind;
-use render::RenderState;
+use render::{RenderState, Renderer};
 use render3d::Renderer3D;
+
+/// The kinetic-effects load (docs/design/kinetic-fx.md, "Performance"):
+/// one tick's worth of the heaviest events, every `FX_EVERY` frames on a
+/// fixed 1/60 s clock, so the effect population is the same on any
+/// machine: brick breaks with contacts, an armored fracture, an explosive
+/// blast breaking its ring, an asteroid, metal strikes.
+const FX_EVERY: usize = 6;
+const FX_DT: f32 = 1.0 / 60.0;
+
+fn fx_events(frame: usize) -> Vec<GameEvent> {
+    let mut events = Vec::new();
+    let base = (frame / FX_EVERY) as f32;
+    for i in 0..6 {
+        let x = 60.0 + ((base * 97.0 + i as f32 * 113.0) % 680.0);
+        let y = 80.0 + ((base * 41.0 + i as f32 * 23.0) % 160.0);
+        let kind = if i == 0 {
+            BrickKind::Armored
+        } else {
+            BrickKind::Normal
+        };
+        let by = if i == 1 {
+            Striker::MetalBall
+        } else {
+            Striker::Ball
+        };
+        events.push(GameEvent::BrickStruck {
+            rect: [x, y, levels::BRICK_WIDTH, levels::BRICK_HEIGHT],
+            at: [x + 6.0, y + 17.0],
+            normal: [0.0, 1.0],
+            kind,
+            hits_left: 0,
+            by,
+        });
+        events.push(GameEvent::BrickDestroyedAt {
+            x,
+            y,
+            width: levels::BRICK_WIDTH,
+            height: levels::BRICK_HEIGHT,
+            kind,
+        });
+    }
+    events.push(GameEvent::BallExploded { x: 400.0, y: 150.0 });
+    for dx in [-52.0, 52.0] {
+        events.push(GameEvent::BrickDestroyedAt {
+            x: 400.0 + dx,
+            y: 150.0,
+            width: levels::BRICK_WIDTH,
+            height: levels::BRICK_HEIGHT,
+            kind: BrickKind::Normal,
+        });
+    }
+    events.push(GameEvent::AsteroidExploded { x: 250.0, y: 300.0 });
+    events.push(GameEvent::BrickStruck {
+        rect: [600.0, 120.0, levels::BRICK_WIDTH, levels::BRICK_HEIGHT],
+        at: [600.0, 137.0],
+        normal: [0.0, 1.0],
+        kind: BrickKind::Indestructible,
+        hits_left: 1,
+        by: Striker::MetalBall,
+    });
+    events
+}
+
+/// `BENCH_RENDERER=2d` benches the classic renderer; anything else, 3D.
+enum AnyRenderer {
+    Classic(Box<Renderer>),
+    ThreeD(Box<Renderer3D>),
+}
 
 /// Frames discarded before measuring starts (pipeline warm-up: shader
 /// compile is already done by `Renderer3D::new`, but the first few
@@ -113,7 +185,12 @@ fn destroy_events(n: usize) -> Vec<GameEvent> {
 
 struct Bench {
     window: Option<Arc<Window>>,
-    renderer: Option<Renderer3D>,
+    renderer: Option<AnyRenderer>,
+    fx: fx::FxSystem,
+    /// CPU seconds in `FxSystem::update` per measured frame.
+    fx_times: Vec<f64>,
+    /// The largest effect frame seen: vertices, indices, pulses.
+    fx_peak: (usize, usize, usize),
     game: Game,
     prev: RenderState,
     frame: usize,
@@ -172,6 +249,9 @@ impl Bench {
         Self {
             window: None,
             renderer: None,
+            fx: fx::FxSystem::new(fx::Quality::from_env()),
+            fx_times: Vec::new(),
+            fx_peak: (0, 0, 0),
             game,
             prev,
             frame: 0,
@@ -194,11 +274,22 @@ impl ApplicationHandler for Bench {
                 .create_window(attrs)
                 .expect("failed to create window"),
         );
-        self.renderer = Some(Renderer3D::new(
-            Arc::clone(&window),
-            assets::TextureSource::Procedural.load(),
-            false,
-        ));
+        let atlas = assets::TextureSource::Procedural.load();
+        let quality = self.fx.quality();
+        self.renderer = Some(match std::env::var("BENCH_RENDERER").as_deref() {
+            Ok("2d") => AnyRenderer::Classic(Box::new(Renderer::new(
+                Arc::clone(&window),
+                atlas,
+                false,
+                quality,
+            ))),
+            _ => AnyRenderer::ThreeD(Box::new(Renderer3D::new(
+                Arc::clone(&window),
+                atlas,
+                false,
+                quality,
+            ))),
+        });
         self.window = Some(window);
         self.last = Instant::now();
         event_loop.set_control_flow(ControlFlow::Poll);
@@ -225,7 +316,23 @@ impl ApplicationHandler for Bench {
         // benchmark, not just for their individual 0.5s lifetime --
         // `ingest_brick_destroyed_events` is a no-op past the cap, so this
         // only ever backfills slots that expired since the last frame.
-        renderer.ingest_tick_events(&destroy_events(20));
+        if let AnyRenderer::ThreeD(renderer) = renderer {
+            renderer.ingest_tick_events(&destroy_events(20));
+        }
+        // `BENCH_FX_LOAD=0`: no effect events, the cost of the pipeline
+        // itself on an ordinary frame between impacts.
+        let load = std::env::var("BENCH_FX_LOAD").as_deref() != Ok("0");
+        if load && self.frame.is_multiple_of(FX_EVERY) {
+            self.fx.observe(&self.game, &fx_events(self.frame));
+        }
+        let fx_start = Instant::now();
+        let fx_frame = self.fx.update(FX_DT, &self.game, &self.game.ball);
+        let fx_time = fx_start.elapsed().as_secs_f64();
+        self.fx_peak = (
+            self.fx_peak.0.max(fx_frame.canvas.vertices.len()),
+            self.fx_peak.1.max(fx_frame.canvas.indices.len()),
+            self.fx_peak.2.max(fx_frame.pulses.len()),
+        );
 
         let now = Instant::now();
         let dt = now.duration_since(self.last).as_secs_f64();
@@ -235,7 +342,14 @@ impl ApplicationHandler for Bench {
         // `Renderer3D::render_offscreen_for_bench`'s doc comment for why):
         // `dt` here is real CPU-enqueue + GPU-execute time, not vsync or
         // compositor pacing.
-        renderer.render_offscreen_for_bench(CLEAR_COLOR, &self.prev, &self.game, 1.0);
+        match renderer {
+            AnyRenderer::Classic(r) => {
+                r.render_offscreen_for_bench(CLEAR_COLOR, &self.prev, &self.game, 1.0, fx_frame)
+            }
+            AnyRenderer::ThreeD(r) => {
+                r.render_offscreen_for_bench(CLEAR_COLOR, &self.prev, &self.game, 1.0, fx_frame)
+            }
+        }
 
         self.frame += 1;
         if self.frame.is_multiple_of(100) {
@@ -243,9 +357,22 @@ impl ApplicationHandler for Bench {
         }
         if self.frame > WARMUP_FRAMES {
             self.times.push(dt);
+            self.fx_times.push(fx_time);
         }
         if self.frame >= WARMUP_FRAMES + MEASURED_FRAMES {
             report(&self.times);
+            let mean = self.fx_times.iter().sum::<f64>() / self.fx_times.len() as f64;
+            let mut sorted = self.fx_times.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            println!(
+                "fx ({:?}): update {:.3} ms mean, {:.3} ms p95; peak {} vertices, {} indices, {} pulses",
+                self.fx.quality(),
+                mean * 1000.0,
+                sorted[(sorted.len() as f64 * 0.95) as usize] * 1000.0,
+                self.fx_peak.0,
+                self.fx_peak.1,
+                self.fx_peak.2,
+            );
             event_loop.exit();
         }
     }

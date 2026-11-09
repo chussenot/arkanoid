@@ -35,11 +35,13 @@ use winit::window::Window;
 
 use crate::assets::{Atlas, SpriteId, UvRect, CAPSULE_SIZE};
 use crate::events::{GameEvent, PowerUpKind};
+use crate::fx::gpu::{FxGpu, Projection, ScreenMap, SCENE_FORMAT};
+use crate::fx::{FxFrame, Quality};
 use crate::game::{
     Ball, Brick, Game, GameState, GunKind, Paddle, ASTEROID_RADIUS, GATE_REACH_ABOVE_PADDLE,
     PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH,
 };
-use crate::hud::{self, Hud, BAND_HEIGHT};
+use crate::hud::{self, Hud, BAND_HEIGHT, CANVAS_HEIGHT, CANVAS_WIDTH};
 use crate::levels::BrickKind;
 use crate::palette;
 use crate::render::RenderState;
@@ -689,7 +691,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // adds flat brightness on top of the lit result, unaffected by `n`/`l`
     // so the flash reads the same regardless of which face or light angle.
     let lit = albedo * (AMBIENT + diffuse) + vec3<f32>(spec, spec, spec) + vec3<f32>(in.emissive);
-    return vec4<f32>(lit, in.color.a);
+    // The scene target is HDR (`fx::gpu`): the world stays within the
+    // palette's range, as it did on the sRGB surface, so only effect
+    // light passes the bloom's 1.0 threshold.
+    return vec4<f32>(min(lit, vec3<f32>(1.0)), in.color.a);
 }
 "#;
 
@@ -989,7 +994,12 @@ pub struct Renderer3D {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
+    /// The same, drawing straight to the surface (`FxGpu::direct`).
+    direct_pipeline: wgpu::RenderPipeline,
     depth_view: wgpu::TextureView,
+    /// The kinetic effects' GPU side: the HDR scene target, effect
+    /// geometry on the board, bloom and composite (`fx::gpu`).
+    fx: FxGpu,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     /// Brick face atlas sprite lookup (see `sprite_for_brick` and
@@ -1059,7 +1069,7 @@ impl Renderer3D {
     /// its own module, and this renderer must stay independently
     /// constructible since only one of the two is ever selected at a
     /// time, per `--renderer`).
-    pub fn new(window: Arc<Window>, atlas: Atlas, autopilot: bool) -> Self {
+    pub fn new(window: Arc<Window>, atlas: Atlas, autopilot: bool, quality: Quality) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::default();
         let surface = instance
@@ -1227,62 +1237,68 @@ impl Renderer3D {
             ],
             immediate_size: 0,
         });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("render3d cube/sphere pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[
-                    Some(wgpu::VertexBufferLayout {
-                        array_stride: size_of::<Vertex3D>() as wgpu::BufferAddress,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &VERTEX_ATTRS,
-                    }),
-                    Some(wgpu::VertexBufferLayout {
-                        array_stride: size_of::<Instance3D>() as wgpu::BufferAddress,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &INSTANCE_ATTRS,
-                    }),
-                ],
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                // No culling: cube/sphere winding isn't worth chasing down
-                // face-by-face for a handful of instances per frame (same
-                // tradeoff `render.rs`'s own pipeline makes).
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    // Alpha blending (arkanoid-v2-c3): the ball trail and
-                    // the destroy-tumble ghosts (see the "-- juice --"
-                    // section) fade via `color.a` < 1. Every other
-                    // instance keeps alpha 1.0, for which blending
-                    // produces the same pixels `REPLACE` would -- same
-                    // reasoning `render.rs`'s own pipeline gives for
-                    // always blending.
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        // One pipeline per target: the HDR scene for frames with effect
+        // light or a shockwave, the surface itself for the rest (`fx::gpu`).
+        let pipeline_for = |format: wgpu::TextureFormat| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("render3d cube/sphere pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[
+                        Some(wgpu::VertexBufferLayout {
+                            array_stride: size_of::<Vertex3D>() as wgpu::BufferAddress,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &VERTEX_ATTRS,
+                        }),
+                        Some(wgpu::VertexBufferLayout {
+                            array_stride: size_of::<Instance3D>() as wgpu::BufferAddress,
+                            step_mode: wgpu::VertexStepMode::Instance,
+                            attributes: &INSTANCE_ATTRS,
+                        }),
+                    ],
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    // No culling: cube/sphere winding isn't worth chasing down
+                    // face-by-face for a handful of instances per frame (same
+                    // tradeoff `render.rs`'s own pipeline makes).
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        // Alpha blending (arkanoid-v2-c3): the ball trail and
+                        // the destroy-tumble ghosts (see the "-- juice --"
+                        // section) fade via `color.a` < 1. Every other
+                        // instance keeps alpha 1.0, for which blending
+                        // produces the same pixels `REPLACE` would -- same
+                        // reasoning `render.rs`'s own pipeline gives for
+                        // always blending.
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let pipeline = pipeline_for(SCENE_FORMAT);
+        let direct_pipeline = pipeline_for(config.format);
 
         let cube_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("render3d cube vertices"),
@@ -1336,7 +1352,16 @@ impl Renderer3D {
             mapped_at_creation: false,
         });
 
-        let hud = Hud::new(&device, &queue, config.format);
+        let hud = Hud::new(&device, &queue, config.format, SCENE_FORMAT);
+        let fx = FxGpu::new(
+            &device,
+            config.format,
+            (config.width, config.height),
+            Projection::World {
+                depth: wgpu::TextureFormat::Depth32Float,
+            },
+            quality,
+        );
 
         Self {
             surface,
@@ -1344,6 +1369,7 @@ impl Renderer3D {
             queue,
             config,
             pipeline,
+            direct_pipeline,
             depth_view,
             camera_buffer,
             camera_bind_group,
@@ -1369,6 +1395,7 @@ impl Renderer3D {
             tumbling: Vec::new(),
             powerup_spin_angle: 0.0,
             hud,
+            fx,
             autopilot,
             record: hud::Record::default(),
             sound: None,
@@ -1424,6 +1451,8 @@ impl Renderer3D {
         self.surface.configure(&self.device, &self.config);
         let (_, depth_view) = create_depth_texture(&self.device, &self.config);
         self.depth_view = depth_view;
+        self.fx
+            .resize(&self.device, (new_size.width, new_size.height));
     }
 
     /// Clears `view` and the depth buffer, then draws the paddle, ball(s),
@@ -1446,6 +1475,7 @@ impl Renderer3D {
         prev: &RenderState,
         curr: &Game,
         alpha: f32,
+        fx: &FxFrame,
         view: &wgpu::TextureView,
     ) {
         let drawn = interpolate(prev, &RenderState::from(curr), alpha);
@@ -1486,7 +1516,10 @@ impl Renderer3D {
         // On the menu the game is swapped for the picked mode's: no diff.
         let level_changed = curr.level != self.prev_level || curr.state == GameState::Menu;
         self.prev_level = curr.level;
-        let hit_flash = if level_changed {
+        // With the kinetic effects on, impact light is theirs (`fx/`): the
+        // one-frame emissive flash is the fallback for `BRYX_FX=off`.
+        let legacy = self.fx.quality() == Quality::Off;
+        let hit_flash = if level_changed || !legacy {
             Vec::new()
         } else {
             bricks_just_hit(&self.prev_bricks, &curr.bricks)
@@ -1735,6 +1768,30 @@ impl Renderer3D {
             },
         );
 
+        // The effects lie on the board: a field point at a height goes to
+        // the board's world point, through this frame's camera (shake
+        // included), into the canvas, then onto the surface through the
+        // letterbox.
+        let (cx, cy, cw, ch) = self.hud.letterbox().canvas_viewport();
+        let project = |p: [f32; 2], h: f32| {
+            let (x, z) = world_xz(p[0], p[1]);
+            project_to_canvas(&view_proj, Vec3::new(x, h, z))
+                .map(|(px, py)| [cx + px / CANVAS_WIDTH * cw, cy + py / CANVAS_HEIGHT * ch])
+        };
+        let scale = |p: [f32; 2], h: f32| match (project(p, h), project([p[0] + 1.0, p[1]], h)) {
+            (Some(a), Some(b)) => (b[0] - a[0]).hypot(b[1] - a[1]),
+            _ => cw / CANVAS_WIDTH,
+        };
+        let (fx_x, fx_y, fx_w, fx_h) = self.hud.letterbox().field_viewport();
+        let map = ScreenMap {
+            surface: (self.config.width, self.config.height),
+            field: (fx_x, fx_y, fx_w, fx_h),
+            project: &project,
+            scale: &scale,
+        };
+        self.fx.prepare(&self.queue, fx, view_proj, &map);
+        let direct = self.fx.direct();
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1748,7 +1805,7 @@ impl Renderer3D {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("render3d backdrop pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
+                    view: self.fx.scene_view(view),
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -1761,13 +1818,13 @@ impl Renderer3D {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            self.hud.draw_backdrop(&mut pass);
+            self.hud.draw_backdrop(&mut pass, direct);
         }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("render3d pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
+                    view: self.fx.scene_view(view),
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -1789,7 +1846,11 @@ impl Renderer3D {
             });
             let (x, y, w, h) = self.hud.letterbox().field_viewport();
             pass.set_viewport(x, y, w, h, 0.0, 1.0);
-            pass.set_pipeline(&self.pipeline);
+            pass.set_pipeline(if direct {
+                &self.direct_pipeline
+            } else {
+                &self.pipeline
+            });
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
             pass.set_bind_group(1, &self.texture_bind_group, &[]);
 
@@ -1818,7 +1879,11 @@ impl Renderer3D {
             pass.set_vertex_buffer(1, self.rock_instance_buffer.slice(..));
             pass.set_index_buffer(self.rock_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             pass.draw_indexed(0..self.rock_index_count, 0, 0..rock_instances.len() as u32);
+            self.fx.draw_geometry(&mut pass);
         }
+        // Bloom and shockwaves, scene to surface; the HUD then goes over
+        // it, never post-processed.
+        self.fx.finish(&mut encoder, view);
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("render3d hud pass"),
@@ -1852,6 +1917,7 @@ impl Renderer3D {
         prev: &RenderState,
         curr: &Game,
         alpha: f32,
+        fx: &FxFrame,
     ) {
         let surface_texture = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
@@ -1867,7 +1933,7 @@ impl Renderer3D {
         let view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        self.render_into(clear_color, prev, curr, alpha, &view);
+        self.render_into(clear_color, prev, curr, alpha, fx, &view);
         self.queue.present(surface_texture);
     }
 
@@ -1893,6 +1959,7 @@ impl Renderer3D {
         prev: &RenderState,
         curr: &Game,
         alpha: f32,
+        fx: &FxFrame,
     ) {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("render3d offscreen bench target"),
@@ -1909,7 +1976,7 @@ impl Renderer3D {
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        self.render_into(clear_color, prev, curr, alpha, &view);
+        self.render_into(clear_color, prev, curr, alpha, fx, &view);
         // Block until this frame's submitted work is actually done, so the
         // caller's wall-clock timing around this call reflects real GPU
         // completion time, not just how fast the CPU could enqueue it.
