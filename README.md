@@ -58,8 +58,18 @@ budget, and the measurements.
 | Left / Right, A / D | Move the paddle          |
 | Space               | Launch the ball; press to release a glued ball; hold to fire a laser |
 | Escape (or P)       | Pause / resume           |
+| After a Game Over   | Space: continue from the start of the act (level 1, 9, 17 or 25); Escape or P: new game |
+| After a Victory     | Space: play again        |
 
 Keyboard only; menu and pause screens show the same keys on-screen.
+
+The campaign is four acts of eight levels, and the ball's top speed rises
+from 560 to 700 px/s across them. A Game Over continues from the start of
+its act with full lives and a fresh score. Your best campaign and
+`--classic` scores are kept in a small local file (`$XDG_DATA_HOME/bryx` or
+`~/.local/share/bryx` on Linux, `~/Library/Application Support/bryx` on
+macOS, `%APPDATA%\bryx` on Windows; `BRYX_DATA_DIR` overrides it); runs
+played by `--autopilot` never set them.
 
 Bricks are told apart by pattern as well as color: a plain panel (normal,
 one hit), a plate held by four rivets (armored), the same plate cracked
@@ -92,7 +102,7 @@ depends on color alone:
 | Super laser | X | cyan | For 15 s, hold Space to fire one wide bolt that drills through every breakable brick in its column, armored ones included, until an indestructible brick stops it |
 | Tiny | T | grey | The one to dodge: paddle ×0.6 for 15 s (cancels Widen) |
 | Player | P | gold | One extra life (up to 9) |
-| Break | B | orange | Opens a gate at the bottom of the right wall. Slide the paddle out through it to skip to the next level, +10,000. It stays open until you use it, lose a life or the level ends |
+| Break | B | orange | Opens a gate at the bottom of the right wall. Slide the paddle out through it to skip to the next level; you score the bricks you skipped, no more. It stays open until you use it, lose a life or the level ends |
 
 The paddle takes the color of the gun or Glue it carries. Catching one
 laser replaces the other.

@@ -34,8 +34,9 @@ in the order of the milestones, and ask before deviating.
 - `src/events.rs` — `enum GameEvent { BrickDestroyed, BallLost, ... }`
   emitted by the simulation each tick; the render layer consumes them for
   effects, a future audio layer subscribes here.
-- Game states: `Menu → Playing ⇄ Paused → GameOver/Victory`, an explicit
-  enum-driven state machine, no ad-hoc booleans.
+- Game states: `Menu → Playing ⇄ Paused → GameOver/Victory → Playing`
+  (see "Ending a run"), an explicit enum-driven state machine, no ad-hoc
+  booleans.
 
 ## Gameplay spec
 
@@ -91,6 +92,33 @@ brick, and has every destructible brick reachable from the open field
 through empty cells and destructible bricks only (checked by a test: a box
 of indestructible bricks with no way in, like level 3's first version,
 fails it).
+
+**Campaign rules (added after v1; `--classic` and loaded levelsets keep
+v1's)**, Game Director decisions recorded in `docs/design/director-review.md`:
+- The ball's speed cap ramps with the campaign level: 560 px/s on level 1,
+  rising linearly to 700 px/s on level 32, so difficulty climbs with
+  progress whatever each layout asks. The 700 px/s tunneling guarantee
+  above is unchanged: it is still the highest speed any ball reaches.
+- The 32 levels form four acts of eight. A Game Over continues from the
+  first level of the act it happened in (level 1, 9, 17 or 25).
+
+**Ending a run (added after v1; all progressions)**: GameOver and Victory
+are not dead ends. On a fresh key press (a key still held from the last
+rally does not count):
+- GameOver: Space continues from the act's checkpoint, with full lives
+  and the score reset to 0; Escape or P starts a new game from level 1.
+  Where the checkpoint is level 1 (v1, a one-act levelset), both mean
+  "play again".
+- Victory: Space (or Escape or P) plays again from level 1.
+
+So the state machine is `Menu → Playing ⇄ Paused → GameOver/Victory →
+Playing`.
+
+**Best score (added after v1)**: the best campaign and `--classic` scores
+are kept in a small per-user file (`src/record.rs`; never sent anywhere).
+The menu shows the best; the end screen marks a new one. Runs played by
+`--autopilot` show the record but never set it. Loaded levelsets keep no
+record.
 
 ## Rendering quality bar ("modern" means)
 
@@ -160,7 +188,9 @@ move.
   wall, from 40 px above the paddle's center to the bottom of the field.
   While it is open the paddle can slide out through the wall; once it is
   all the way out (its left edge past the wall) the level is left as if
-  cleared, +10,000, with the paddle back in the middle for the next serve
+  cleared, scoring the bricks still standing (no bonus: the gate saves time,
+  never score; it paid a flat +10,000 until the Game Director review), with
+  the paddle back in the middle for the next serve
   (Victory if it was the last level). The gate stays open until it is
   used, a life is lost or the level ends. Balls still bounce off the wall
   there.
