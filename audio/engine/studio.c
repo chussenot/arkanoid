@@ -153,6 +153,7 @@ typedef struct {
     int inst, note, pass;
     int released;
     long started;
+    int fade_left;          /* > 0: a stolen voice fading out over FADE frames */
     StSynthVoice syn;
     StSamplerVoice smp;
 } Voice;
@@ -800,6 +801,7 @@ int st_render_score(const char *path, int rate, StRender *out, char *err, size_t
         have_lim = 1;
     }
     int latency = have_lim ? st_limiter_latency(&lim) : 0;
+    const int fade = (int)(0.005 * R) > 1 ? (int)(0.005 * R) : 1; /* a stolen voice's fade */
 
     /* The span to render: two passes for a loop (the second is kept), or
      * the piece and its tail, plus the limiter's latency. */
@@ -856,18 +858,29 @@ int st_render_score(const char *path, int rate, StRender *out, char *err, size_t
                     continue;
                 }
             }
-            /* Polyphony: steal this instrument's oldest voice past its limit
-             * (released ones first), else a free slot, else the oldest. */
+            /* Polyphony: past the instrument's limit its oldest voice
+             * (released ones first) is stolen. A stolen voice fades out over
+             * FADE frames in its own slot while the new note takes a free
+             * one, so stealing never clicks; only with no free slot left is
+             * a voice cut outright (the oldest of all). */
             int count = 0, oldest = -1, oldest_rel = -1, slot = -1;
             for (int v = 0; v < MAX_VOICES; v++) {
                 Voice *vc = &voices[v];
                 if (!vc->active) { if (slot < 0) slot = v; continue; }
-                if (vc->inst != n->inst) continue;
+                if (vc->inst != n->inst || vc->fade_left > 0) continue;
                 count++;
                 if (oldest < 0 || vc->started < voices[oldest].started) oldest = v;
                 if (vc->released && (oldest_rel < 0 || vc->started < voices[oldest_rel].started)) oldest_rel = v;
             }
-            if (count >= in->poly) slot = oldest_rel >= 0 ? oldest_rel : oldest;
+            if (count >= in->poly) {
+                int victim = oldest_rel >= 0 ? oldest_rel : oldest;
+                if (slot >= 0) {
+                    voices[victim].released = 1;
+                    voices[victim].fade_left = fade;
+                } else {
+                    slot = victim;
+                }
+            }
             if (slot < 0) {
                 for (int v = 0; v < MAX_VOICES; v++)
                     if (slot < 0 || voices[v].started < voices[slot].started) slot = v;
@@ -920,10 +933,20 @@ int st_render_score(const char *path, int rate, StRender *out, char *err, size_t
             StVoiceMod mod = {1.0f, 1.0f,
                               lane(&s, T_INST, vc->inst, P_CUTOFF, b0, 0.0f),
                               lane(&s, T_INST, vc->inst, P_PITCH, b0, 0.0f)};
+            if (vc->fade_left > 0) {
+                int left = vc->fade_left - n;
+                mod.gain0 = (float)vc->fade_left / (float)fade;
+                mod.gain1 = left > 0 ? (float)left / (float)fade : 0.0f;
+                vc->fade_left = left > 0 ? left : 0;
+                if (left <= 0) vc->active = 0; /* this block is its last */
+            }
             int alive = s.inst[vc->inst].kind == KIND_SYNTH
                 ? st_synth_render(&vc->syn, &mod, ibuf[vc->inst][0], ibuf[vc->inst][1], n)
                 : st_sampler_render(&vc->smp, &mod, ibuf[vc->inst][0], ibuf[vc->inst][1], n);
-            if (!alive) vc->active = 0;
+            if (!alive || !vc->active) {
+                vc->active = 0;
+                vc->fade_left = 0;
+            }
         }
         /* Instruments: gain (with its lane), pan, into the bus and sends. */
         for (int i = 0; i < s.ninst; i++) {
