@@ -8,6 +8,10 @@
 //! - **Shuffle**: ten levels drawn from every fetched set, a new draw each
 //!   time the row is picked.
 //!
+//! A fifth row plays nothing: **Music** is the jukebox. ←/→ picks one of
+//! the score's tracks, which sounds while the row is highlighted
+//! ([`Menu::track`]); Space starts no run there.
+//!
 //! The picker never touches a running game. While the menu is up, `main`
 //! rebuilds the game from the highlighted row on every change ([`Menu::build`]),
 //! so what Space starts, the record the menu shows and the field behind the
@@ -19,12 +23,16 @@ use rand::seq::IndexedRandom;
 use rand::Rng;
 
 use crate::game::{Features, Game};
-use crate::hud::{Aside, MenuRow, MenuView};
+use crate::hud::{Aside, MenuRow, MenuView, MUSIC_ROW};
 use crate::levelset::ExternalLevel;
 use crate::record::{Best, Progression, RecordKey};
 
 /// Levels a Shuffle run plays.
 const SHUFFLE_LEVELS: usize = 10;
+
+/// Tracks the Music row offers: the menu theme (0), then one per campaign
+/// level (`audio/compose.py`).
+const TRACKS: usize = 1 + crate::levels::CAMPAIGN.len();
 
 /// One fetched levelset, as the picker offers it.
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +49,8 @@ pub enum Mode {
     Classic,
     Levelset,
     Shuffle,
+    /// The jukebox: listens, never plays a run.
+    Music,
 }
 
 /// A move through the picker, from a key press.
@@ -60,6 +70,8 @@ pub struct Menu {
     selected: usize,
     sets: Vec<NamedSet>,
     set: usize,
+    /// The track the Music row shows: 0 the menu theme, `n` level `n`'s.
+    track: usize,
     /// `--classic` with `--levelset`: loaded sets play v1's rules too.
     classic_rules: bool,
     /// `--rally-score`: every mode but Classic scores by the rally.
@@ -77,11 +89,13 @@ impl Menu {
         if !sets.is_empty() {
             modes.push(Mode::Shuffle);
         }
+        modes.push(Mode::Music);
         Self {
             modes,
             selected: 0,
             sets,
             set: 0,
+            track: 0,
             classic_rules,
             rally_score: false,
         }
@@ -117,9 +131,15 @@ impl Menu {
         self.modes[self.selected]
     }
 
+    /// The track to play in place of the menu theme: the Music row's,
+    /// while that row is highlighted. 0 is the menu theme, `n` level `n`'s.
+    pub fn track(&self) -> Option<u8> {
+        (self.mode() == Mode::Music).then_some(self.track as u8)
+    }
+
     fn enabled(&self, mode: Mode) -> bool {
         match mode {
-            Mode::Campaign | Mode::Classic => true,
+            Mode::Campaign | Mode::Classic | Mode::Music => true,
             Mode::Levelset | Mode::Shuffle => !self.sets.is_empty(),
         }
     }
@@ -153,6 +173,11 @@ impl Menu {
                 };
                 true
             }
+            Nav::Left | Nav::Right if self.mode() == Mode::Music => {
+                let step = if nav == Nav::Right { 1 } else { TRACKS - 1 };
+                self.track = (self.track + step) % TRACKS;
+                true
+            }
             Nav::Left | Nav::Right => false,
         }
     }
@@ -170,7 +195,9 @@ impl Menu {
             rules
         };
         match self.mode() {
-            Mode::Campaign => Game::new().with_campaign().with_features(rules),
+            // The Music row plays no run: the campaign's field is only the
+            // backdrop (`main` keeps Space from starting it).
+            Mode::Campaign | Mode::Music => Game::new().with_campaign().with_features(rules),
             Mode::Classic => Game::new().with_features(Features::V1),
             Mode::Levelset => {
                 let mut game = Game::new().with_features(loaded_rules);
@@ -195,7 +222,7 @@ impl Menu {
     /// meaning.
     fn key(&self, mode: Mode, set: usize) -> RecordKey {
         let (progression, loaded) = match mode {
-            Mode::Campaign => (Progression::Campaign, false),
+            Mode::Campaign | Mode::Music => (Progression::Campaign, false),
             Mode::Classic => (Progression::Classic, false),
             Mode::Shuffle => (Progression::Shuffle, true),
             Mode::Levelset => (
@@ -221,7 +248,7 @@ impl Menu {
     /// "classic", "shuffle", or "levelset:" and the set's name.
     pub fn label(&self) -> String {
         match self.mode() {
-            Mode::Campaign => "campaign".into(),
+            Mode::Campaign | Mode::Music => "campaign".into(),
             Mode::Classic => "classic".into(),
             Mode::Shuffle => "shuffle".into(),
             Mode::Levelset => format!(
@@ -308,6 +335,19 @@ impl Menu {
                     enabled: false,
                 },
             },
+            Mode::Music => MenuRow {
+                name: MUSIC_ROW,
+                value: Some(match self.track {
+                    0 => "Menu theme".into(),
+                    n => crate::levels::CAMPAIGN[n - 1].0.into(),
+                }),
+                detail: "plays while picked".into(),
+                aside: Aside::Position {
+                    index: self.track + 1,
+                    count: TRACKS,
+                },
+                enabled: true,
+            },
             Mode::Shuffle => MenuRow {
                 name: "SHUFFLE",
                 value: None,
@@ -362,14 +402,18 @@ mod tests {
         let mut menu = Menu::new(Vec::new(), false);
         let view = menu.view(|_| Best::default());
         let names: Vec<_> = view.rows.iter().map(|r| r.name).collect();
-        assert_eq!(names, ["CAMPAIGN", "CLASSIC", "LEVELSET"], "no Shuffle");
+        assert_eq!(
+            names,
+            ["CAMPAIGN", "CLASSIC", "LEVELSET", "MUSIC"],
+            "no Shuffle"
+        );
         assert!(!view.rows[2].enabled);
         assert!(view.rows[2].detail.contains("fetch-levelsets"));
 
         assert!(menu.nav(Nav::Down));
         assert_eq!(menu.mode(), Mode::Classic);
-        assert!(menu.nav(Nav::Down), "wraps past the disabled row");
-        assert_eq!(menu.mode(), Mode::Campaign);
+        assert!(menu.nav(Nav::Down), "steps over the disabled row");
+        assert_eq!(menu.mode(), Mode::Music);
         assert!(menu.nav(Nav::Up));
         assert_eq!(menu.mode(), Mode::Classic);
         menu.select(Mode::Levelset);
@@ -384,14 +428,58 @@ mod tests {
     fn up_and_down_walk_every_mode_and_wrap() {
         let mut menu = Menu::new(vec![set("A", 3)], false);
         let mut seen = vec![menu.mode()];
-        for _ in 0..4 {
+        for _ in 0..5 {
             menu.nav(Nav::Down);
             seen.push(menu.mode());
         }
         use Mode::*;
-        assert_eq!(seen, [Campaign, Classic, Levelset, Shuffle, Campaign]);
+        assert_eq!(
+            seen,
+            [Campaign, Classic, Levelset, Shuffle, Music, Campaign]
+        );
         menu.nav(Nav::Up);
-        assert_eq!(menu.mode(), Shuffle);
+        assert_eq!(menu.mode(), Music);
+    }
+
+    #[test]
+    fn the_music_row_offers_every_track_only_while_highlighted() {
+        let mut menu = Menu::new(Vec::new(), false);
+        assert_eq!(menu.track(), None, "the menu theme plays on other rows");
+        menu.select(Mode::Music);
+        let mut heard = vec![menu.track().unwrap()];
+        for _ in 1..TRACKS {
+            assert!(menu.nav(Nav::Right));
+            heard.push(menu.track().unwrap());
+        }
+        assert_eq!(heard, (0..=32).collect::<Vec<u8>>());
+        assert!(menu.nav(Nav::Right));
+        assert_eq!(menu.track(), Some(0), "wraps");
+        assert!(menu.nav(Nav::Left));
+        assert_eq!(menu.track(), Some(32));
+        let row = menu.view(|_| Best::default()).rows.pop().unwrap();
+        assert_eq!(row.value.as_deref(), Some("Vault"));
+        assert_eq!(
+            row.aside,
+            Aside::Position {
+                index: 33,
+                count: 33
+            }
+        );
+    }
+
+    /// The row names a track after its level; the score must agree.
+    #[test]
+    fn every_track_is_titled_after_its_campaign_level() {
+        for (i, (name, _)) in crate::levels::CAMPAIGN.iter().enumerate() {
+            let path = format!(
+                "{}/audio/cues/music_{:02}.abc",
+                env!("CARGO_MANIFEST_DIR"),
+                i + 1
+            );
+            let abc = std::fs::read_to_string(&path).unwrap();
+            let title = format!("T:BRYX {:02} {name}", i + 1);
+            assert!(abc.lines().any(|l| l == title), "{path}: want {title}");
+        }
     }
 
     #[test]

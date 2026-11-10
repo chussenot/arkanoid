@@ -208,6 +208,9 @@ pub struct Director {
     /// The level whose first serve has been heard: its music plays from
     /// there. Cleared when a run ends, so a Continue waits for its serve.
     served_level: Option<usize>,
+    /// The menu's jukebox (`menu::Menu::track`): the track that plays on
+    /// the menu in place of its theme. 0 is the theme, `n` level `n`'s.
+    pub jukebox: Option<u8>,
 }
 
 impl Director {
@@ -223,6 +226,7 @@ impl Director {
             pending: Vec::with_capacity(MAX_PENDING),
             ball_attached: false,
             served_level: None,
+            jukebox: None,
         }
     }
 
@@ -249,6 +253,12 @@ impl Director {
         if in_play && self.served_level != Some(game.level) {
             // Before the level's first serve, the field waits in silence.
             music = None;
+        }
+        if let (GameState::Menu, Some(track)) = (game.state, self.jukebox) {
+            music = Some(match track.min(LEVEL_TRACKS) {
+                0 => Cue::MusicMenu,
+                n => Cue::Level(n),
+            });
         }
         if self.last_music != Some(music) {
             out.push(Command::Music(music));
@@ -683,6 +693,25 @@ mod tests {
             .collect();
         assert_eq!(gains.len(), 2, "one ball blast, one asteroid: {out:?}");
         assert!(gains[0] < gains[1], "the ball's is the quieter");
+    }
+
+    #[test]
+    fn the_jukebox_picks_the_menus_music_and_only_the_menus() {
+        let (mut director, mut game) = playing();
+        game.state = GameState::Menu;
+        director.jukebox = Some(7);
+        assert_eq!(
+            music(&director.observe(&game, &[])),
+            Some(Some(Cue::Level(7)))
+        );
+        director.jukebox = Some(0);
+        assert_eq!(
+            music(&director.observe(&game, &[])),
+            Some(Some(Cue::MusicMenu))
+        );
+        director.jukebox = Some(7);
+        game.state = GameState::GameOver;
+        assert_eq!(music(&director.observe(&game, &[])), Some(None));
     }
 
     #[test]

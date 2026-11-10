@@ -208,7 +208,11 @@ pub struct MenuView {
     pub selected: usize,
 }
 
-/// One playable mode in the picker.
+/// The jukebox row's name (`menu::Mode::Music`): the one row Space does
+/// not play.
+pub const MUSIC_ROW: &str = "MUSIC";
+
+/// One row in the picker: a playable mode, or the jukebox.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MenuRow {
     /// The mode, in capitals: CAMPAIGN, CLASSIC, LEVELSET, SHUFFLE.
@@ -1015,11 +1019,19 @@ fn menu_screen(out: &mut Layout, view: &MenuView, sound: Option<&str>) {
         menu_row(out, row, y, i == view.selected);
     }
 
+    let music = view
+        .rows
+        .get(view.selected)
+        .is_some_and(|r| r.name == MUSIC_ROW);
     let mut nav: Vec<(&[&str], &str)> = vec![(&["↑", "↓"], "Mode")];
-    if view.rows.iter().any(|r| r.value.is_some() && r.enabled) {
-        nav.push((&["←", "→"], "Set"));
+    if music {
+        nav.push((&["←", "→"], "Track"));
+    } else {
+        if view.rows.iter().any(|r| r.value.is_some() && r.enabled) {
+            nav.push((&["←", "→"], "Set"));
+        }
+        nav.push((&["SPACE"], "Play"));
     }
-    nav.push((&["SPACE"], "Play"));
     key_line(out, nav_y, &nav);
 
     // The picker above, the game's controls below: one hairline between
