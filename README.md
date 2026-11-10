@@ -96,8 +96,10 @@ Foundations, II · Structures, III · Machines and IV · The Vault each lay
 their own motif under the bricks, in their own color, and it brightens as
 a rally climbs. The ball's top speed rises from 560 to 700 px/s across
 them. A Game Over continues from the start of
-its act with full lives and a fresh score. Your best campaign and
-`--classic` scores are kept in a small local file (`$XDG_DATA_HOME/bryx` or
+its act with full lives and a fresh score. Every run ends on a summary:
+score, level, longest rally, time and bricks. Your best score and best
+rally for the campaign, Classic, Shuffle and each levelset are kept in
+small local files (`$XDG_DATA_HOME/bryx` or
 `~/.local/share/bryx` on Linux, `~/Library/Application Support/bryx` on
 macOS, `%APPDATA%\bryx` on Windows; `BRYX_DATA_DIR` overrides it); runs
 played by `--autopilot` never set them.
@@ -166,7 +168,7 @@ Widen, Slow and Multiball only, and no asteroids.
 `cargo run --release -- --rally-score` tries the experimental rally
 scoring: each brick broken before the ball comes back to the paddle scores
 one step more, ×1 up to ×10, the step its note plays on. The multiplier
-shows beside the score; these runs keep no best score.
+shows beside the score; these runs keep records of their own.
 
 ## Thousands of levels
 

@@ -265,7 +265,11 @@ impl MenuView {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Record {
     pub best: Option<u32>,
+    /// The stored best rally for this progression.
+    pub best_rally: u32,
     pub new_best: bool,
+    /// This run's rally beat the stored one.
+    pub new_best_rally: bool,
 }
 
 /// The type scale, in canvas pixels. Steps of roughly 1.25 below the
@@ -294,6 +298,17 @@ const FIELD_CENTER_Y: f32 = BAND_HEIGHT + PLAYFIELD_HEIGHT / 2.0;
 /// and tags size themselves without shaping.
 pub fn text_width(text: &str, size: f32, tracking: f32) -> f32 {
     text.chars().count() as f32 * size * (ADVANCE_EM + tracking)
+}
+
+/// A run's time in play: "m:ss", or "h:mm:ss" past an hour.
+fn run_time(secs: f32) -> String {
+    let total = secs.max(0.0) as u32;
+    let (h, m, s) = (total / 3600, total / 60 % 60, total % 60);
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
 }
 
 /// The score as six (or more) digits, leading zeros split off so they can
@@ -870,36 +885,71 @@ fn state_screen(out: &mut Layout, frame: &Frame, state: GameState) {
                 span("    ", dim, true),
             ];
             summary.extend(reached);
-            if game.features.rally_score {
-                summary.push(span("    BEST RALLY ", dim, true));
-                summary.push(span(game.best_rally.to_string(), palette::TEXT, true));
-            }
             out.lines.push(centered(
                 summary,
                 size::SUMMARY,
                 0.04,
-                FIELD_CENTER_Y - 48.0,
+                FIELD_CENTER_Y - 56.0,
             ));
-            // The record: a new best in the Player capsule's gold (the one
-            // reward hue), otherwise the best to beat.
+            // The run in three numbers: its longest rally (the game's own
+            // measure of a good shot), its time in play, its bricks.
+            let gold = palette::CAPSULE_PLAYER;
+            let mut stats = vec![
+                span("RALLY ", dim, true),
+                span(
+                    game.best_rally.to_string(),
+                    if record.new_best_rally {
+                        gold
+                    } else {
+                        palette::TEXT
+                    },
+                    true,
+                ),
+            ];
+            if record.new_best_rally {
+                stats.push(span(" NEW", gold, true));
+            }
+            stats.extend([
+                span("    TIME ", dim, true),
+                span(run_time(game.run_secs()), palette::TEXT, true),
+                span("    BRICKS ", dim, true),
+                span(game.bricks_broken.to_string(), palette::TEXT, true),
+            ]);
+            out.lines.push(centered(
+                stats,
+                size::NOTE,
+                CAPTION_TRACKING,
+                FIELD_CENTER_Y - 30.0,
+            ));
+            // The records: a new best score in the Player capsule's gold
+            // (the one reward hue), otherwise the best to beat, and the best
+            // rally beside it.
+            let mut records = Vec::new();
             if record.new_best {
-                out.lines.push(centered(
-                    vec![span("NEW BEST", palette::CAPSULE_PLAYER, true)],
-                    size::NOTE,
-                    CAPTION_TRACKING,
-                    FIELD_CENTER_Y - 20.0,
-                ));
+                records.push(span("NEW BEST", gold, true));
             } else if let Some(best) = record.best.filter(|&b| b > 0) {
                 let (zeros, digits) = score_digits(best);
+                records.extend([
+                    span("BEST ", dim, true),
+                    span(zeros, palette::TEXT_FAINT, true),
+                    span(digits, dim, true),
+                ]);
+            }
+            if record.best_rally > 0 && !record.new_best_rally {
+                if !records.is_empty() {
+                    records.push(span("    ", dim, true));
+                }
+                records.extend([
+                    span("BEST RALLY ", dim, true),
+                    span(record.best_rally.to_string(), dim, true),
+                ]);
+            }
+            if !records.is_empty() {
                 out.lines.push(centered(
-                    vec![
-                        span("BEST ", dim, true),
-                        span(zeros, palette::TEXT_FAINT, true),
-                        span(digits, dim, true),
-                    ],
+                    records,
                     size::NOTE,
                     CAPTION_TRACKING,
-                    FIELD_CENTER_Y - 20.0,
+                    FIELD_CENTER_Y - 8.0,
                 ));
             }
             // What the keys do now (`Game::tick`'s terminal states).
@@ -916,7 +966,7 @@ fn state_screen(out: &mut Layout, frame: &Frame, state: GameState) {
                 ]
             };
             rows.push((MENU_KEY_ROW.0, MENU_KEY_ROW.1.into()));
-            key_rows(out, FIELD_CENTER_Y + 20.0, &rows);
+            key_rows(out, FIELD_CENTER_Y + 24.0, &rows);
             out.lines.push(centered(
                 vec![span("Close the window to quit", dim, false)],
                 size::NOTE,
@@ -1540,10 +1590,62 @@ mod tests {
 
         game.state = GameState::GameOver;
         let text = all_text(&layout(&frame(&game), None));
-        assert!(text.contains("BEST RALLY 12"), "{text}");
-        game.features.rally_score = false;
-        let text = all_text(&layout(&frame(&game), None));
-        assert!(!text.contains("RALLY"), "{text}");
+        assert!(
+            text.contains("RALLY 12"),
+            "the run's rally, flag or not: {text}"
+        );
+    }
+
+    #[test]
+    fn the_end_screen_sums_up_the_run_and_its_records() {
+        let mut game = Game::new().with_campaign();
+        game.state = GameState::GameOver;
+        game.best_rally = 14;
+        game.run_ticks = 125 * 120;
+        game.bricks_broken = 212;
+        let with = |record| {
+            all_text(&layout(
+                &Frame {
+                    record,
+                    ..frame(&game)
+                },
+                None,
+            ))
+        };
+        let plain = with(Record {
+            best: Some(20_000),
+            best_rally: 23,
+            ..Record::default()
+        });
+        for part in [
+            "RALLY 14",
+            "TIME 2:05",
+            "BRICKS 212",
+            "BEST 020000",
+            "BEST RALLY 23",
+        ] {
+            assert!(plain.contains(part), "{part}: {plain}");
+        }
+        assert!(!plain.contains("NEW"), "{plain}");
+
+        let beaten = with(Record {
+            best: Some(20_000),
+            best_rally: 14,
+            new_best_rally: true,
+            ..Record::default()
+        });
+        assert!(beaten.contains("RALLY 14 NEW"), "{beaten}");
+        assert!(
+            !beaten.contains("BEST RALLY"),
+            "the new one replaces it: {beaten}"
+        );
+    }
+
+    #[test]
+    fn a_run_time_reads_in_minutes_then_hours() {
+        assert_eq!(run_time(0.0), "0:00");
+        assert_eq!(run_time(125.4), "2:05");
+        assert_eq!(run_time(3725.0), "1:02:05");
     }
 
     #[test]
@@ -1635,7 +1737,7 @@ mod tests {
         };
         let best = Record {
             best: Some(20_000),
-            new_best: false,
+            ..Record::default()
         };
         assert!(with(&game, best).contains("BEST 020000"));
         assert!(!with(&game, Record::default()).contains("BEST"));
@@ -1643,6 +1745,7 @@ mod tests {
         let new_best = Record {
             best: Some(25_000),
             new_best: true,
+            ..Record::default()
         };
         assert!(with(&game, new_best).contains("NEW BEST"));
     }
@@ -1726,7 +1829,9 @@ mod tests {
                     autopilot: true,
                     record: Record {
                         best: Some(999_999),
+                        best_rally: 999,
                         new_best: true,
+                        new_best_rally: true,
                     },
                     sound: Some("Sound: effects only"),
                     menu: Some(&picker(2)),
