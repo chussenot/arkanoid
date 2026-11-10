@@ -26,7 +26,7 @@ use std::process::Command;
 const SAMPLE_RATE: u32 = 22_050;
 
 #[cfg(feature = "audio")]
-const ENGINE_SOURCES: [&str; 7] = [
+const ENGINE_SOURCES: [&str; 12] = [
     "abc.c",
     "audio_dsp.c",
     "audio_engine.c",
@@ -34,6 +34,13 @@ const ENGINE_SOURCES: [&str; 7] = [
     "audio_mix.c",
     "audio_seq.c",
     "audio_song_builtin.c",
+    // BRYX's studio: the float stereo renderer for `.score` files
+    // (docs/design/orchestral-score.md).
+    "studio.c",
+    "studio_common.c",
+    "studio_fx.c",
+    "studio_sampler.c",
+    "studio_synth.c",
 ];
 
 #[cfg(feature = "audio")]

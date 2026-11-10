@@ -2,7 +2,8 @@
  * studio.c: the .score parser, scheduler, mixer and render (BRYX
  * addition; see studio.h and docs/design/orchestral-score.md).
  *
- * A .score is line-oriented text. `#` starts a comment. Times are in
+ * A .score is line-oriented text. `#` at the start of a line or after a
+ * space starts a comment (inside a word it is a sharp: F#3). Times are in
  * beats; the tempo map turns them into seconds.
  *
  *   score 1
@@ -397,8 +398,14 @@ static int parse_line(Score *s, const char *file, int ln, const char *dir, char 
 {
     char *tok[64];
     int nt = 0;
-    char *hash = strchr(line, '#');
-    if (hash) *hash = 0;
+    /* `#` opens a comment at the start of a line or after a space; inside
+     * a word it is a sharp (F#3). */
+    for (char *h = line; *h; h++) {
+        if (*h == '#' && (h == line || isspace((unsigned char)h[-1]))) {
+            *h = 0;
+            break;
+        }
+    }
     for (char *t = strtok(line, " \t\r\n"); t && nt < 64; t = strtok(NULL, " \t\r\n"))
         tok[nt++] = t;
     if (!nt) return 0;
