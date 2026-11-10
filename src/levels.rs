@@ -201,7 +201,7 @@ pub const CAMPAIGN: &[(&str, &[&str])] = &[
             "1.2111111112.1",
             "1.2222222222.1",
             "1............1",
-            "X111111111111X",
+            "21111111111112",
         ],
     ),
     (
@@ -235,7 +235,7 @@ pub const CAMPAIGN: &[(&str, &[&str])] = &[
             "X111X....X111X",
             "X121X....X121X",
             "X111X....X111X",
-            "X.X.X....X.X.X",
+            "X222X....X222X",
         ],
     ),
     (
@@ -600,6 +600,34 @@ mod tests {
                     assert!(
                         !matches!(cell, '1' | '2') || seen[r + 1][c + 1],
                         "grid {index}: the brick at row {r}, column {c} cannot be reached"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A breakable brick with an indestructible one above it and another
+    /// below it in the same column can only be hit from the side, through
+    /// one brick-high lane: the pacing probe found such bricks were always
+    /// a level's last 10%, hunted for minutes (docs/design/director-review.md).
+    /// The campaign only: v1's three levels are frozen with its replay hash.
+    #[test]
+    fn no_campaign_brick_sits_between_two_indestructible_ones_in_its_column() {
+        for (name, grid) in CAMPAIGN {
+            let cells: Vec<Vec<char>> = grid.iter().map(|r| r.chars().collect()).collect();
+            for c in 0..cells[0].len() {
+                let column: Vec<char> = cells.iter().map(|row| row[c]).collect();
+                let (Some(top), Some(bottom)) = (
+                    column.iter().position(|&k| k == 'X'),
+                    column.iter().rposition(|&k| k == 'X'),
+                ) else {
+                    continue;
+                };
+                for (r, &cell) in column.iter().enumerate().take(bottom).skip(top + 1) {
+                    assert!(
+                        !matches!(cell, '1' | '2'),
+                        "{name}: the brick at row {r}, column {c} is sealed between \
+                         indestructible bricks above and below"
                     );
                 }
             }

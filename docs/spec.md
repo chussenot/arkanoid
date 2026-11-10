@@ -99,7 +99,10 @@ built-in grid, v1's and the campaign's, is at most 14×8, has a destructible
 brick, and has every destructible brick reachable from the open field
 through empty cells and destructible bricks only (checked by a test: a box
 of indestructible bricks with no way in, like level 3's first version,
-fails it).
+fails it). No campaign brick sits between two indestructible bricks in its
+column, since such a brick can only be hit through a one-brick lane from the
+side and was always a level's last-brick hunt (also checked by a test; v1's
+level 3 predates the rule and keeps its replay hash).
 
 **Campaign rules (added after v1; `--classic` and loaded levelsets keep
 v1's)**, Game Director decisions recorded in `docs/design/director-review.md`:
@@ -255,7 +258,10 @@ move.
   the paddle back in the middle for the next serve
   (Victory if it was the last level). The gate stays open until it is
   used, a life is lost or the level ends. Balls still bounce off the wall
-  there.
+  there. A random drop (a rolled one, or a levelset's `?` or joker) never
+  draws Break on a finale: the last level of a campaign act (8, 16, 24, 32)
+  or of any set, so the level that ends an act or the run is played to its
+  last brick. A Break a levelset names on a brick still drops.
 - **Explosive ball** (power-up, 15 s, letter E): every ball in play blows
   up the destructible brick it hits. It bounces as usual, and the blast
   hits every destructible brick within 30 px of the struck brick's center
