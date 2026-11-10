@@ -45,6 +45,7 @@ use crate::game::{
 };
 use crate::hud::{self, Hud, BAND_HEIGHT, CANVAS_HEIGHT, CANVAS_WIDTH};
 use crate::levels::BrickKind;
+use crate::movement;
 use crate::palette;
 use crate::render::RenderState;
 
@@ -81,11 +82,15 @@ const MAX_DESTROY_GHOSTS: usize = 20;
 /// Fading sphere instances behind the ball (see `push_trail`) -- matches
 /// `render.rs`'s own `TRAIL_LEN` (spec: "a 4-quad fading trail").
 const TRAIL_LEN: usize = 4;
-const MAX_CUBE_INSTANCES: usize =
-    1 /* paddle */ + MAX_BRICKS + MAX_POWERUPS + WALL_COUNT + MAX_DESTROY_GHOSTS + MAX_BOLTS
-        + 1 /* the Break gate */;
+const MAX_CUBE_INSTANCES: usize = 1 /* paddle */ + MAX_BRICKS + MAX_POWERUPS + WALL_COUNT + MAX_DESTROY_GHOSTS + MAX_BOLTS
+        + 1 /* the Break gate */ + movement::MAX_GROUND_RECTS;
 /// `game.rs` keeps at most 3 asteroids; a defensive bound like the others.
 const MAX_ASTEROIDS: usize = 8;
+/// Half the height of an act's ground lines as slabs on the floor: low
+/// enough to read as drawn on it.
+const GROUND_HALF_HEIGHT: f32 = 0.5;
+/// How far the walls lean toward the act's accent.
+const WALL_ACCENT: f32 = 0.35;
 /// `game.rs` caps bolts in flight at 16.
 const MAX_BOLTS: usize = 16;
 const MAX_SPHERE_INSTANCES: usize = 1 /* main ball */ + MAX_EXTRA_BALLS + TRAIL_LEN;
@@ -1718,25 +1723,47 @@ impl Renderer3D {
             }
         }
 
+        // The act's ground: its lines as low slabs on the floor, under
+        // everything else on the board (`movement.rs`).
+        let act = movement::of(curr);
+        if let Some(act) = act {
+            let color = movement::ground_color(act, curr.rally);
+            cube_instances.extend(movement::ground_rects(act.ground).into_iter().map(
+                |[x, y, w, h]| {
+                    let (wx, wz) = world_xz(x + w / 2.0, y + h / 2.0);
+                    Instance3D::new(
+                        [wx, GROUND_HALF_HEIGHT, wz],
+                        [w / 2.0, GROUND_HALF_HEIGHT, h / 2.0],
+                        color,
+                    )
+                },
+            ));
+        }
         // Three static boundary walls (left, right, top) -- see the
         // module-level constants' doc comments for why these exist despite
-        // `game.rs` having no wall entities of its own.
+        // `game.rs` having no wall entities of its own. In the campaign they
+        // take the act's accent.
+        let wall = act.map_or(palette::WALL.linear(), |act| {
+            let (base, accent) = (palette::WALL.linear(), act.accent.linear());
+            let mix = |i: usize| base[i] + WALL_ACCENT * (accent[i] - base[i]);
+            [mix(0), mix(1), mix(2), 1.0]
+        });
         let half_w = PLAYFIELD_WIDTH / 2.0;
         let half_h = PLAYFIELD_HEIGHT / 2.0;
         cube_instances.push(Instance3D::new(
             [-half_w - WALL_THICKNESS / 2.0, WALL_HEIGHT / 2.0, 0.0],
             [WALL_THICKNESS / 2.0, WALL_HEIGHT / 2.0, half_h],
-            palette::WALL.linear(),
+            wall,
         ));
         cube_instances.push(Instance3D::new(
             [half_w + WALL_THICKNESS / 2.0, WALL_HEIGHT / 2.0, 0.0],
             [WALL_THICKNESS / 2.0, WALL_HEIGHT / 2.0, half_h],
-            palette::WALL.linear(),
+            wall,
         ));
         cube_instances.push(Instance3D::new(
             [0.0, WALL_HEIGHT / 2.0, -half_h - WALL_THICKNESS / 2.0],
             [half_w, WALL_HEIGHT / 2.0, WALL_THICKNESS / 2.0],
-            palette::WALL.linear(),
+            wall,
         ));
         // The open Break gate: a glowing slab over the right wall, from
         // just above the paddle to the bottom of the field.

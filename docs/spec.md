@@ -115,6 +115,18 @@ v1's)**, Game Director decisions recorded in `docs/design/director-review.md`:
   above is unchanged: it is still the highest speed any ball reaches.
 - The 32 levels form four acts of eight. A Game Over continues from the
   first level of the act it happened in (level 1, 9, 17 or 25).
+- Each act is a movement with its own look (`src/movement.rs`): I ·
+  Foundations, II · Structures, III · Machines, IV · The Vault. One row of
+  data each, read by both renderers: an accent hue (`palette::ACT_ACCENTS`)
+  for the ceiling rule and the 3D walls, and a ground motif of 2 px lines
+  under the bricks (survey dots, girders, gear teeth along the walls, a
+  vault door's nested frames) that brightens with the rally, from about
+  1.3:1 on the field to about 2:1 at the tenth brick, never past the
+  dimmest brick and always 7:1 under the ball. The serve prompt of an
+  act's first level names it. Clearing an act's last level (8, 16, 24)
+  plays the act fanfare (`act_clear`, the level fanfare grown by a bar, in
+  its meter so the level-end sweep keeps time). Classic, levelsets and
+  Shuffle have no acts and keep the plain field.
 
 **Ending a run (added after v1; all progressions)**: GameOver and Victory
 are not dead ends. On a fresh key press (a key still held from the last

@@ -100,6 +100,12 @@ pub const RULE_STRONG: Rgb = hex(0x56617A);
 /// The 3D renderer's side and top walls.
 pub const WALL: Rgb = hex(0x2A3140);
 
+/// Each campaign act's one accent (`movement.rs`), in act order:
+/// Foundations' chalk ochre, Structures' steel blue, Machines' amber,
+/// the Vault's violet. It colors the act's ground motif, the ceiling rule
+/// and the 3D walls, never an object the player tracks.
+pub const ACT_ACCENTS: [Rgb; 4] = [hex(0xC9A66B), hex(0x6F9FD8), hex(0xE08A3C), hex(0xA08AE8)];
+
 // -- text -----------------------------------------------------------------
 
 /// Values, titles, anything the player reads first. 16:1 on `BAND`.

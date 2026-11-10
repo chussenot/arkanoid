@@ -144,7 +144,14 @@ at the point of use:
   (95%) and the ink for capsule letters.
 - **Rule** (#2C3445) and **Rule Strong** (#56617A): the ceiling rule and its
   ticks, and keycap and tag outlines.
-- **Wall** (#2A3140): the 3D renderer's side and top walls.
+- **Wall** (#2A3140): the 3D renderer's side and top walls, leaning 35%
+  toward the act's accent in the campaign.
+- **Act accents** (`ACT_ACCENTS`): Foundations #C9A66B (chalk ochre),
+  Structures #6F9FD8 (steel blue), Machines #E08A3C (amber), the Vault
+  #A08AE8 (violet). They color an act's ground motif (5% into the field at
+  rest, 16% with a full rally, in linear light), the ceiling rule (half
+  way) and the 3D walls, never an object the player tracks
+  (`src/movement.rs`).
 
 ### Text
 - **Text** (#E9ECF3): values, titles, keys. 16.7:1 on the band.

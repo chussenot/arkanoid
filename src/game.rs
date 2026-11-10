@@ -60,7 +60,7 @@ pub const MAX_LIVES: u32 = 9;
 
 /// Gap between the playfield's top edge and the brick grid, so the HUD's
 /// level number (top-center, per spec) has room above the bricks.
-const BRICK_GRID_MARGIN_TOP: f32 = 60.0;
+pub const BRICK_GRID_MARGIN_TOP: f32 = 60.0;
 
 // -- power-ups ------------------------------------------------------------
 
