@@ -19,8 +19,13 @@ For every instrument in INSTRUMENTS it:
   - for sustained articulations, finds a steady loop and bakes a
     crossfade into it, so a plain loop is click-free;
   - cuts short articulations where they fall 55 dB below their peak;
-  - normalises the instrument as a whole (its layers keep their relative
-    level), dithers to 16 bit (fixed seed) and writes FLAC with ffmpeg;
+  - levels each note on its own: the loudest layer of every key is
+    brought to the same loudness (the loudest 50 ms of RMS), and a softer
+    layer keeps VSCO's soft-to-loud ratio for that note, clamped to
+    SOFT_RANGE_DB, so neither a quiet recording session nor a hot one
+    makes one key jump out of a line;
+  - scales the instrument as a whole to a -1 dBFS peak, dithers to 16 bit
+    (fixed seed) and writes FLAC with ffmpeg;
   - writes INSTRUMENT.sfz: <region> lines with sample, pitch_keycenter,
     tune, lokey/hikey, lovel/hivel and loop_start/loop_end.
 
@@ -280,15 +285,50 @@ def curate_pitched(src, out, name, pattern, kind, layers, longest, family):
     return finish(out, name, family, samples, pitched=True)
 
 
+# How far a soft layer may sit below its note's loud layer, in dB. VSCO's
+# own ratio is kept inside this range; outside it the recording, not the
+# playing, set the level (timpani 1's soft hits sit 30 dB down).
+SOFT_RANGE_DB = (-18.0, -6.0)
+
+
+def loudness(y, win=0.05):
+    """The loudest `win` seconds of RMS: a level that means the same thing
+    for a short hit and a held note, unlike the peak."""
+    n = max(1, int(RATE * win))
+    p = np.convolve(y * y, np.ones(n) / n, mode="valid") if len(y) > n else [np.mean(y * y)]
+    return float(np.sqrt(np.max(p)))
+
+
+def note_gains(samples):
+    """Per-sample gains that level every key's loudest layer to the same
+    loudness and keep each softer layer's ratio to it, clamped."""
+    gains = [1.0] * len(samples)
+    by_key = {}
+    for i, s in enumerate(samples):
+        by_key.setdefault(s[2], []).append(i)
+    for idx in by_key.values():
+        loud = max(idx, key=lambda i: samples[i][4][1])
+        ref = loudness(samples[loud][0])
+        for i in idx:
+            if i == loud:
+                gains[i] = 1.0 / ref
+                continue
+            ratio = 20 * np.log10(max(loudness(samples[i][0]), 1e-9) / ref)
+            ratio = min(max(ratio, SOFT_RANGE_DB[0]), SOFT_RANGE_DB[1])
+            gains[i] = 10 ** (ratio / 20) / loudness(samples[i][0])
+    return gains
+
+
 def finish(out, name, family, samples, pitched):
-    peak = max(np.max(np.abs(s[0])) for s in samples)
-    gain = 10 ** (-1 / 20) / peak
+    gains = note_gains(samples)
+    peak = max(np.max(np.abs(s[0])) * g for s, g in zip(samples, gains))
+    gains = [g * 10 ** (-1 / 20) / peak for g in gains]
     ranges = key_ranges({s[2] for s in samples}) if pitched else None
     lines = [
         f"// {name}: curated from VSCO 2 CE ({VSCO_COMMIT[:7]}), CC0 1.0, by audio/samples/curate.py.",
         "// Do not edit: rerun the script.",
     ]
-    for y, f, root, tune, vel, ls, le in samples:
+    for (y, f, root, tune, vel, ls, le), gain in zip(samples, gains):
         v = f"_v{vel[0]}" if vel != (1, 127) else ""
         rel = f"{family}/{name}/{name}_{root}{v}.flac"
         write_flac(y * gain, os.path.join(out, rel))
