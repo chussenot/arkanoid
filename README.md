@@ -80,7 +80,7 @@ changes it in game.
 |---------------------|--------------------------|
 | Up / Down, W / S    | Menu: choose a mode      |
 | Left / Right, A / D | Move the paddle; menu: choose a levelset |
-| Space               | Launch the ball; press to release a glued ball; hold to fire a laser |
+| Space               | Press to launch the ball or release a glued ball; hold to fire a laser |
 | Escape (or P)       | Pause / resume           |
 | After a Game Over   | Space: continue from the start of the act (level 1, 9, 17 or 25); Escape or P: new game |
 | After a Victory     | Space: play again        |

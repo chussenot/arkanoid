@@ -47,7 +47,9 @@ window (integer-independent; resize must not change physics).
 **Paddle**: bottom-center, keyboard ←/→ (and A/D), speed 520 px/s,
 clamped to walls. Mouse control optional in v1 only if trivial.
 
-**Ball**: radius 6, launches from paddle on Space at 300 px/s, 60° up.
+**Ball**: radius 6, launches from paddle on Space at 300 px/s, 60° up. A serve
+is a fresh press: Space still held from the menu, an end screen or a gun
+never serves, so the player lines up every serve.
 Speed increases 4% per paddle hit, capped at 700 px/s. Reflection off the
 paddle depends on hit position: offset from paddle center maps linearly
 to exit angle between 30° and 150°, so the player can aim. Perfectly
