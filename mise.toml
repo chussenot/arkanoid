@@ -10,6 +10,10 @@ run = "cargo run --release --features typesafe -- --autopilot"
 description = "Play the three built-in levels headless against the real TypeSafe API (needs TYPESAFE_API_KEY)"
 run = "cargo test --features typesafe -- --ignored --nocapture live_"
 
+[tasks.deps]
+description = "Install system packages (Debian/Ubuntu): ALSA headers for audio, vulkaninfo for GPU checks"
+run = "sudo apt install -y libasound2-dev vulkan-tools"
+
 [tasks.build]
 description = "Build the game"
 run = "cargo build"
