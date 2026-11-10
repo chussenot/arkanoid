@@ -1,0 +1,15 @@
+# Studio probe: a bus compressor keyed by another instrument. A steady pad
+# on a bus keyed by a kick that never reaches that bus: each kick ducks the
+# pad, which comes back between kicks.
+score 1
+tempo 0 120
+length 8
+tail 0.5
+bus drums
+inst kick synth bus=drums wave=sine pitchenv=18 pitchtime=0.04 attack=0.001 decay=0.2 sustain=0 release=0.05
+bus pads comp=-30:8:0.002:0.12 key=kick
+inst pad synth bus=pads wave=saw stack=3 detune=8 filter=lp cutoff=1500 attack=0.01 decay=0 sustain=1 release=0.1
+note 0 8 pad A3 100
+note 2 0.5 kick A1 127
+note 4 0.5 kick A1 127
+note 6 0.5 kick A1 127

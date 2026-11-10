@@ -1,0 +1,11 @@
+# Studio probe: notes sound at their pitch. A4 (440 Hz) on a sampled
+# violin section (its zones, keycenters and measured tune), then on a plain
+# sine synth. Dry, centred, no reverb. 120 BPM: a beat is 0.5 s.
+score 1
+tempo 0 120
+length 8
+tail 0.5
+inst violin sfz=../samples/violins_sus.sfz attack=0.05 release=0.2
+inst sine synth wave=sine attack=0.01 decay=0 sustain=1 release=0.05
+note 0 3.5 violin A4 100
+note 4 3.5 sine A4 100

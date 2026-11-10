@@ -1,0 +1,8 @@
+# Studio probe: a held note outlasts its sample. Celli E2 held 10 s, far
+# past the recording; the sampler loops the sustain, with no gap or click.
+score 1
+tempo 0 120
+length 20
+tail 0.5
+inst celli sfz=../samples/celli_sus.sfz attack=0.1 release=0.3
+note 0 20 celli E2 100

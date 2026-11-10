@@ -1,0 +1,20 @@
+# Studio probe: the master limiter holds its ceiling (-1 dBFS) under a
+# tutti pushed 18 dB too hot.
+score 1
+tempo 0 120
+length 8
+tail 1
+include ../instruments/desk.inc
+include ../instruments/orchestra.inc
+include ../instruments/electronic.inc
+master gain=18 comp=-16:1.6:0.03:0.35 limit=-1
+note 0 8 strings_high E5 127
+note 0 8 strings_mid B4 127
+note 0 8 strings_low E3 127
+note 0 8 strings_bass E2 127
+note 0 8 brass_horns G4 127
+note 0 8 brass_trombones E3 127
+note 0 8 synth_pad E4 127
+note 0 8 synth_bass E1 127
+note 0 1 timpani E2 127
+note 4 1 timpani B1 127

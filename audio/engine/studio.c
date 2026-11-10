@@ -11,7 +11,7 @@
  *   rate 48000                    render rate (optional)
  *   tempo <beat> <bpm>            tempo map: a new tempo from <beat> on
  *   length <beats>                the loop or the piece
- *   loop on                       render twice, keep the second pass: the
+ *   loop on                       render warm-up passes, keep the last: the
  *                                 seam carries the end's tails (reverb,
  *                                 delay, releases) into the start
  *   tail <seconds>                extra render after the end (no loop)
@@ -71,6 +71,10 @@
 #define MAX_EQ 4
 #define MAX_TEMPO 64
 #define MAX_VOICES 256
+/* Seconds of warm-up a loop renders before the pass it keeps. */
+#define LOOP_WARMUP_SECS 10.0
+/* Seconds of a loop's seam crossfade (at most a quarter of the loop). */
+#define LOOP_SEAM_SECS 0.1
 #define MAX_DEPTH 4
 #define DEFAULT_POLY 24
 
@@ -132,6 +136,7 @@ typedef struct {
     float pitch;
     int vel;
     int legato;
+    unsigned rr;   /* round robin: this note's place among its instrument's */
 } Note;
 
 typedef struct {
@@ -733,6 +738,7 @@ int st_render_score(const char *path, int rate, StRender *out, char *err, size_t
     int have_lim = 0, rc = -1;
     Event *ev = NULL;
     float *pcm = NULL;
+    float *seam = NULL;   /* a loop's overlap past its end */
 
     memset(&s, 0, sizeof s);
     memset(voices, 0, sizeof voices);
@@ -803,21 +809,42 @@ int st_render_score(const char *path, int rate, StRender *out, char *err, size_t
     int latency = have_lim ? st_limiter_latency(&lim) : 0;
     const int fade = (int)(0.005 * R) > 1 ? (int)(0.005 * R) : 1; /* a stolen voice's fade */
 
-    /* The span to render: two passes for a loop (the second is kept), or
-     * the piece and its tail, plus the limiter's latency. */
+    /* The span to render: for a loop, warm-up passes and then the pass
+     * that is kept, or the piece and its tail; plus the limiter's latency.
+     * Every pass plays the same voices (same seeds, same round robins), so
+     * once the tails have settled, a pass ends exactly where the next one
+     * begins: the kept pass loops without a seam. Warming up for
+     * LOOP_WARMUP_SECS lets the longest reverb (about 5 s to -60 dB) and
+     * the echoes reach that steady state even in a short loop. */
     double len_secs = beat_secs(&s, s.length);
     long pass_frames = (long)llround(len_secs * R);
-    int passes = s.loop ? 2 : 1;
-    long keep_from = (s.loop ? pass_frames : 0) + latency;
+    int passes = 1;
+    if (s.loop) {
+        double warm = ceil(LOOP_WARMUP_SECS / (len_secs > 0.0 ? len_secs : 1.0));
+        passes = 1 + (warm < 1.0 ? 1 : warm > 64.0 ? 64 : (int)warm);
+    }
+    long keep_from = (long)(passes - 1) * pass_frames + latency;
     long keep_frames = s.loop ? pass_frames : pass_frames + (long)llround(s.tail * R);
-    long total = keep_from + keep_frames;
+    /* A loop also renders the first moments of the pass after the kept one:
+     * what truly follows its last frame. Crossfaded into the kept pass's
+     * start, it makes the seam exact even where an effect's state is not
+     * periodic (a reverb's free-running modulation never repeats in step
+     * with the loop). */
+    long overlap = 0;
+    if (s.loop) {
+        overlap = (long)llround(LOOP_SEAM_SECS * R);
+        if (overlap > pass_frames / 4) overlap = pass_frames / 4;
+    }
+    long total = keep_from + keep_frames + overlap;
+    int ev_passes = passes + (overlap > 0 ? 1 : 0);
 
     /* Events (note-on and note-off) for every pass, sorted. */
     int nev = 0;
-    ev = malloc(sizeof *ev * (size_t)(s.nnotes * 2 * passes + 1));
+    ev = malloc(sizeof *ev * (size_t)(s.nnotes * 2 * ev_passes + 1));
     pcm = calloc((size_t)keep_frames * 2, sizeof *pcm);
-    if (!ev || !pcm) { fail(&s, path, 0, "out of memory", NULL); goto done; }
-    for (int p = 0; p < passes; p++)
+    seam = calloc((size_t)overlap * 2 + 1, sizeof *seam);
+    if (!ev || !pcm || !seam) { fail(&s, path, 0, "out of memory", NULL); goto done; }
+    for (int p = 0; p < ev_passes; p++)
         for (int i = 0; i < s.nnotes; i++) {
             const Note *n = &s.notes[i];
             long on = (long)llround((beat_secs(&s, n->beat) ) * R) + p * pass_frames;
@@ -827,6 +854,11 @@ int st_render_score(const char *path, int rate, StRender *out, char *err, size_t
             ev[nev++] = (Event){off, 0, i, p};
         }
     qsort(ev, (size_t)nev, sizeof *ev, cmp_event);
+    /* Round robins in the order a pass plays its notes, the same in every
+     * pass. */
+    for (int i = 0; i < s.ninst; i++) s.inst[i].rr = 0;
+    for (int i = 0; i < nev; i++)
+        if (ev[i].on && ev[i].pass == 0) s.notes[ev[i].note].rr = s.inst[s.notes[ev[i].note].inst].rr++;
 
     int ei = 0;
     long pos = 0;
@@ -891,12 +923,12 @@ int st_render_score(const char *path, int rate, StRender *out, char *err, size_t
             vc->note = e->note;
             vc->pass = e->pass;
             vc->started = pos;
-            uint32_t seed = mix_seed(s.seed, (uint32_t)(e->note * 2 + e->pass));
+            uint32_t seed = mix_seed(s.seed, (uint32_t)e->note); /* the same in every pass */
             if (in->kind == KIND_SYNTH) {
                 st_synth_start(&vc->syn, &in->synth, R, n->pitch, n->vel / 127.0f, seed);
                 vc->active = 1;
             } else {
-                vc->active = st_sampler_start(&vc->smp, in->set, &in->samp, R, n->pitch, n->vel, in->rr++, seed);
+                vc->active = st_sampler_start(&vc->smp, in->set, &in->samp, R, n->pitch, n->vel, n->rr, seed);
             }
         }
 
@@ -907,7 +939,7 @@ int st_render_score(const char *path, int rate, StRender *out, char *err, size_t
 
         /* Beats at the block's start and end (passes repeat the score). */
         double t0 = (double)pos / R, t1 = (double)(pos + n) / R;
-        double pass0 = s.loop && t0 >= len_secs ? len_secs : 0.0;
+        double pass0 = s.loop && len_secs > 0.0 ? floor(t0 / len_secs) * len_secs : 0.0;
         /* seconds -> beats by inverting the tempo map numerically (bisection) */
         double b0, b1;
         {
@@ -1016,11 +1048,20 @@ int st_render_score(const char *path, int rate, StRender *out, char *err, size_t
         }
         for (int k = 0; k < n; k++) {
             long f = pos + k - keep_from;
-            if (f < 0 || f >= keep_frames) continue;
-            pcm[f * 2] = mbuf[0][k];
-            pcm[f * 2 + 1] = mbuf[1][k];
+            if (f < 0) continue;
+            float *dst = f < keep_frames ? &pcm[f * 2] : &seam[(f - keep_frames) * 2];
+            dst[0] = mbuf[0][k];
+            dst[1] = mbuf[1][k];
         }
         pos += n;
+    }
+    /* The seam: the kept pass's start fades in under the true continuation
+     * of its end. Both hold the same notes (every pass plays the same
+     * voices), so a linear crossfade keeps their level. */
+    for (long i = 0; i < overlap; i++) {
+        float w = (float)i / (float)overlap;
+        for (int c = 0; c < 2; c++)
+            pcm[i * 2 + c] = seam[i * 2 + c] * (1.0f - w) + pcm[i * 2 + c] * w;
     }
 
     out->frames = pcm;
@@ -1032,6 +1073,7 @@ done:
     if (have_lim) st_limiter_free(&lim);
     free(ev);
     free(pcm);
+    free(seam);
     free_score(&s);
     return rc;
 }

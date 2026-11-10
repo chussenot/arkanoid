@@ -30,6 +30,8 @@ mod output;
 mod probes;
 #[cfg_attr(not(feature = "audio"), allow(dead_code))]
 mod qoa;
+#[cfg(all(test, feature = "audio"))]
+mod studio_probes;
 
 pub use director::SoundMode;
 
