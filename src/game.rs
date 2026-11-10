@@ -1533,7 +1533,7 @@ impl Game {
         if !self.rng.random_bool(POWERUP_DROP_CHANCE) {
             return;
         }
-        let kinds = self.enabled_powerups();
+        let kinds = self.drawable_powerups();
         // An `i32` range, as v1 drew it: the same draw over 0..3 keeps
         // `Features::V1` runs drop for drop identical to v1.
         let kind = kinds[self.rng.random_range(0..kinds.len() as i32) as usize];
@@ -1552,12 +1552,14 @@ impl Game {
             return;
         };
         let drop = self.authored_drops.swap_remove(at).drop;
-        let enabled = self.enabled_powerups();
+        // A named power-up is the author's call, even a Break on a finale;
+        // `?` and the joker draw like any other drop.
+        let drawable = self.drawable_powerups();
         let kind = match drop {
-            AuthoredDrop::Kind(kind) => enabled.contains(&kind).then_some(kind),
-            AuthoredDrop::Random => Some(enabled[self.rng.random_range(0..enabled.len())]),
+            AuthoredDrop::Kind(kind) => self.enabled_powerups().contains(&kind).then_some(kind),
+            AuthoredDrop::Random => Some(drawable[self.rng.random_range(0..drawable.len())]),
             AuthoredDrop::RandomHelpful => {
-                let helpful: Vec<_> = enabled
+                let helpful: Vec<_> = drawable
                     .into_iter()
                     .filter(|&k| k != PowerUpKind::Tiny)
                     .collect();
@@ -1600,6 +1602,25 @@ impl Game {
             kinds.extend([PowerUpKind::ExplosiveBall, PowerUpKind::MetalBall]);
         }
         kinds
+    }
+
+    /// The power-ups a random drop draws from here: every enabled one,
+    /// except Break on a finale, so the level that ends an act or the run
+    /// is always played to its last brick, never left through the gate.
+    fn drawable_powerups(&self) -> Vec<PowerUpKind> {
+        let mut kinds = self.enabled_powerups();
+        if self.is_finale() {
+            kinds.retain(|&k| k != PowerUpKind::Break);
+        }
+        kinds
+    }
+
+    /// Whether this level ends an act of the campaign
+    /// ([`LEVELS_PER_ACT`]) or the run (the last level of any set).
+    fn is_finale(&self) -> bool {
+        self.level >= self.level_count()
+            || (self.level_set() == LevelSetKind::Campaign
+                && self.level.is_multiple_of(LEVELS_PER_ACT))
     }
 
     fn destructible_bricks_remaining(&self) -> usize {
@@ -3564,6 +3585,65 @@ mod tests {
         assert!(!game.gate_open, "a new level starts with it shut");
         assert_eq!(game.paddle.x, PLAYFIELD_WIDTH / 2.0, "back in the middle");
         assert!(game.ball.attached && (game.ball.x - game.paddle.x).abs() < 1e-3);
+    }
+
+    /// Every kind a campaign game draws on `level`, over many rolls.
+    fn kinds_rolled_on(level: usize) -> std::collections::HashSet<PowerUpKind> {
+        let mut game = Game::with_seed(3).with_campaign();
+        game.restart_at(level);
+        for _ in 0..3000 {
+            game.maybe_drop_powerup(400.0, 100.0);
+        }
+        game.powerups.iter().map(|p| p.kind).collect()
+    }
+
+    #[test]
+    fn an_act_finale_never_drops_a_break() {
+        for finale in [8, 16, 24, 32] {
+            let kinds = kinds_rolled_on(finale);
+            assert!(!kinds.contains(&PowerUpKind::Break), "level {finale}");
+            assert_eq!(kinds.len(), 10, "every other kind still drops");
+        }
+        assert!(kinds_rolled_on(7).contains(&PowerUpKind::Break));
+        assert!(kinds_rolled_on(9).contains(&PowerUpKind::Break));
+    }
+
+    #[test]
+    fn the_last_level_of_any_set_is_a_finale() {
+        let mut game = playing_game().with_campaign();
+        for (level, finale) in [(1, false), (8, true), (15, false), (16, true), (32, true)] {
+            game.level = level;
+            assert_eq!(game.is_finale(), finale, "campaign level {level}");
+        }
+        let mut classic = playing_game();
+        classic.level = levels::LEVELS.len();
+        assert!(classic.is_finale());
+        let mut loaded = playing_game();
+        loaded.load_external_levels(vec![
+            external_level("One", 0.0, BrickKind::Normal),
+            external_level("Two", 0.0, BrickKind::Normal),
+        ]);
+        assert!(!loaded.is_finale());
+        loaded.level = 2;
+        assert!(loaded.is_finale());
+    }
+
+    /// A levelset's `?` and joker draw like any drop, so no Break on its
+    /// last level; a Break its author named still drops there.
+    #[test]
+    fn a_loaded_finale_draws_no_break_but_keeps_an_authored_one() {
+        let mut game = Game::with_seed(4);
+        game.state = GameState::Playing;
+        game.load_external_levels(vec![authored_level(400, AuthoredDrop::Random)]);
+        assert!(game.is_finale());
+        assert!(!drop_from_every_brick(&mut game).contains(&PowerUpKind::Break));
+
+        let mut game = playing_game();
+        game.load_external_levels(vec![authored_level(
+            1,
+            AuthoredDrop::Kind(PowerUpKind::Break),
+        )]);
+        assert_eq!(drop_from_every_brick(&mut game), [PowerUpKind::Break]);
     }
 
     #[test]

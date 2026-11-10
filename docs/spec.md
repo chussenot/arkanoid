@@ -258,7 +258,10 @@ move.
   the paddle back in the middle for the next serve
   (Victory if it was the last level). The gate stays open until it is
   used, a life is lost or the level ends. Balls still bounce off the wall
-  there.
+  there. A random drop (a rolled one, or a levelset's `?` or joker) never
+  draws Break on a finale: the last level of a campaign act (8, 16, 24, 32)
+  or of any set, so the level that ends an act or the run is played to its
+  last brick. A Break a levelset names on a brick still drops.
 - **Explosive ball** (power-up, 15 s, letter E): every ball in play blows
   up the destructible brick it hits. It bounces as usual, and the blast
   hits every destructible brick within 30 px of the struck brick's center
