@@ -29,3 +29,6 @@
 
 # Python bytecode (audio/compose.py is run, never imported, by the build).
 __pycache__/
+
+# Beads / Dolt files (added by bd init)
+*.gate.lock*
