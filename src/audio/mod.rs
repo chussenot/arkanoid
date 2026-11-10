@@ -2,7 +2,9 @@
 //!
 //! - `cues`: the sounds, rendered at build time from `audio/cues/*.abc` by
 //!   BRYX's fork of the Electric Pulse engine (`build.rs`), stored as
-//!   mu-law (`mulaw`);
+//!   mu-law (`mulaw`), and the studio renders of `audio/score/*.score`
+//!   (docs/design/orchestral-score.md), stored as QOA stereo (`qoa`) and
+//!   played in place of the cue they are named after;
 //! - `director`: which sound plays when, where and at what pitch: pure,
 //!   tested;
 //! - `mixer`: effects, stingers and music into one stereo stream: pure,
@@ -26,6 +28,8 @@ mod mulaw;
 mod output;
 #[cfg(all(test, feature = "audio"))]
 mod probes;
+#[cfg_attr(not(feature = "audio"), allow(dead_code))]
+mod qoa;
 
 pub use director::SoundMode;
 

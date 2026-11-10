@@ -3,15 +3,19 @@
 //! - **effects**: one-shot voices with a gain, a stereo position and a
 //!   pitch (playback rate, so one rendered brick note plays a whole scale);
 //! - **stingers**: effects that also *duck* the music while they play;
-//! - **music**: one looping track at a time, crossfaded on change. A new
-//!   track waits for the sounds that hold the music (`Cue::holds_music`):
-//!   it starts when the fanfare, the serve or the warp has finished, never
-//!   under it.
+//! - **music**: one looping track at a time, crossfaded (equal power) on
+//!   change. A new track waits for the sounds that hold the music
+//!   (`Cue::holds_music`): it starts when the fanfare, the serve or the warp
+//!   has finished, never under it. A track is the ABC render (mu-law mono,
+//!   read in place) or, where `audio/score/` has one, the studio render
+//!   (QOA stereo, decoded a slice at a time as it plays, `qoa.rs`, and
+//!   resampled to the device's rate with a cubic).
 //!
 //! It is pure arithmetic over the embedded cues, unit-tested without a device;
 //! `output.rs` only feeds it buffers.
 
-use super::cues::{pcm, sample, Cue, CUE_SAMPLE_RATE};
+use super::cues::{pcm, sample, studio, Cue, CUE_SAMPLE_RATE};
+use super::qoa::QoaStream;
 
 /// What the sound director asks the mixer to do.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -67,11 +71,133 @@ struct Voice {
 
 struct Loop {
     cue: Cue,
-    data: &'static [u8],
-    pos: f64,
-    /// 0..1 crossfade level, moving toward `target`.
+    track: Track,
+    /// 0..1 crossfade position, moving toward `target`; the gain is its
+    /// equal-power curve (`crossfade_gain`).
     level: f32,
     target: f32,
+}
+
+// A studio loop is a few hundred bytes (its decoder's state) against a
+// slice and a position; boxing it would allocate in the audio callback,
+// where the mixer must not, so the two loops a mixer holds carry it inline.
+#[allow(clippy::large_enum_variant)]
+enum Track {
+    /// The ABC render: mu-law mono at [`CUE_SAMPLE_RATE`], read in place.
+    Mulaw { data: &'static [u8], pos: f64 },
+    /// The studio render: QOA stereo, streamed.
+    Studio(StudioLoop),
+}
+
+impl Track {
+    fn for_cue(cue: Cue, output_rate: f32) -> Self {
+        studio(cue)
+            .and_then(|bytes| StudioLoop::new(bytes, output_rate))
+            .map_or(
+                Track::Mulaw {
+                    data: pcm(cue),
+                    pos: 0.0,
+                },
+                Track::Studio,
+            )
+    }
+
+    /// The next stereo frame, looping. `rate_ratio` is the mu-law loop's
+    /// step (a studio loop knows its own).
+    fn next(&mut self, rate_ratio: f64) -> (f32, f32) {
+        match self {
+            Track::Mulaw { data, pos } => {
+                if data.is_empty() {
+                    return (0.0, 0.0);
+                }
+                let s = sample_looped(data, *pos);
+                *pos += rate_ratio;
+                if *pos >= data.len() as f64 {
+                    *pos -= data.len() as f64;
+                }
+                (s, s)
+            }
+            Track::Studio(stream) => stream.next(),
+        }
+    }
+}
+
+/// A studio loop: the QOA stream decoded as it plays and resampled with a
+/// Catmull-Rom cubic from its rate (48 kHz) to the device's. No allocation:
+/// the decoder reads the embedded bytes, and the cubic keeps four frames.
+pub struct StudioLoop {
+    qoa: QoaStream<'static>,
+    /// Four source frames; the output lies between `hist[1]` and `hist[2]`.
+    hist: [[f32; 2]; 4],
+    /// Position between `hist[1]` and `hist[2]`, 0..1.
+    frac: f64,
+    /// Source frames per output frame.
+    step: f64,
+}
+
+impl StudioLoop {
+    /// `None` for bytes that are not a QOA stream (`build.rs` only embeds
+    /// what the studio wrote, so in practice: never).
+    pub fn new(bytes: &'static [u8], output_rate: f32) -> Option<Self> {
+        let qoa = QoaStream::new(bytes).ok()?;
+        let step = f64::from(qoa.sample_rate()) / f64::from(output_rate.max(1.0));
+        let mut stream = Self {
+            qoa,
+            hist: [[0.0; 2]; 4],
+            frac: 0.0,
+            step,
+        };
+        // Prime so the first output is the first frame: [0, f0, f1, f2].
+        for i in 1..4 {
+            stream.hist[i] = stream.pull();
+        }
+        Some(stream)
+    }
+
+    /// The next source frame, wrapping to the start at the end: the studio
+    /// renders a loop with its tails already wrapped (`loop on`), so the
+    /// seam is part of the music.
+    fn pull(&mut self) -> [f32; 2] {
+        let frame = self.qoa.next_frame().or_else(|| {
+            self.qoa.rewind();
+            self.qoa.next_frame()
+        });
+        frame.map_or([0.0; 2], |[l, r]| {
+            [f32::from(l) / 32_768.0, f32::from(r) / 32_768.0]
+        })
+    }
+
+    pub fn next(&mut self) -> (f32, f32) {
+        let t = self.frac as f32;
+        let [p0, p1, p2, p3] = self.hist;
+        let out = (
+            catmull_rom(p0[0], p1[0], p2[0], p3[0], t),
+            catmull_rom(p0[1], p1[1], p2[1], p3[1], t),
+        );
+        self.frac += self.step;
+        while self.frac >= 1.0 {
+            self.frac -= 1.0;
+            self.hist.copy_within(1..4, 0);
+            self.hist[3] = self.pull();
+        }
+        out
+    }
+}
+
+/// The Catmull-Rom spline through `p1` (t = 0) and `p2` (t = 1).
+#[inline]
+fn catmull_rom(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> f32 {
+    p1 + 0.5
+        * t
+        * (p2 - p0 + t * (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3 + t * (3.0 * (p1 - p2) + p3 - p0)))
+}
+
+/// The gain at crossfade position `level` (0..1): a quarter sine, so two
+/// unrelated tracks crossing keep the loudness (cos² + sin² = 1) where a
+/// linear fade dips 3 dB in the middle.
+#[inline]
+fn crossfade_gain(level: f32) -> f32 {
+    (level.clamp(0.0, 1.0) * std::f32::consts::FRAC_PI_2).sin()
 }
 
 pub struct Mixer {
@@ -105,6 +231,18 @@ fn sample_at(data: &[u8], pos: f64) -> f32 {
     let frac = (pos - i as f64) as f32;
     let a = data.get(i).map_or(0.0, |&b| sample(b));
     let b = data.get(i + 1).map_or(0.0, |&b| sample(b));
+    a + (b - a) * frac
+}
+
+/// [`sample_at`] for a loop: the last sample leads into the first, not
+/// into silence, so the seam has no notch.
+fn sample_looped(data: &[u8], pos: f64) -> f32 {
+    let i = pos as usize % data.len().max(1);
+    let frac = (pos - pos.floor()) as f32;
+    let a = data.get(i).map_or(0.0, |&b| sample(b));
+    let b = data
+        .get((i + 1) % data.len().max(1))
+        .map_or(0.0, |&b| sample(b));
     a + (b - a) * frac
 }
 
@@ -149,8 +287,7 @@ impl Mixer {
                 0,
                 Loop {
                     cue,
-                    data: pcm(cue),
-                    pos: 0.0,
+                    track: Track::for_cue(cue, self.output_rate),
                     level: 0.0,
                     target: 1.0,
                 },
@@ -249,16 +386,10 @@ impl Mixer {
                 } else {
                     (track.level - fade_step).max(track.target)
                 };
-                if track.data.is_empty() {
-                    continue;
-                }
-                let s = sample_at(track.data, track.pos) * track.level * music_gain;
-                left += s;
-                right += s;
-                track.pos += self.rate_ratio;
-                if track.pos >= track.data.len() as f64 {
-                    track.pos -= track.data.len() as f64;
-                }
+                let gain = crossfade_gain(track.level) * music_gain;
+                let (l, r) = track.track.next(self.rate_ratio);
+                left += l * gain;
+                right += r * gain;
             }
 
             // Soft limit: transparent at normal levels, never a hard clip
@@ -327,6 +458,113 @@ mod tests {
         assert!(sample(0x80) > 0.97);
         assert!((sample_at(&data, 0.5) - sample(0x80) / 2.0).abs() < 1e-6);
         assert_eq!(sample_at(&data, 5.0), 0.0, "past the end is silence");
+    }
+
+    /// 12,000 stereo frames at 48 kHz, made by the reference encoder
+    /// (`qoa.rs`'s tests check the decoder against it bit for bit).
+    const REF_QOA: &[u8] = include_bytes!("testdata/ref.qoa");
+
+    #[test]
+    fn a_studio_loop_at_its_own_rate_plays_the_decoded_frames_and_wraps() {
+        let mut stream = StudioLoop::new(REF_QOA, 48_000.0).unwrap();
+        let mut reference = QoaStream::new(REF_QOA).unwrap();
+        let len = reference.len() as usize;
+        let decoded: Vec<[i16; 2]> = std::iter::from_fn(|| reference.next_frame()).collect();
+        assert_eq!(decoded.len(), len);
+        for i in 0..len + 2_500 {
+            let [l, r] = decoded[i % len];
+            let want = (f32::from(l) / 32_768.0, f32::from(r) / 32_768.0);
+            assert_eq!(stream.next(), want, "frame {i}");
+        }
+        assert!(
+            decoded.iter().any(|[l, r]| l != r),
+            "the reference is stereo, and both sides come through"
+        );
+    }
+
+    #[test]
+    fn the_cubic_passes_through_its_points_and_follows_a_sine() {
+        assert_eq!(catmull_rom(0.3, -0.2, 0.9, 0.1, 0.0), -0.2);
+        assert!((catmull_rom(0.3, -0.2, 0.9, 0.1, 1.0) - 0.9).abs() < 1e-6);
+        assert!(
+            (catmull_rom(1.0, 2.0, 3.0, 4.0, 0.25) - 2.25).abs() < 1e-6,
+            "exact on a line"
+        );
+        // A 1 kHz sine at 48 kHz, read back between its samples, as the
+        // resampler does for a 44.1 kHz device: within 0.1% of full scale.
+        let f = |n: f32| (n * std::f32::consts::TAU * 1_000.0 / 48_000.0).sin();
+        let mut worst = 0.0f32;
+        for k in 0..480 {
+            let t = (k as f32 * 0.37).fract();
+            let n = k as f32;
+            let got = catmull_rom(f(n - 1.0), f(n), f(n + 1.0), f(n + 2.0), t);
+            worst = worst.max((got - f(n + t)).abs());
+        }
+        assert!(worst < 1e-3, "{worst}");
+    }
+
+    #[test]
+    fn a_studio_loop_on_a_44_1_khz_device_runs_at_the_right_speed() {
+        // 44,100 output frames are one second: 48,000 source frames, so the
+        // 12,000-frame reference has gone round four times. The loop's step
+        // carries no drift: its position is a whole number of source frames
+        // plus the fraction the rates leave.
+        let mut stream = StudioLoop::new(REF_QOA, 44_100.0).unwrap();
+        assert!((stream.step - 48_000.0 / 44_100.0).abs() < 1e-12);
+        for _ in 0..44_100 {
+            let (l, r) = stream.next();
+            assert!(l.is_finite() && r.is_finite() && l.abs() <= 1.01 && r.abs() <= 1.01);
+        }
+        assert!(
+            stream.frac < 1e-6 || stream.frac > 1.0 - 1e-6,
+            "{}",
+            stream.frac
+        );
+    }
+
+    #[test]
+    fn the_crossfade_keeps_the_loudness() {
+        for i in 0..=20 {
+            let x = i as f32 / 20.0;
+            let power = crossfade_gain(x).powi(2) + crossfade_gain(1.0 - x).powi(2);
+            assert!((power - 1.0).abs() < 1e-5, "at {x}: {power}");
+        }
+        assert_eq!(crossfade_gain(0.0), 0.0);
+        assert!((crossfade_gain(1.0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_mulaw_loop_leads_from_its_end_into_its_start() {
+        let data = [0x80u8, 0xFF, 0x80]; // full scale, silence, full scale
+        let end = sample_looped(&data, 2.5);
+        assert!(
+            (end - sample(0x80)).abs() < 1e-6,
+            "full scale into full scale: {end}"
+        );
+        assert!(
+            sample_at(&data, 2.5) < end,
+            "where the one-shot read falls to silence"
+        );
+        assert_eq!(sample_looped(&data, 3.0), sample(0x80), "and wraps");
+    }
+
+    #[test]
+    fn a_studio_track_plays_in_stereo_through_the_mixer() {
+        let mut mixer = Mixer::new(44_100);
+        mixer.music.push(Loop {
+            cue: Cue::MusicMenu,
+            track: Track::Studio(StudioLoop::new(REF_QOA, 44_100.0).unwrap()),
+            level: 1.0,
+            target: 1.0,
+        });
+        let mut out = vec![0.0f32; 2 * 44_100];
+        mixer.render(&mut out, 2);
+        assert!(out.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+        assert!(out.iter().any(|s| s.abs() > 0.01), "audible");
+        assert!(
+            out.chunks(2).any(|f| (f[0] - f[1]).abs() > 1e-3),
+            "left and right differ"
+        );
     }
 
     #[cfg(feature = "audio")]
@@ -431,7 +669,10 @@ mod tests {
             "started {played:.1}s in, under a {fanfare:.1}s fanfare"
         );
         assert_eq!(mixer.music_track(), Some(Cue::Level(2)));
-        assert!(mixer.music[0].pos < 2.0 * 2_205.0, "and from its start");
+        let Track::Mulaw { pos, .. } = mixer.music[0].track else {
+            panic!("level 2 is an ABC render")
+        };
+        assert!(pos < 2.0 * 2_205.0, "and from its start");
     }
 
     #[cfg(feature = "audio")]

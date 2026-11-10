@@ -129,6 +129,7 @@ impl<'a> QoaStream<'a> {
         })
     }
 
+    #[cfg(test)]
     pub fn channels(&self) -> usize {
         self.channels
     }
@@ -137,13 +138,11 @@ impl<'a> QoaStream<'a> {
         self.rate
     }
 
-    /// Samples per channel in the whole stream.
+    /// Samples per channel in the whole stream (never 0: `new` refuses an
+    /// unsized stream).
+    #[cfg(test)]
     pub fn len(&self) -> u32 {
         self.samples
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.samples == 0
     }
 
     /// Back to the first sample (a music loop's wrap).
@@ -168,7 +167,11 @@ impl<'a> QoaStream<'a> {
         self.slice_pos += 1;
         self.position += 1;
         let l = self.slice[0][i];
-        let r = if self.channels > 1 { self.slice[1][i] } else { l };
+        let r = if self.channels > 1 {
+            self.slice[1][i]
+        } else {
+            l
+        };
         Some([l, r])
     }
 
@@ -236,15 +239,20 @@ mod tests {
 
     fn reference() -> Vec<i16> {
         REF_PCM
-            .chunks_exact(2)
-            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&b| i16::from_le_bytes(b))
             .collect()
     }
 
     #[test]
     fn decodes_bit_for_bit_like_the_reference() {
         let mut s = QoaStream::new(REF_QOA).unwrap();
-        assert_eq!((s.channels(), s.sample_rate(), s.len()), (2, 48_000, 12_000));
+        assert_eq!(
+            (s.channels(), s.sample_rate(), s.len()),
+            (2, 48_000, 12_000)
+        );
         let mut out = Vec::new();
         while let Some([l, r]) = s.next_frame() {
             out.push(l);
@@ -267,9 +275,15 @@ mod tests {
     #[test]
     fn rejects_what_is_not_a_whole_qoa_file() {
         assert_eq!(QoaStream::new(b"RIFF....").unwrap_err(), QoaError::NotQoa);
-        assert_eq!(QoaStream::new(&REF_QOA[..4]).unwrap_err(), QoaError::Truncated);
+        assert_eq!(
+            QoaStream::new(&REF_QOA[..4]).unwrap_err(),
+            QoaError::Truncated
+        );
         let mut s = QoaStream::new(&REF_QOA[..200]).unwrap();
         let decoded = std::iter::from_fn(|| s.next_frame()).count();
-        assert!(decoded < 12_000, "a truncated file stops early, never panics");
+        assert!(
+            decoded < 12_000,
+            "a truncated file stops early, never panics"
+        );
     }
 }

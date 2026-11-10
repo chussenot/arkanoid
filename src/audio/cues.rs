@@ -135,6 +135,45 @@ impl Cue {
 #[cfg(feature = "audio")]
 mod rendered {
     include!(concat!(env!("OUT_DIR"), "/cues.rs"));
+    include!(concat!(env!("OUT_DIR"), "/scores.rs"));
+}
+
+/// `music_01`..`music_32` without formatting a string: the audio thread
+/// looks a track up by level, and must not allocate to do it.
+const LEVEL_NAMES: [&str; LEVEL_TRACKS as usize] = [
+    "music_01", "music_02", "music_03", "music_04", "music_05", "music_06", "music_07", "music_08",
+    "music_09", "music_10", "music_11", "music_12", "music_13", "music_14", "music_15", "music_16",
+    "music_17", "music_18", "music_19", "music_20", "music_21", "music_22", "music_23", "music_24",
+    "music_25", "music_26", "music_27", "music_28", "music_29", "music_30", "music_31", "music_32",
+];
+
+impl Cue {
+    /// The name a studio score for this cue has (`audio/score/<name>.score`).
+    fn score_name(self) -> Option<&'static str> {
+        match self {
+            Cue::Level(n) => LEVEL_NAMES.get(usize::from(n).wrapping_sub(1)).copied(),
+            named => named.file(),
+        }
+    }
+}
+
+/// The studio render for `cue`, QOA stereo (`src/audio/qoa.rs`), when
+/// `audio/score/` has a score of that name; it replaces the ABC render.
+/// `None` otherwise, and always without the `audio` feature.
+pub fn studio(cue: Cue) -> Option<&'static [u8]> {
+    #[cfg(feature = "audio")]
+    {
+        let name = cue.score_name()?;
+        rendered::STUDIO
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, qoa)| *qoa)
+    }
+    #[cfg(not(feature = "audio"))]
+    {
+        let _ = cue.score_name();
+        None
+    }
 }
 
 /// The embedded PCM for `cue`: mu-law mono at [`CUE_SAMPLE_RATE`],
@@ -237,6 +276,23 @@ mod tests {
                 assert!(last > 0.5 / 128.0, "{cue:?} not trimmed");
             }
         }
+    }
+
+    /// Every studio score is named after a cue (a typo would leave the
+    /// ABC render playing, silently) and was written as 48 kHz stereo QOA.
+    #[cfg(feature = "audio")]
+    #[test]
+    fn every_studio_score_replaces_a_cue_and_is_48_khz_stereo_qoa() {
+        for (name, bytes) in rendered::STUDIO {
+            let cue = every_cue().find(|c| c.score_name() == Some(*name));
+            assert!(cue.is_some(), "audio/score/{name}.score names no cue");
+            assert_eq!(studio(cue.unwrap()), Some(*bytes));
+            let qoa = crate::audio::qoa::QoaStream::new(bytes)
+                .unwrap_or_else(|e| panic!("{name}: {e:?}"));
+            assert_eq!((qoa.channels(), qoa.sample_rate()), (2, 48_000), "{name}");
+        }
+        assert_eq!(studio(Cue::Level(0)), None);
+        assert_eq!(studio(Cue::Level(33)), None);
     }
 
     /// The score is mastered (`audio/compose.py`): no level track clips,
