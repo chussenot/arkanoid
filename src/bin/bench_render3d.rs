@@ -50,7 +50,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
+use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
@@ -129,6 +129,23 @@ enum AnyRenderer {
     ThreeD(Box<Renderer3D>),
 }
 
+/// `BENCH_SIZE=WxH` in physical pixels (default 800x648, the canvas at
+/// 1x): the bloom chain and the composite scale with the pixel count. The
+/// frame is drawn offscreen at exactly this size: the renderer is resized
+/// to it after creation, because a Wayland compositor sizes the window as
+/// it likes (945x1023 here, whatever was requested) and `Renderer::new`
+/// reads that. The report's header prints the sizes actually drawn.
+fn bench_size() -> PhysicalSize<u32> {
+    let parse = |s: &str| {
+        let (w, h) = s.split_once('x')?;
+        Some(PhysicalSize::new(w.parse().ok()?, h.parse().ok()?))
+    };
+    std::env::var("BENCH_SIZE")
+        .ok()
+        .and_then(|s| parse(&s))
+        .unwrap_or(PhysicalSize::new(800, 648))
+}
+
 /// Frames discarded before measuring starts (pipeline warm-up: shader
 /// compile is already done by `Renderer3D::new`, but the first few
 /// presents on a fresh swapchain are routinely slower).
@@ -191,6 +208,10 @@ struct Bench {
     fx_times: Vec<f64>,
     /// The largest effect frame seen: vertices, indices, pulses.
     fx_peak: (usize, usize, usize),
+    /// GPU milliseconds per stage (`fx::gpu::STAGE_NAMES`), one entry per
+    /// measured frame the stage ran in; all empty without `BRYX_GPU_TIMING=1`.
+    gpu_times: [Vec<f64>; 4],
+    size: PhysicalSize<u32>,
     game: Game,
     prev: RenderState,
     frame: usize,
@@ -252,6 +273,8 @@ impl Bench {
             fx: fx::FxSystem::new(fx::Quality::from_env()),
             fx_times: Vec::new(),
             fx_peak: (0, 0, 0),
+            gpu_times: Default::default(),
+            size: bench_size(),
             game,
             prev,
             frame: 0,
@@ -268,7 +291,7 @@ impl ApplicationHandler for Bench {
         }
         let attrs = Window::default_attributes()
             .with_title("bench_render3d")
-            .with_inner_size(LogicalSize::new(800u32, 600u32));
+            .with_inner_size(self.size);
         let window = Arc::new(
             event_loop
                 .create_window(attrs)
@@ -290,6 +313,12 @@ impl ApplicationHandler for Bench {
                 quality,
             ))),
         });
+        if let Some(renderer) = &mut self.renderer {
+            match renderer {
+                AnyRenderer::Classic(r) => r.resize(self.size),
+                AnyRenderer::ThreeD(r) => r.resize(self.size),
+            }
+        }
         self.window = Some(window);
         self.last = Instant::now();
         event_loop.set_control_flow(ControlFlow::Poll);
@@ -342,14 +371,14 @@ impl ApplicationHandler for Bench {
         // `Renderer3D::render_offscreen_for_bench`'s doc comment for why):
         // `dt` here is real CPU-enqueue + GPU-execute time, not vsync or
         // compositor pacing.
-        match renderer {
+        let gpu = match renderer {
             AnyRenderer::Classic(r) => {
                 r.render_offscreen_for_bench(CLEAR_COLOR, &self.prev, &self.game, 1.0, fx_frame)
             }
             AnyRenderer::ThreeD(r) => {
                 r.render_offscreen_for_bench(CLEAR_COLOR, &self.prev, &self.game, 1.0, fx_frame)
             }
-        }
+        };
 
         self.frame += 1;
         if self.frame.is_multiple_of(100) {
@@ -358,9 +387,32 @@ impl ApplicationHandler for Bench {
         if self.frame > WARMUP_FRAMES {
             self.times.push(dt);
             self.fx_times.push(fx_time);
+            if let Some(stages) = gpu {
+                for (bucket, time) in self.gpu_times.iter_mut().zip(stages) {
+                    bucket.extend(time.map(f64::from));
+                }
+            }
         }
         if self.frame >= WARMUP_FRAMES + MEASURED_FRAMES {
+            // The sizes the frame was really drawn at: the surface config
+            // (the offscreen target follows it) and the HDR scene target.
+            let (name, (surface, hdr)) = match renderer {
+                AnyRenderer::Classic(r) => ("2d", r.bench_sizes()),
+                AnyRenderer::ThreeD(r) => ("3d", r.bench_sizes()),
+            };
+            println!(
+                "--- bench: {name} requested {}x{} surface {}x{} hdr {}x{} fx={:?} load={} ---",
+                self.size.width,
+                self.size.height,
+                surface.0,
+                surface.1,
+                hdr.0,
+                hdr.1,
+                self.fx.quality(),
+                u8::from(load),
+            );
             report(&self.times);
+            report_gpu(&self.gpu_times);
             let mean = self.fx_times.iter().sum::<f64>() / self.fx_times.len() as f64;
             let mut sorted = self.fx_times.clone();
             sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -404,6 +456,29 @@ fn report(times: &[f64]) {
         worst * 1000.0,
         1.0 / worst
     );
+}
+
+/// Per-stage GPU time (mean / p95 ms, and how many measured frames ran the
+/// stage), when `BRYX_GPU_TIMING=1` had timestamps to read.
+fn report_gpu(stages: &[Vec<f64>; 4]) {
+    if stages.iter().all(Vec::is_empty) {
+        println!(
+            "gpu stages: unavailable (BRYX_GPU_TIMING=1 on an adapter with timestamp queries)"
+        );
+        return;
+    }
+    println!("gpu stages (ms mean / p95, frames):");
+    for (name, times) in fx::gpu::STAGE_NAMES.iter().zip(stages) {
+        if times.is_empty() {
+            println!("  {name:<10} n/a");
+            continue;
+        }
+        let mean = times.iter().sum::<f64>() / times.len() as f64;
+        let mut sorted = times.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let p95 = sorted[(sorted.len() as f64 * 0.95) as usize];
+        println!("  {name:<10} {mean:.3} / {p95:.3}  ({})", times.len());
+    }
 }
 
 fn main() {

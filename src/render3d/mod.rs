@@ -35,7 +35,9 @@ use winit::window::Window;
 
 use crate::assets::{Atlas, SpriteId, UvRect, CAPSULE_SIZE};
 use crate::events::{GameEvent, PowerUpKind};
-use crate::fx::gpu::{FxGpu, Projection, ScreenMap, SCENE_FORMAT};
+use crate::fx::gpu::{
+    adapter_line, FxGpu, GpuTimer, Projection, ScreenMap, Span, Stage, StageTimes, SCENE_FORMAT,
+};
 use crate::fx::{FxFrame, Quality};
 use crate::game::{
     Ball, Brick, Game, GameState, GunKind, Paddle, ASTEROID_RADIUS, GATE_REACH_ABOVE_PADDLE,
@@ -1081,9 +1083,11 @@ impl Renderer3D {
             ..Default::default()
         }))
         .expect("failed to find a compatible wgpu adapter");
+        eprintln!("{}", adapter_line(&adapter.get_info()));
 
         let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("bryx render3d device"),
+            required_features: GpuTimer::features(&adapter),
             ..Default::default()
         }))
         .expect("failed to request wgpu device");
@@ -1355,6 +1359,7 @@ impl Renderer3D {
         let hud = Hud::new(&device, &queue, config.format, SCENE_FORMAT);
         let fx = FxGpu::new(
             &device,
+            &queue,
             config.format,
             (config.width, config.height),
             Projection::World {
@@ -1814,7 +1819,7 @@ impl Renderer3D {
                     },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
+                timestamp_writes: self.fx.timestamps(Stage::Scene, Span::Begin),
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
@@ -1840,7 +1845,7 @@ impl Renderer3D {
                     }),
                     stencil_ops: None,
                 }),
-                timestamp_writes: None,
+                timestamp_writes: self.fx.timestamps(Stage::Scene, Span::End),
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
@@ -1897,12 +1902,13 @@ impl Renderer3D {
                     },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
+                timestamp_writes: self.fx.timestamps(Stage::Hud, Span::Whole),
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
             self.hud.draw_overlay(&mut pass);
         }
+        self.fx.resolve_timestamps(&mut encoder);
         self.queue.submit(std::iter::once(encoder.finish()));
         self.hud.trim();
     }
@@ -1949,9 +1955,20 @@ impl Renderer3D {
     /// per-frame cost, so timing real GPU+CPU work needs a path that never
     /// waits on a compositor at all.
     ///
+    /// The configured surface size and the HDR scene target's, for the
+    /// bench's header.
+    #[allow(dead_code)]
+    pub fn bench_sizes(&self) -> ((u32, u32), (u32, u32)) {
+        (
+            (self.config.width, self.config.height),
+            self.fx.scene_size(),
+        )
+    }
+
     /// `#[allow(dead_code)]`: only that sibling `[[bin]]` target ever calls
     /// this -- the main `bryx` binary's own dead-code analysis has no
     /// visibility into a separate binary crate's call sites.
+    /// Returns the frame's GPU stage times when `BRYX_GPU_TIMING=1`.
     #[allow(dead_code)]
     pub fn render_offscreen_for_bench(
         &mut self,
@@ -1960,7 +1977,7 @@ impl Renderer3D {
         curr: &Game,
         alpha: f32,
         fx: &FxFrame,
-    ) {
+    ) -> Option<StageTimes> {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("render3d offscreen bench target"),
             size: wgpu::Extent3d {
@@ -1983,6 +2000,7 @@ impl Renderer3D {
         self.device
             .poll(wgpu::PollType::wait_indefinitely())
             .expect("device poll failed");
+        self.fx.read_timestamps(&self.device)
     }
 }
 

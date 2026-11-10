@@ -15,7 +15,10 @@ use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
 use crate::assets::{Atlas, SpriteId, UvRect, CAPSULE_SIZE};
-use crate::fx::gpu::{field_view_proj, FxGpu, Projection, ScreenMap, SCENE_FORMAT};
+use crate::fx::gpu::{
+    adapter_line, field_view_proj, FxGpu, GpuTimer, Projection, ScreenMap, Span, Stage, StageTimes,
+    SCENE_FORMAT,
+};
 use crate::fx::{FxFrame, Quality};
 use crate::game::{
     Ball, BallMode, Brick, Game, GameState, GunKind, Paddle, GATE_REACH_ABOVE_PADDLE,
@@ -515,9 +518,11 @@ impl Renderer {
             ..Default::default()
         }))
         .expect("failed to find a compatible wgpu adapter");
+        eprintln!("{}", adapter_line(&adapter.get_info()));
 
         let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("bryx device"),
+            required_features: GpuTimer::features(&adapter),
             ..Default::default()
         }))
         .expect("failed to request wgpu device");
@@ -635,6 +640,7 @@ impl Renderer {
         let hud = Hud::new(&device, &queue, config.format, SCENE_FORMAT);
         let fx = FxGpu::new(
             &device,
+            &queue,
             config.format,
             (config.width, config.height),
             Projection::Field,
@@ -840,9 +846,20 @@ impl Renderer {
         self.queue.present(surface_texture);
     }
 
+    /// The configured surface size and the HDR scene target's, for the
+    /// bench's header.
+    #[allow(dead_code)]
+    pub fn bench_sizes(&self) -> ((u32, u32), (u32, u32)) {
+        (
+            (self.config.width, self.config.height),
+            self.fx.scene_size(),
+        )
+    }
+
     /// The same frame into an offscreen texture, waiting for the GPU to
     /// finish it: for `src/bin/bench_render3d.rs`, which times real work
     /// with no swapchain pacing in the loop (see `Renderer3D`'s twin).
+    /// Returns the frame's GPU stage times when `BRYX_GPU_TIMING=1`.
     #[allow(dead_code)]
     pub fn render_offscreen_for_bench(
         &mut self,
@@ -851,7 +868,7 @@ impl Renderer {
         curr: &Game,
         alpha: f32,
         fx: &FxFrame,
-    ) {
+    ) -> Option<StageTimes> {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("render offscreen bench target"),
             size: wgpu::Extent3d {
@@ -871,6 +888,7 @@ impl Renderer {
         self.device
             .poll(wgpu::PollType::wait_indefinitely())
             .expect("device poll failed");
+        self.fx.read_timestamps(&self.device)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1144,7 +1162,7 @@ impl Renderer {
                     },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
+                timestamp_writes: self.fx.timestamps(Stage::Scene, Span::Whole),
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
@@ -1183,12 +1201,13 @@ impl Renderer {
                     },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
+                timestamp_writes: self.fx.timestamps(Stage::Hud, Span::Whole),
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
             self.hud.draw_overlay(&mut pass);
         }
+        self.fx.resolve_timestamps(&mut encoder);
         self.queue.submit(std::iter::once(encoder.finish()));
         // Reclaims glyph atlas space for text that stopped being drawn.
         self.hud.trim();

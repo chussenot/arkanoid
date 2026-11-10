@@ -23,6 +23,7 @@
 //! The shaders are WESL modules under `src/shaders/`, compiled to WGSL by
 //! build.rs.
 
+use std::cell::Cell;
 use std::mem::size_of;
 
 use super::{FxFrame, Pulse, Quality, MAX_PULSES};
@@ -109,6 +110,122 @@ pub struct ScreenMap<'a> {
     pub scale: &'a dyn Fn([f32; 2], f32) -> f32,
 }
 
+/// One line naming the adapter a renderer got, printed to stderr at start:
+/// a frame time means nothing without the GPU and driver it ran on.
+pub fn adapter_line(info: &wgpu::AdapterInfo) -> String {
+    format!(
+        "gpu: {} ({:?}, {:?}, driver {} {})",
+        info.name, info.backend, info.device_type, info.driver, info.driver_info
+    )
+}
+
+/// The frame's stages a [`GpuTimer`] times, each with a begin and an end
+/// timestamp. The scene is one pass in 2D and two (backdrop, world) in 3D;
+/// the bloom chain is five passes timed as one.
+#[derive(Debug, Clone, Copy)]
+pub enum Stage {
+    Scene = 0,
+    Bloom = 1,
+    Composite = 2,
+    Hud = 3,
+}
+
+#[allow(dead_code)] // read by src/bin/bench_render3d.rs
+pub const STAGE_NAMES: [&str; 4] = ["scene", "bloom", "composite", "hud"];
+const STAGES: usize = 4;
+/// Bytes per stage in the resolve buffer: a resolve's offset alignment.
+const STAGE_STRIDE: wgpu::BufferAddress = wgpu::QUERY_RESOLVE_BUFFER_ALIGNMENT;
+
+/// Which end of its stage a pass marks: both for a single-pass stage, or
+/// the begin and the end when the stage spans several passes.
+#[derive(Debug, Clone, Copy)]
+pub enum Span {
+    Whole,
+    Begin,
+    End,
+}
+
+/// Each stage's GPU time in one frame, in milliseconds; `None` for a stage
+/// that did not run (bloom and composite on a direct frame, the HUD when
+/// it shares the scene's pass).
+pub type StageTimes = [Option<f32>; STAGES];
+
+/// Opt-in GPU stage timing (`BRYX_GPU_TIMING=1`) with render-pass
+/// timestamps, for `src/bin/bench_render3d.rs`. Off, it costs nothing: no
+/// query set, no extra device feature, nothing per frame.
+///
+/// A renderer requests [`GpuTimer::features`] at device creation, marks
+/// its passes with [`FxGpu::timestamps`] (`finish` marks its own), calls
+/// [`FxGpu::resolve_timestamps`] before it submits, and, once the GPU has
+/// finished the frame, reads the stage times with
+/// [`FxGpu::read_timestamps`]. Only the stages a frame wrote are resolved
+/// and reported.
+pub struct GpuTimer {
+    set: wgpu::QuerySet,
+    resolve: wgpu::Buffer,
+    readback: wgpu::Buffer,
+    /// Nanoseconds per timestamp tick.
+    period: f32,
+    /// Bit `s` set when stage `s` wrote a timestamp this frame.
+    written: Cell<u8>,
+}
+
+/// Whether `BRYX_GPU_TIMING`'s value (if set) asks for timing: only `1`.
+/// Everything the timer costs hangs on this: without the feature request
+/// no device has `TIMESTAMP_QUERY`, so `GpuTimer::new` makes no query set
+/// and nothing is written, resolved or read back.
+fn timing_requested(var: Option<&str>) -> bool {
+    var == Some("1")
+}
+
+impl GpuTimer {
+    /// The device features timing needs: `TIMESTAMP_QUERY` when asked for
+    /// and available, none otherwise.
+    pub fn features(adapter: &wgpu::Adapter) -> wgpu::Features {
+        if !timing_requested(std::env::var("BRYX_GPU_TIMING").ok().as_deref()) {
+            return wgpu::Features::empty();
+        }
+        if adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY) {
+            wgpu::Features::TIMESTAMP_QUERY
+        } else {
+            eprintln!("gpu timing: this adapter has no timestamp queries; stage times unavailable");
+            wgpu::Features::empty()
+        }
+    }
+
+    fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<Self> {
+        if !device.features().contains(wgpu::Features::TIMESTAMP_QUERY) {
+            return None;
+        }
+        let set = device.create_query_set(&wgpu::QuerySetDescriptor {
+            label: Some("fx gpu timer"),
+            ty: wgpu::QueryType::Timestamp,
+            count: 2 * STAGES as u32,
+        });
+        let buffer = |label, usage| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size: STAGE_STRIDE * STAGES as wgpu::BufferAddress,
+                usage,
+                mapped_at_creation: false,
+            })
+        };
+        Some(Self {
+            set,
+            resolve: buffer(
+                "fx gpu timer resolve",
+                wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+            ),
+            readback: buffer(
+                "fx gpu timer readback",
+                wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            ),
+            period: queue.get_timestamp_period(),
+            written: Cell::new(0),
+        })
+    }
+}
+
 struct Target {
     // Kept alive for its view.
     _texture: wgpu::Texture,
@@ -176,6 +293,7 @@ pub struct FxGpu {
     up: wgpu::RenderPipeline,
     composite: wgpu::RenderPipeline,
     targets: Targets,
+    timer: Option<GpuTimer>,
 }
 
 fn texture_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
@@ -280,6 +398,7 @@ fn fullscreen_pipeline(
 impl FxGpu {
     pub fn new(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         surface_format: wgpu::TextureFormat,
         size: (u32, u32),
         projection: Projection,
@@ -481,6 +600,7 @@ impl FxGpu {
             up,
             composite,
             targets,
+            timer: GpuTimer::new(device, queue),
         }
     }
 
@@ -625,6 +745,9 @@ impl FxGpu {
         self.pulse_count = uniform.misc[0] as usize;
         self.direct = !self.bloom && self.pulse_count == 0;
         queue.write_buffer(&self.post_buffer, 0, bytemuck::bytes_of(&uniform));
+        if let Some(timer) = &self.timer {
+            timer.written.set(0);
+        }
     }
 
     /// Draws the effect geometry into the scene pass (its viewport set to
@@ -664,7 +787,7 @@ impl FxGpu {
                 (&self.up, &t.up[1], &t.levels[1].view, true),
                 (&self.up, &t.up[0], &t.levels[0].view, true),
             ];
-            for (pipeline, group, view, add) in passes {
+            for (i, (pipeline, group, view, add)) in passes.into_iter().enumerate() {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("fx bloom"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -681,7 +804,11 @@ impl FxGpu {
                         },
                     })],
                     depth_stencil_attachment: None,
-                    timestamp_writes: None,
+                    timestamp_writes: match i {
+                        0 => self.timestamps(Stage::Bloom, Span::Begin),
+                        4 => self.timestamps(Stage::Bloom, Span::End),
+                        _ => None,
+                    },
                     occlusion_query_set: None,
                     multiview_mask: None,
                 });
@@ -702,13 +829,103 @@ impl FxGpu {
                 },
             })],
             depth_stencil_attachment: None,
-            timestamp_writes: None,
+            timestamp_writes: self.timestamps(Stage::Composite, Span::Whole),
             occlusion_query_set: None,
             multiview_mask: None,
         });
         pass.set_pipeline(&self.composite);
         pass.set_bind_group(0, &self.targets.composite, &[]);
         pass.draw(0..3, 0..1);
+    }
+
+    /// The timestamp writes for a pass of `stage`; `None` when timing is
+    /// off, so a pass descriptor can take it directly.
+    pub fn timestamps(
+        &self,
+        stage: Stage,
+        span: Span,
+    ) -> Option<wgpu::RenderPassTimestampWrites<'_>> {
+        let timer = self.timer.as_ref()?;
+        let s = stage as u32;
+        timer.written.set(timer.written.get() | 1 << s);
+        let (begin, end) = match span {
+            Span::Whole => (true, true),
+            Span::Begin => (true, false),
+            Span::End => (false, true),
+        };
+        Some(wgpu::RenderPassTimestampWrites {
+            query_set: &timer.set,
+            beginning_of_pass_write_index: begin.then_some(2 * s),
+            end_of_pass_write_index: end.then_some(2 * s + 1),
+        })
+    }
+
+    /// Resolves the stages this frame wrote, after its last pass and
+    /// before the submit. Nothing when timing is off.
+    pub fn resolve_timestamps(&self, encoder: &mut wgpu::CommandEncoder) {
+        let Some(timer) = &self.timer else {
+            return;
+        };
+        let written = timer.written.get();
+        for s in 0..STAGES as u32 {
+            if written & (1 << s) != 0 {
+                encoder.resolve_query_set(
+                    &timer.set,
+                    2 * s..2 * s + 2,
+                    &timer.resolve,
+                    wgpu::BufferAddress::from(s) * STAGE_STRIDE,
+                );
+            }
+        }
+        if written != 0 {
+            encoder.copy_buffer_to_buffer(
+                &timer.resolve,
+                0,
+                &timer.readback,
+                0,
+                STAGE_STRIDE * STAGES as wgpu::BufferAddress,
+            );
+        }
+    }
+
+    /// The stage times of the frame last resolved, once the GPU has
+    /// finished it (the caller polled the device). Blocks on the readback;
+    /// `None` when timing is off.
+    #[allow(dead_code)] // read by src/bin/bench_render3d.rs
+    pub fn read_timestamps(&self, device: &wgpu::Device) -> Option<StageTimes> {
+        let timer = self.timer.as_ref()?;
+        let written = timer.written.get();
+        let slice = timer.readback.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |result| {
+            result.expect("gpu timer readback failed")
+        });
+        device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("device poll failed");
+        let mut times = [None; STAGES];
+        {
+            let data = slice
+                .get_mapped_range()
+                .expect("gpu timer readback is not mapped");
+            let tick = |at: usize| u64::from_le_bytes(data[at..at + 8].try_into().unwrap());
+            for (s, time) in times.iter_mut().enumerate() {
+                if written & (1 << s) != 0 {
+                    let at = s * STAGE_STRIDE as usize;
+                    let ticks = tick(at + 8).wrapping_sub(tick(at));
+                    *time = Some(ticks as f32 * timer.period * 1e-6);
+                }
+            }
+        }
+        timer.readback.unmap();
+        Some(times)
+    }
+
+    /// The HDR scene target's size (for the bench's header: proof of what
+    /// the fullscreen passes ran over).
+    #[allow(dead_code)] // read by src/bin/bench_render3d.rs
+    pub fn scene_size(&self) -> (u32, u32) {
+        let t = &self.targets.scene._texture;
+        (t.width(), t.height())
     }
 
     /// Passes `finish` records this frame (for the performance report).
@@ -780,6 +997,14 @@ mod tests {
             .validate(&module)
             .unwrap_or_else(|e| panic!("{name}: {e:?}"));
         }
+    }
+
+    #[test]
+    fn gpu_timing_is_off_unless_asked_for() {
+        for off in [None, Some(""), Some("0"), Some("true"), Some("yes")] {
+            assert!(!timing_requested(off), "{off:?} must request nothing");
+        }
+        assert!(timing_requested(Some("1")));
     }
 
     #[test]
