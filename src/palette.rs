@@ -19,7 +19,7 @@
 //! pattern (`assets.rs`). See PRODUCT.md, "Accessibility & Inclusion".
 
 use crate::events::PowerUpKind;
-use crate::game::BallMode;
+use crate::game::{BallMode, Game, POWER_WARNING_SECS};
 use crate::levels::BrickKind;
 
 /// An sRGB color as authored: 8 bits per channel, no alpha.
@@ -128,6 +128,41 @@ pub fn ball(mode: Option<BallMode>) -> Rgb {
         Some(BallMode::Metal) => CAPSULE_METAL_BALL,
     }
 }
+/// How often a power about to run out pulses its hue: under DESIGN.md's
+/// 3 Hz limit for anything that flashes.
+const EXPIRY_PULSE_HZ: f32 = 2.0;
+
+/// How strongly a timed power's hue shows with `secs_left`: fully until its
+/// last [`POWER_WARNING_SECS`], then a 2 Hz pulse (the warning its sound
+/// gives, seen), or with reduced motion a steady fade to nothing.
+pub fn expiry_strength(secs_left: f32, reduced_motion: bool) -> f32 {
+    if secs_left >= POWER_WARNING_SECS {
+        1.0
+    } else if reduced_motion {
+        (secs_left / POWER_WARNING_SECS).clamp(0.0, 1.0)
+    } else {
+        let t = POWER_WARNING_SECS - secs_left;
+        0.5 + 0.5 * (std::f32::consts::TAU * EXPIRY_PULSE_HZ * t).cos()
+    }
+}
+
+/// The paddle's warning, if a power it carries (Widen, Tiny, Glue, a gun)
+/// is about to run out: that power's capsule hue, and how strongly it shows
+/// now. The one that runs out soonest when several do.
+pub fn paddle_expiry(game: &Game, reduced_motion: bool) -> Option<(Rgb, f32)> {
+    game.expiring_powers()
+        .filter(|&(kind, _)| !matches!(kind, PowerUpKind::ExplosiveBall | PowerUpKind::MetalBall))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(kind, secs)| (capsule(kind), expiry_strength(secs, reduced_motion)))
+}
+
+/// How much of its power's hue the ball shows: 1 while a ball power runs,
+/// pulsing in its warning (`expiry_strength`).
+pub fn ball_power_strength(game: &Game, reduced_motion: bool) -> f32 {
+    game.ball_power
+        .map_or(1.0, |power| expiry_strength(power.timer, reduced_motion))
+}
+
 /// Brushed-metal paddle base (the sprite recipe adds grain and gloss).
 pub const PADDLE: Rgb = hex(0xC6CEDC);
 /// One-frame flash on a brick that was hit.
@@ -257,6 +292,60 @@ pub fn rally(step: usize) -> Rgb {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::{BallPower, Gun, GunKind};
+
+    #[test]
+    fn a_power_shows_fully_until_its_warning_then_pulses_under_3_hz() {
+        assert_eq!(expiry_strength(15.0, false), 1.0);
+        assert_eq!(expiry_strength(POWER_WARNING_SECS, false), 1.0);
+        let samples: Vec<f32> = (1..400)
+            .map(|i| expiry_strength(POWER_WARNING_SECS * (1.0 - i as f32 / 400.0), false))
+            .collect();
+        assert!(samples.iter().all(|k| (0.0..=1.0).contains(k)));
+        let troughs = samples
+            .windows(3)
+            .filter(|w| w[1] < w[0] && w[1] <= w[2])
+            .count();
+        let hz = troughs as f32 / POWER_WARNING_SECS;
+        assert!((1.0..3.0).contains(&hz), "{hz} Hz");
+    }
+
+    #[test]
+    fn with_reduced_motion_a_power_fades_out_steadily() {
+        let samples: Vec<f32> = (0..=40)
+            .map(|i| expiry_strength(POWER_WARNING_SECS * (1.0 - i as f32 / 40.0), true))
+            .collect();
+        assert!(samples.windows(2).all(|w| w[1] <= w[0]), "never brightens");
+        assert_eq!(samples[40], 0.0);
+    }
+
+    #[test]
+    fn the_paddle_warns_of_its_soonest_power_and_the_ball_of_its_own() {
+        let mut game = Game::new();
+        assert!(paddle_expiry(&game, true).is_none());
+        assert_eq!(ball_power_strength(&game, true), 1.0);
+
+        game.widen_timer = 1.5;
+        game.gun = Some(Gun {
+            kind: GunKind::Laser,
+            timer: 0.5,
+        });
+        game.ball_power = Some(BallPower {
+            mode: BallMode::Metal,
+            timer: 0.2,
+        });
+        let (hue, k) = paddle_expiry(&game, true).expect("two paddle powers warning");
+        assert_eq!(hue, CAPSULE_LASER, "the gun runs out first");
+        assert!((k - 0.25).abs() < 1e-6);
+        assert!((ball_power_strength(&game, true) - 0.1).abs() < 1e-6);
+
+        game.gun = None;
+        game.widen_timer = 9.0;
+        assert!(
+            paddle_expiry(&game, true).is_none(),
+            "not in its warning yet"
+        );
+    }
 
     const ALL_CAPSULES: [PowerUpKind; 11] = [
         PowerUpKind::Widen,

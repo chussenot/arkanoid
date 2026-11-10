@@ -1,0 +1,17 @@
+X:1
+T:steel
+C:BRYX
+M:4/4
+L:1/16
+Q:1/4=240
+K:C
+% A short, dull knock with a dry glint of metal: the ball turned back, nothing broken.
+%%hold on
+%%bandlimit on
+%%instrument knock wave=triangle amp=55 attack=0 decay=28 sustain=0 release=30 gate=25 pitch=12 pitch_time=25 fx=0
+%%instrument glint wave=noise amp=12 attack=0 decay=16 sustain=0 release=20 gate=20 noise=metal fx=0
+%%effect 0 delay_steps=0 delay_feedback=0 delay_mix=0 drive=0 lowpass=0 mix=100
+V:knock instrument=knock
+| B, z7 |
+V:glint instrument=glint
+| e z7 |

@@ -344,9 +344,13 @@ beside the score. Shown whenever `--autopilot` drives the input (PRODUCT.md,
   The light's hue is the rally's step on the scale the brick notes climb
   (`FX_SCALE`). With `BRYX_FX=off`, the older one-frame brick flash, 2D
   ghost and 3D tumble return as the fallback.
+- A timed power's last 2 s: its capsule hue pulses at 2 Hz on the object it
+  lives on (the paddle, or the ball for a ball power), so its `expiring`
+  sound has a visual counterpart (`palette::expiry_strength`).
 - Nothing flashes above 3 Hz. The only interface animation is the single
   0.9 s life cue.
-- `BRYX_REDUCED_MOTION=1` turns shake off in both renderers.
+- `BRYX_REDUCED_MOTION=1` turns shake off in both renderers, and turns the
+  expiry pulse into a steady fade.
 
 ## Do's and Don'ts
 

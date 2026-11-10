@@ -83,11 +83,13 @@ changes it in game.
 | Space               | Press to launch the ball or release a glued ball; hold to fire a laser |
 | Escape (or P)       | Pause / resume           |
 | After a Game Over   | Space: continue from the start of the act (level 1, 9, 17 or 25); Escape or P: new game |
-| After a Victory     | Space: play again        |
+| After a Victory     | Space, Escape or P: play again |
 | Q                   | Back to the menu, from the pause and end screens |
 | M                   | Sound: on, effects only, off |
+| F11                 | Fullscreen on / off      |
 
 Keyboard only; menu and pause screens show the same keys on-screen.
+Switching to another window pauses the game.
 
 The campaign is four acts of eight levels, and the ball's top speed rises
 from 560 to 700 px/s across them. A Game Over continues from the start of

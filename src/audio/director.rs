@@ -22,7 +22,7 @@
 //!   leaving an end screen cuts its stinger.
 
 use crate::cadence;
-use crate::events::{GameEvent, PowerUpKind};
+use crate::events::{GameEvent, PowerUpKind, Striker};
 use crate::game::TICK_RATE;
 use crate::game::{Game, GameState, GunKind, LevelSetKind, PLAYFIELD_WIDTH};
 use crate::levels::BrickKind;
@@ -328,6 +328,8 @@ impl Director {
         let scale = self.mode_playing().rally();
         // Several balls can blow up in one tick: one blast is heard.
         let mut ball_blast = false;
+        // Likewise one knock on steel a tick, however many balls bounce.
+        let mut steel = false;
         for (i, event) in events.iter().enumerate() {
             match *event {
                 GameEvent::BrickDestroyedAt { x, .. } => {
@@ -356,6 +358,18 @@ impl Director {
                 } if hits_left > 0 => {
                     let crack = play(Cue::Armor, 0.5, rect[0]);
                     self.land(delays[i].unwrap_or(0.0), crack, out);
+                }
+                // A ball turned back by an indestructible brick: a dull knock,
+                // quiet, since walls of them turn balls back all the time.
+                // A bolt's own sound already covers its hit.
+                GameEvent::BrickStruck {
+                    rect,
+                    kind: BrickKind::Indestructible,
+                    by: Striker::Ball | Striker::MetalBall | Striker::ExplosiveBall,
+                    ..
+                } if !steel => {
+                    steel = true;
+                    out.push(play(Cue::Steel, 0.35, rect[0]));
                 }
                 GameEvent::PaddleHit => {
                     // 300 px/s at launch to the 700 cap: up a minor third.
@@ -392,8 +406,19 @@ impl Director {
                         pitch: 1.0,
                         duck: 0.6,
                     },
+                    // The gate opens in the right wall: heard there.
+                    PowerUpKind::Break => play(Cue::Gate, 0.6, PLAYFIELD_WIDTH),
                     _ => play(Cue::Capsule, 0.5, paddle_x),
                 }),
+                // A power about to run out, heard where it lives: on the
+                // ball for a ball power, on the paddle for the rest.
+                GameEvent::PowerUpExpiring(kind) => {
+                    let x = match kind {
+                        PowerUpKind::ExplosiveBall | PowerUpKind::MetalBall => game.ball.x,
+                        _ => paddle_x,
+                    };
+                    out.push(play(Cue::Expiring, 0.6, x));
+                }
                 GameEvent::Warped => out.push(play(Cue::Warp, 0.6, PLAYFIELD_WIDTH)),
                 GameEvent::BallLost if !has(&GameEvent::LifeLost) => {
                     out.push(play(Cue::BallLost, 0.45, paddle_x));
@@ -810,6 +835,60 @@ mod tests {
             vec![Cue::Victory],
             "the last level: victory only"
         );
+    }
+
+    fn steel(x: f32, by: Striker) -> E {
+        E::BrickStruck {
+            rect: [x, 100.0, 52.0, 22.0],
+            at: [x, 111.0],
+            normal: [0.0, 1.0],
+            kind: BrickKind::Indestructible,
+            hits_left: 0,
+            by,
+        }
+    }
+
+    fn panned(commands: &[Command]) -> Vec<(Cue, f32)> {
+        commands
+            .iter()
+            .filter_map(|c| match *c {
+                Command::Play { cue, pan, .. } => Some((cue, pan)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_ball_on_steel_knocks_once_a_tick_and_a_bolt_does_not() {
+        let (mut director, game) = playing();
+        let out = director.observe(
+            &game,
+            &[
+                steel(100.0, Striker::Ball),
+                steel(700.0, Striker::MetalBall),
+            ],
+        );
+        assert_eq!(panned(&out), [(Cue::Steel, pan_for(100.0))]);
+        let bolt = director.observe(&game, &[steel(100.0, Striker::Laser)]);
+        assert!(panned(&bolt).iter().all(|&(c, _)| c != Cue::Steel));
+    }
+
+    #[test]
+    fn catching_break_opens_the_gate_in_the_right_wall() {
+        let (mut director, game) = playing();
+        let out = director.observe(&game, &[E::PowerUpCaught(PowerUpKind::Break)]);
+        assert_eq!(panned(&out), [(Cue::Gate, pan_for(PLAYFIELD_WIDTH))]);
+    }
+
+    #[test]
+    fn a_power_running_out_is_heard_where_it_lives() {
+        let (mut director, mut game) = playing();
+        game.paddle.x = 200.0;
+        game.ball.x = 600.0;
+        let paddle = director.observe(&game, &[E::PowerUpExpiring(PowerUpKind::Widen)]);
+        assert_eq!(panned(&paddle), [(Cue::Expiring, pan_for(200.0))]);
+        let ball = director.observe(&game, &[E::PowerUpExpiring(PowerUpKind::MetalBall)]);
+        assert_eq!(panned(&ball), [(Cue::Expiring, pan_for(600.0))]);
     }
 
     fn crack(x: f32, by: crate::events::Striker) -> E {

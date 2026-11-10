@@ -960,16 +960,22 @@ impl Renderer {
                 + curr.bolts.len().min(MAX_BOLTS)
                 + 1,
         );
-        // A gun shows over Glue: it changes what Space does.
-        let paddle_tint = match curr.gun.map(|g| g.kind) {
-            Some(GunKind::Laser) => paddle_tint(palette::CAPSULE_LASER, PADDLE_TINT_STRENGTH),
-            Some(GunKind::SuperLaser) => {
-                paddle_tint(palette::CAPSULE_SUPER_LASER, PADDLE_TINT_STRENGTH)
+        // A power about to run out pulses its hue; otherwise a gun shows
+        // over Glue: it changes what Space does.
+        let reduced_motion = hud::reduced_motion();
+        let paddle_tint = if let Some((hue, k)) = palette::paddle_expiry(curr, reduced_motion) {
+            paddle_tint(hue, PADDLE_TINT_STRENGTH * k)
+        } else {
+            match curr.gun.map(|g| g.kind) {
+                Some(GunKind::Laser) => paddle_tint(palette::CAPSULE_LASER, PADDLE_TINT_STRENGTH),
+                Some(GunKind::SuperLaser) => {
+                    paddle_tint(palette::CAPSULE_SUPER_LASER, PADDLE_TINT_STRENGTH)
+                }
+                None if curr.glue_timer > 0.0 => {
+                    paddle_tint(palette::CAPSULE_GLUE, PADDLE_TINT_STRENGTH)
+                }
+                None => WHITE_TINT,
             }
-            None if curr.glue_timer > 0.0 => {
-                paddle_tint(palette::CAPSULE_GLUE, PADDLE_TINT_STRENGTH)
-            }
-            None => WHITE_TINT,
         };
         instances.push(QuadInstance::new_textured(
             shaken(drawn.paddle.x, drawn.paddle.y),
@@ -984,7 +990,16 @@ impl Renderer {
         // top of its own trail. Uses the trail as it stood at the *start*
         // of this frame, then updates it (`push_trail`) for next frame.
         let ball_uv = self.sprite_atlas.uv_rect(SpriteId::Ball);
-        let ball_tint = ball_tint(curr.ball_power.map(|p| p.mode));
+        let ball_tint = {
+            let full = ball_tint(curr.ball_power.map(|p| p.mode));
+            let k = palette::ball_power_strength(curr, reduced_motion);
+            [
+                1.0 + k * (full[0] - 1.0),
+                1.0 + k * (full[1] - 1.0),
+                1.0 + k * (full[2] - 1.0),
+                1.0,
+            ]
+        };
         let trail_len = self.ball_trail.len().max(1) as f32;
         instances.extend(self.ball_trail.iter().enumerate().map(|(i, &(x, y))| {
             let fade = (i + 1) as f32 / trail_len;

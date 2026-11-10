@@ -27,7 +27,7 @@ use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::{Window, WindowId};
+use winit::window::{Fullscreen, Window, WindowId};
 
 use assets::Atlas;
 use autopilot::Autopilot;
@@ -328,6 +328,16 @@ impl ApplicationHandler for App {
                     renderer.resize(size);
                 }
             }
+            // Leaving the window: keys let go of elsewhere never send their
+            // release here, so forget every held key, and pause play so the
+            // ball does not fall while the player is away. Not under the
+            // autopilot, which plays unattended.
+            WindowEvent::Focused(false) => {
+                self.input = game::Input::default();
+                if self.autopilot.is_none() {
+                    self.game.pause();
+                }
+            }
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -339,6 +349,18 @@ impl ApplicationHandler for App {
                 is_synthetic: false,
                 ..
             } => {
+                // F11 toggles borderless fullscreen on the current monitor.
+                // The playfield scales and letterboxes as on any resize.
+                if physical_key == PhysicalKey::Code(KeyCode::F11)
+                    && state == ElementState::Pressed
+                    && !repeat
+                {
+                    let fullscreen = match window.fullscreen() {
+                        Some(_) => None,
+                        None => Some(Fullscreen::Borderless(None)),
+                    };
+                    window.set_fullscreen(fullscreen);
+                }
                 // M cycles the sound (all, effects only, off). An interface
                 // key, like closing the window: never a simulation input.
                 if physical_key == PhysicalKey::Code(KeyCode::KeyM)

@@ -32,6 +32,9 @@ pub enum Cue {
     Warp,
     Select,
     Pause,
+    Steel,
+    Gate,
+    Expiring,
     // Stingers
     LifeLost,
     LevelClear,
@@ -46,7 +49,7 @@ pub enum Cue {
 impl Cue {
     /// Every cue that is not a level track.
     #[cfg(test)]
-    pub const NAMED: [Cue; 20] = [
+    pub const NAMED: [Cue; 23] = [
         Cue::Paddle,
         Cue::Brick,
         Cue::Armor,
@@ -62,6 +65,9 @@ impl Cue {
         Cue::Warp,
         Cue::Select,
         Cue::Pause,
+        Cue::Steel,
+        Cue::Gate,
+        Cue::Expiring,
         Cue::LifeLost,
         Cue::LevelClear,
         Cue::GameOver,
@@ -87,6 +93,9 @@ impl Cue {
             Cue::Warp => "warp",
             Cue::Select => "select",
             Cue::Pause => "pause",
+            Cue::Steel => "steel",
+            Cue::Gate => "gate",
+            Cue::Expiring => "expiring",
             Cue::LifeLost => "life_lost",
             Cue::LevelClear => "level_clear",
             Cue::GameOver => "game_over",
