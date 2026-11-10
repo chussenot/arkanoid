@@ -992,6 +992,11 @@ pub struct Game {
     pub rally: u32,
     /// The longest rally of this run.
     pub best_rally: u32,
+    /// Ticks this run has been in play (not paused, not on an end screen):
+    /// its time, for the end screen ([`Game::run_secs`]).
+    pub run_ticks: u64,
+    /// Bricks this run has broken.
+    pub bricks_broken: u32,
     /// The built-in levels played when no levelset is loaded.
     built_in: BuiltInLevels,
     /// Seconds of flight since the last progress (see `STALL_SECS`).
@@ -1152,6 +1157,8 @@ impl Game {
         self.lives = STARTING_LIVES;
         self.score = 0;
         self.best_rally = 0;
+        self.run_ticks = 0;
+        self.bricks_broken = 0;
         self.paddle = Paddle::new();
         self.ball = Ball::attached_to(&self.paddle);
         self.extra_balls.clear();
@@ -1200,6 +1207,8 @@ impl Game {
             features: Features::default(),
             rally: 0,
             best_rally: 0,
+            run_ticks: 0,
+            bricks_broken: 0,
             built_in: BuiltInLevels::V1,
             stall_secs: 0.0,
             stall_nudges: 0,
@@ -1305,6 +1314,7 @@ impl Game {
 
     /// The actual gameplay tick, run only while `state == Playing`.
     fn tick_playing(&mut self, input: &Input, space_pressed: bool, dt_fixed: f32) {
+        self.run_ticks += 1;
         let timers_before = self.power_timers();
         if self.widen_timer > 0.0 {
             self.widen_timer = (self.widen_timer - dt_fixed).max(0.0);
@@ -1588,6 +1598,11 @@ impl Game {
         }
     }
 
+    /// How long this run has been in play, in seconds of simulation.
+    pub fn run_secs(&self) -> f32 {
+        self.run_ticks as f32 / TICK_RATE
+    }
+
     /// What the next brick broken scores times: its place in the rally
     /// under `Features::rally_score` (1 for the first brick after a paddle
     /// touch, up to [`RALLY_MAX_MULTIPLIER`]), 1 otherwise.
@@ -1617,6 +1632,7 @@ impl Game {
         self.score += self.brick_points(&brick);
         self.rally += 1;
         self.best_rally = self.best_rally.max(self.rally);
+        self.bricks_broken += 1;
         self.events.push(GameEvent::BrickDestroyed);
         self.events.push(GameEvent::BrickDestroyedAt {
             x: brick.x,
@@ -3733,6 +3749,28 @@ mod tests {
         }
         assert_eq!(gained, [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 100, 100]);
         assert_eq!((game.rally, game.best_rally), (12, 12));
+    }
+
+    /// A run's clock runs only in play: not paused, not on an end screen.
+    /// It and the bricks count start over with every run.
+    #[test]
+    fn a_run_counts_its_time_in_play_and_its_bricks() {
+        let (mut game, brick) = rally_scored();
+        for _ in 0..240 {
+            game.tick(&Input::default(), DT);
+        }
+        game.state = GameState::Paused;
+        for _ in 0..240 {
+            game.tick(&Input::default(), DT);
+        }
+        assert_eq!(game.run_ticks, 240);
+        assert!((game.run_secs() - 2.0).abs() < 1e-6);
+
+        game.on_brick_destroyed(brick);
+        game.on_brick_destroyed(brick);
+        assert_eq!(game.bricks_broken, 2);
+        game.restart_at(1);
+        assert_eq!((game.run_ticks, game.bricks_broken), (0, 0));
     }
 
     #[test]

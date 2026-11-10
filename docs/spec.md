@@ -172,16 +172,23 @@ asteroid 100 times the multiplier the next brick would score. The Break
 gate still pays skipped bricks at ×1. The HUD shows the multiplier beside
 the score once it passes ×1, and the end screen the run's best rally. The
 flag applies to every mode but Classic and v1-rules sets, and its runs
-keep no best score (a different scale). Off, the score is exactly as
+keep their own records (a different scale). Off, the score is exactly as
 below and the replay hash unchanged. It stays a flag until a playtest
 decides (`docs/design/game-director-review.md`, "Rally is the score").
 
-**Best score (added after v1)**: the best campaign and `--classic` scores
-are kept in a small per-user file (`src/record.rs`; never sent anywhere).
-The menu shows each mode's best on its row; the end screen marks a new
-one. Runs played by
-`--autopilot` show the record but never set it. Loaded levelsets keep no
-record.
+**Records (added after v1)**: every progression keeps its best score and
+its best rally in a small per-user file (`src/record.rs`; never sent
+anywhere): the campaign, Classic, Shuffle (all its runs share one), and
+each loaded levelset, known by a hash of the bricks it lays out rather than
+its path, so a set keeps its records wherever it is fetched and an edited
+one starts fresh. v1 rules on a loaded set (`--classic --levelset`) and
+rally scoring keep records apart from plain runs. The menu shows each
+mode's best on its row (a levelset's on its detail line). The end screen
+sums up the run: score and level reached, then its longest rally, its time
+in play (`Game::run_ticks`: neither paused nor on an end screen) and the
+bricks it broke, then the records to beat, a broken one marked NEW in the
+Player capsule's gold. Runs played by `--autopilot` show the records but
+never set them.
 
 **Effects (added after v1)**, designed in `docs/design/kinetic-fx.md`:
 - Every brick contact pushes `GameEvent::BrickStruck`, from a ball or a

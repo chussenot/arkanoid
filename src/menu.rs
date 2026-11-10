@@ -18,9 +18,10 @@
 use rand::seq::IndexedRandom;
 use rand::Rng;
 
-use crate::game::{Features, Game, LevelSetKind};
+use crate::game::{Features, Game};
 use crate::hud::{Aside, MenuRow, MenuView};
 use crate::levelset::ExternalLevel;
+use crate::record::{Best, Progression, RecordKey};
 
 /// Levels a Shuffle run plays.
 const SHUFFLE_LEVELS: usize = 10;
@@ -189,9 +190,51 @@ impl Menu {
         }
     }
 
+    /// The records a run of `mode` counts toward: its levels (the
+    /// highlighted set for Levelset), and the rules that change a score's
+    /// meaning.
+    fn key(&self, mode: Mode, set: usize) -> RecordKey {
+        let (progression, loaded) = match mode {
+            Mode::Campaign => (Progression::Campaign, false),
+            Mode::Classic => (Progression::Classic, false),
+            Mode::Shuffle => (Progression::Shuffle, true),
+            Mode::Levelset => (
+                Progression::Set(
+                    self.sets
+                        .get(set)
+                        .map_or(0, |s| crate::record::set_hash(&s.levels)),
+                ),
+                true,
+            ),
+        };
+        RecordKey {
+            progression,
+            classic_rules: loaded && self.classic_rules,
+            // Classic is v1, whose score rally scoring never touches.
+            rally_score: self.rally_score
+                && mode != Mode::Classic
+                && !(loaded && self.classic_rules),
+        }
+    }
+
+    /// The records a run of the highlighted mode counts toward.
+    pub fn record_key(&self) -> RecordKey {
+        self.key(self.mode(), self.set)
+    }
+
+    /// Every record the picker can show: each mode's, each set's.
+    pub fn record_keys(&self) -> Vec<RecordKey> {
+        let mut keys: Vec<RecordKey> = [Mode::Campaign, Mode::Classic, Mode::Shuffle]
+            .into_iter()
+            .map(|mode| self.key(mode, 0))
+            .collect();
+        keys.extend((0..self.sets.len()).map(|i| self.key(Mode::Levelset, i)));
+        keys
+    }
+
     /// The picker as the HUD draws it. `best` gives the stored record of a
     /// progression that keeps one (`record.rs`).
-    pub fn view(&self, best: impl Fn(LevelSetKind) -> Option<u32>) -> MenuView {
+    pub fn view(&self, best: impl Fn(&RecordKey) -> Best) -> MenuView {
         let rows = self
             .modes
             .iter()
@@ -203,8 +246,8 @@ impl Menu {
         }
     }
 
-    fn row(&self, mode: Mode, best: &impl Fn(LevelSetKind) -> Option<u32>) -> MenuRow {
-        let aside_best = |kind| best(kind).map_or(Aside::Nothing, Aside::Best);
+    fn row(&self, mode: Mode, best: &impl Fn(&RecordKey) -> Best) -> MenuRow {
+        let aside_best = |mode| Aside::Best(best(&self.key(mode, self.set)).score);
         let levels = |n: usize| format!("{n} level{}", if n == 1 { "" } else { "s" });
         match mode {
             Mode::Campaign => MenuRow {
@@ -214,7 +257,7 @@ impl Menu {
                     "{} named levels in four acts",
                     crate::levels::CAMPAIGN.len()
                 ),
-                aside: aside_best(LevelSetKind::Campaign),
+                aside: aside_best(Mode::Campaign),
                 enabled: true,
             },
             Mode::Classic => MenuRow {
@@ -224,14 +267,19 @@ impl Menu {
                     "{}, the original rules",
                     levels(crate::levels::LEVELS.len())
                 ),
-                aside: aside_best(LevelSetKind::Classic),
+                aside: aside_best(Mode::Classic),
                 enabled: true,
             },
             Mode::Levelset => match self.sets.get(self.set) {
+                // The aside counts the sets, so the set's best rides on its
+                // detail line.
                 Some(set) => MenuRow {
                     name: "LEVELSET",
                     value: Some(set.name.clone()),
-                    detail: levels(set.levels.len()),
+                    detail: match best(&self.key(Mode::Levelset, self.set)).score {
+                        0 => levels(set.levels.len()),
+                        score => format!("{}, best {score}", levels(set.levels.len())),
+                    },
                     aside: Aside::Position {
                         index: self.set + 1,
                         count: self.sets.len(),
@@ -254,7 +302,7 @@ impl Menu {
                     levels(SHUFFLE_LEVELS),
                     self.sets.len()
                 ),
-                aside: Aside::Nothing,
+                aside: aside_best(Mode::Shuffle),
                 enabled: true,
             },
         }
@@ -264,7 +312,7 @@ impl Menu {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::GameState;
+    use crate::game::{GameState, LevelSetKind};
     use crate::levelset::ExternalBrickSpawn;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -298,7 +346,7 @@ mod tests {
     #[test]
     fn without_sets_the_levelset_row_shows_but_is_stepped_over() {
         let mut menu = Menu::new(Vec::new(), false);
-        let view = menu.view(|_| None);
+        let view = menu.view(|_| Best::default());
         let names: Vec<_> = view.rows.iter().map(|r| r.name).collect();
         assert_eq!(names, ["CAMPAIGN", "CLASSIC", "LEVELSET"], "no Shuffle");
         assert!(!view.rows[2].enabled);
@@ -337,7 +385,12 @@ mod tests {
         let mut menu = Menu::new(vec![set("A", 3), set("Empty", 0), set("B", 5)], false);
         assert!(!menu.nav(Nav::Right), "Campaign has no value to change");
         menu.select(Mode::Levelset);
-        let shown = |menu: &Menu| menu.view(|_| None).rows[2].value.clone().unwrap();
+        let shown = |menu: &Menu| {
+            menu.view(|_| Best::default()).rows[2]
+                .value
+                .clone()
+                .unwrap()
+        };
         assert_eq!(shown(&menu), "A");
         assert!(menu.nav(Nav::Right));
         assert_eq!(shown(&menu), "B", "an empty set is never offered");
@@ -346,7 +399,7 @@ mod tests {
         assert!(menu.nav(Nav::Left));
         assert_eq!(shown(&menu), "B");
         assert_eq!(
-            menu.view(|_| None).rows[2].aside,
+            menu.view(|_| Best::default()).rows[2].aside,
             Aside::Position { index: 2, count: 2 }
         );
     }
@@ -412,15 +465,49 @@ mod tests {
     fn the_view_shows_each_record_and_marks_the_highlight() {
         let mut menu = Menu::new(vec![set("A", 3)], false);
         menu.nav(Nav::Down);
-        let view = menu.view(|kind| match kind {
-            LevelSetKind::Campaign => Some(12_000),
-            LevelSetKind::Classic => Some(3_400),
-            LevelSetKind::Loaded => None,
+        let a = crate::record::set_hash(&set("A", 3).levels);
+        let view = menu.view(|key| {
+            let score = match key.progression {
+                Progression::Campaign => 12_000,
+                Progression::Classic => 3_400,
+                Progression::Shuffle => 900,
+                Progression::Set(hash) if hash == a => 450,
+                Progression::Set(_) => 0,
+            };
+            Best { score, rally: 0 }
         });
         assert_eq!(view.selected, 1);
         assert_eq!(view.rows[0].aside, Aside::Best(12_000));
         assert_eq!(view.rows[1].aside, Aside::Best(3_400));
-        assert_eq!(view.rows[3].aside, Aside::Nothing);
+        assert_eq!(view.rows[2].detail, "3 levels, best 450");
+        assert_eq!(view.rows[3].aside, Aside::Best(900));
         assert_eq!(view.rows[3].detail, "10 levels drawn from all 1 sets");
+    }
+
+    /// Each set, Shuffle, v1 rules and rally scoring keep records apart;
+    /// Classic stays v1's whatever the flags.
+    #[test]
+    fn every_mode_and_set_keeps_its_own_record() {
+        let mut menu = Menu::new(vec![set("A", 3), set("B", 2)], false);
+        let keys = menu.record_keys();
+        let unique: std::collections::HashSet<_> = keys.iter().collect();
+        assert_eq!(unique.len(), keys.len(), "{keys:?}");
+        assert_eq!(keys.len(), 5);
+
+        menu.select(Mode::Levelset);
+        let first = menu.record_key();
+        menu.nav(Nav::Right);
+        assert_ne!(menu.record_key(), first, "the next set");
+
+        let rally = Menu::new(vec![set("A", 3)], false).with_rally_score(true);
+        assert!(rally.record_key().rally_score, "campaign, rally scored");
+        let mut rally_classic = rally.clone();
+        rally_classic.select(Mode::Classic);
+        assert!(!rally_classic.record_key().rally_score, "Classic is v1's");
+
+        let mut v1 = Menu::new(vec![set("A", 3)], true).with_rally_score(true);
+        v1.select(Mode::Levelset);
+        let key = v1.record_key();
+        assert!(key.classic_rules && !key.rally_score, "{key:?}");
     }
 }

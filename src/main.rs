@@ -169,9 +169,11 @@ struct App {
     /// `--autopilot`: when set, it produces each tick's `Input` in place of
     /// the keyboard (Pause stays the player's).
     autopilot: Option<Autopilot>,
-    /// The stored best score (`record.rs`), `None` where no record is kept;
-    /// `new_best` while the end screen of a record-breaking run is up.
+    /// This run's records as the HUD shows them (`record.rs`), with the
+    /// marks for any it beat while its end screen is up.
     record: hud::Record,
+    /// Which records this run counts toward, from the picker.
+    record_key: record::RecordKey,
     /// Last frame's state, to catch the moment a run ends.
     last_state: game::GameState,
     /// The kinetic effects (`fx/`): fed each tick's events, built each
@@ -183,11 +185,10 @@ struct App {
     menu: menu::Menu,
     /// `menu` as the HUD draws it, rebuilt whenever it or a record changes.
     menu_view: hud::MenuView,
-    /// The stored bests of the two built-in progressions, read once at
-    /// start and kept current here, so the menu never reads a file per
-    /// frame.
-    best_campaign: Option<u32>,
-    best_classic: Option<u32>,
+    /// Every record the picker can show, read once at start
+    /// (`load_records`) and kept current here, so the menu never reads a
+    /// file per frame.
+    records: std::collections::HashMap<record::RecordKey, record::Best>,
     /// Sound (`audio/`), opened in `main`; `None` only before that.
     audio: Option<audio::Audio>,
 }
@@ -208,24 +209,34 @@ impl App {
             render_alpha: 0.0,
             autopilot: None,
             record: hud::Record::default(),
+            record_key: record::RecordKey {
+                progression: record::Progression::Campaign,
+                classic_rules: false,
+                rally_score: false,
+            },
             last_state: game::GameState::Menu,
             audio: None,
             fx: fx::FxSystem::new(fx::Quality::from_env()),
             fx_clock: Instant::now(),
             menu: menu::Menu::new(Vec::new(), false),
             menu_view: hud::MenuView::default(),
-            best_campaign: None,
-            best_classic: None,
+            records: std::collections::HashMap::new(),
         }
     }
 
-    /// The stored best for `set`, `None` where no record is kept.
-    fn best(&self, set: game::LevelSetKind) -> Option<u32> {
-        match set {
-            game::LevelSetKind::Campaign => self.best_campaign,
-            game::LevelSetKind::Classic => self.best_classic,
-            game::LevelSetKind::Loaded => None,
-        }
+    /// Reads every record the picker can show, once.
+    fn load_records(&mut self) {
+        self.records = self
+            .menu
+            .record_keys()
+            .into_iter()
+            .map(|key| (key, record::load(&key)))
+            .collect();
+    }
+
+    /// The stored records for `key`; zeros when there are none yet.
+    fn best(&self, key: &record::RecordKey) -> record::Best {
+        self.records.get(key).copied().unwrap_or_default()
     }
 
     /// Back to the menu with a fresh game of the highlighted mode: at
@@ -234,23 +245,20 @@ impl App {
     fn show_menu(&mut self) {
         self.game = self.menu.build(&mut rand::rng());
         self.render_prev = RenderState::from(&self.game);
-        // Rally scoring is an experiment on another scale: its runs keep no
-        // record, and show none to beat (`update_record` skips them).
-        let best = if self.game.features.rally_score {
-            None
-        } else {
-            self.best(self.game.level_set())
-        };
+        self.record_key = self.menu.record_key();
+        let best = self.best(&self.record_key);
         self.record = hud::Record {
-            best,
+            best: Some(best.score),
+            best_rally: best.rally,
             new_best: false,
+            new_best_rally: false,
         };
         self.last_state = self.game.state;
         self.refresh_menu_view();
     }
 
     fn refresh_menu_view(&mut self) {
-        self.menu_view = self.menu.view(|set| self.best(set));
+        self.menu_view = self.menu.view(|key| self.best(key));
     }
 
     /// Interface keys: moving through the picker on the menu, and Q back
@@ -478,31 +486,32 @@ impl ApplicationHandler for App {
 }
 
 impl App {
-    /// Keeps the best score: when a run ends (Game Over or Victory) with a
-    /// score above the stored best, store it and flag the end screen; clear
-    /// the flag when the next run starts. Autopilot runs show the record
-    /// but never set it (PRODUCT.md: honest about the machine).
+    /// Keeps the records: when a run ends (Game Over or Victory) beating
+    /// the stored best score or best rally, store both and mark the end
+    /// screen; clear the marks when the next run starts. Autopilot runs
+    /// show the records but never set them (PRODUCT.md: honest about the
+    /// machine).
     fn update_record(&mut self) {
         use game::GameState::{GameOver, Victory};
         let state = self.game.state;
         let ended = matches!(state, GameOver | Victory);
-        if ended && !matches!(self.last_state, GameOver | Victory) {
-            if let Some(best) = self.record.best {
-                if self.autopilot.is_none() && self.game.score > best {
-                    let set = self.game.level_set();
-                    record::save(set, self.game.score);
-                    self.record.best = Some(self.game.score);
-                    self.record.new_best = true;
-                    match set {
-                        game::LevelSetKind::Campaign => self.best_campaign = Some(self.game.score),
-                        game::LevelSetKind::Classic => self.best_classic = Some(self.game.score),
-                        game::LevelSetKind::Loaded => {}
-                    }
-                    self.refresh_menu_view();
-                }
+        if ended && !matches!(self.last_state, GameOver | Victory) && self.autopilot.is_none() {
+            let before = self.best(&self.record_key);
+            let after = before.with(self.game.score, self.game.best_rally);
+            if after != before {
+                record::save(&self.record_key, after);
+                self.records.insert(self.record_key, after);
+                self.record = hud::Record {
+                    best: Some(after.score),
+                    best_rally: after.rally,
+                    new_best: after.score > before.score,
+                    new_best_rally: after.rally > before.rally,
+                };
+                self.refresh_menu_view();
             }
         } else if !ended {
             self.record.new_best = false;
+            self.record.new_best_rally = false;
         }
         self.last_state = state;
     }
@@ -696,9 +705,8 @@ fn main() {
     let event_loop = EventLoop::new().expect("failed to create event loop");
     let mut app = App::new(atlas);
     app.renderer_kind = args.renderer;
-    app.best_campaign = record::load(game::LevelSetKind::Campaign);
-    app.best_classic = record::load(game::LevelSetKind::Classic);
     app.menu = picker;
+    app.load_records();
     app.show_menu();
     app.audio = Some(audio::Audio::new(audio::SoundMode::from_env()));
     if args.autopilot {
