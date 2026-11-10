@@ -317,7 +317,9 @@ impl Autopilot {
             (input.left, input.right) = pilot::steer(paddle.x, serve_x, dt);
             let in_position = !input.left && !input.right;
             let answer_settled = self.pending.is_none() || waited >= SERVE_WAIT_SECS;
-            input.space = in_position && answer_settled;
+            // A serve is a fresh press: let go for a tick if Space is
+            // still down (from the menu or a gun).
+            input.space = in_position && answer_settled && !self.space_held;
             return;
         }
         self.serve = Serve::InPlay;

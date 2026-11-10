@@ -5,8 +5,10 @@
 //!
 //! The design (docs/design/audio.md):
 //! - **The field plays in key.** The music is in E minor; each brick broken
-//!   in a rally is the next note up the E minor pentatonic scale, back to
-//!   the root at each paddle hit. A good rally plays a phrase over the beat.
+//!   in a rally is the next note up the E minor pentatonic scale, with the
+//!   playing track's own seventh (D sharp in harmonic minor), back to the
+//!   root at each paddle hit. A good rally plays a phrase over the beat and
+//!   tops out on the tonic.
 //! - **Sound sits where it happens.** Every effect is panned to its x on
 //!   the field, in both renderers.
 //! - **The paddle tightens with the ball.** Its knock rises with the ball's
@@ -71,9 +73,40 @@ impl SoundMode {
     }
 }
 
-/// The E minor pentatonic scale, in semitones above the brick cue's E5.
-const PENTATONIC: [f32; crate::rally::STEPS] =
-    [0.0, 3.0, 5.0, 7.0, 10.0, 12.0, 15.0, 17.0, 19.0, 22.0];
+/// The mode a level track is written in (`audio/compose.py` names it in
+/// each track; `build.rs` reads it into [`LEVEL_MODES`]). Every one is
+/// over E.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Dorian,
+    Aeolian,
+    Phrygian,
+    HarmonicMinor,
+}
+
+include!(concat!(env!("OUT_DIR"), "/track_modes.rs"));
+
+impl Mode {
+    /// The mode's seven degrees, in semitones above E.
+    const fn scale(self) -> [u8; 7] {
+        match self {
+            Mode::Dorian => [0, 2, 3, 5, 7, 9, 10],
+            Mode::Aeolian => [0, 2, 3, 5, 7, 8, 10],
+            Mode::Phrygian => [0, 1, 3, 5, 7, 8, 10],
+            Mode::HarmonicMinor => [0, 2, 3, 5, 7, 8, 11],
+        }
+    }
+
+    /// The rally's notes over this mode, in semitones above the brick
+    /// cue's E5: the E minor pentatonic with the mode's own seventh (D in
+    /// three modes, D sharp in harmonic minor, which never plays a D), up
+    /// to the tonic two octaves up, so the step a long rally holds is the
+    /// home note, never a passing one.
+    const fn rally(self) -> [f32; crate::rally::STEPS] {
+        let seventh = self.scale()[6] as f32;
+        [0.0, 3.0, 5.0, 7.0, seventh, 12.0, 15.0, 17.0, 19.0, 24.0]
+    }
+}
 /// Brick sounds per tick at most: an explosion breaking eight bricks at
 /// once is one chord, not eight pops stacked into noise.
 const MAX_BRICK_SOUNDS_PER_TICK: usize = 3;
@@ -224,6 +257,17 @@ impl Director {
         out
     }
 
+    /// The mode of the track the player is hearing, which the rally plays
+    /// in. The music this tick has not changed yet: the last brick of a
+    /// level is heard over that level's track, though `game.level` has
+    /// already moved on. Aeolian, the score's home, when no track plays.
+    fn mode_playing(&self) -> Mode {
+        match self.last_music {
+            Some(Some(Cue::Level(track))) => LEVEL_MODES[usize::from(track) - 1],
+            _ => Mode::Aeolian,
+        }
+    }
+
     fn transitions(&mut self, game: &Game, out: &mut Vec<Command>) {
         let state = game.state;
         if let Some(last) = self.last_state.filter(|&s| s != state) {
@@ -281,13 +325,14 @@ impl Director {
         let won = has(&GameEvent::Victory);
         let warped = has(&GameEvent::Warped);
         let mut bricks = released;
+        let scale = self.mode_playing().rally();
         // Several balls can blow up in one tick: one blast is heard.
         let mut ball_blast = false;
         for (i, event) in events.iter().enumerate() {
             match *event {
                 GameEvent::BrickDestroyedAt { x, .. } => {
                     let step = steps.iter().find(|&&(j, _)| j == i).map_or(0, |&(_, s)| s);
-                    let degree = PENTATONIC[step];
+                    let degree = scale[step];
                     let note = pitched(Cue::Brick, 0.6, x, semitones(degree));
                     match delays[i].unwrap_or(0.0) {
                         // A struck brick: at once, a few per tick at most.
@@ -500,7 +545,85 @@ mod tests {
         let out = director.observe(&game, &burst);
         assert_eq!(pitches(&out).len(), MAX_BRICK_SOUNDS_PER_TICK);
         let next = pitches(&director.observe(&game, &[brick_at(400.0)]));
-        assert_eq!(next, vec![semitones(PENTATONIC[8])]);
+        assert_eq!(next, vec![semitones(Mode::Aeolian.rally()[8])]);
+    }
+
+    /// Over whatever track plays, every note a rally can reach is in that
+    /// track's mode: the rally always harmonizes (docs/design/music.md).
+    #[test]
+    fn every_rally_note_is_in_its_tracks_mode() {
+        assert_eq!(LEVEL_MODES.len(), usize::from(LEVEL_TRACKS));
+        for (track, mode) in LEVEL_MODES.iter().enumerate() {
+            for note in mode.rally() {
+                let degree = (note as u8) % 12;
+                assert!(
+                    mode.scale().contains(&degree),
+                    "track {}: {note} semitones is not in {mode:?}",
+                    track + 1
+                );
+            }
+        }
+    }
+
+    /// The harmonic-minor tracks are the ones docs/design/music.md names;
+    /// a recomposed track that changes mode changes this test with it.
+    #[test]
+    fn the_track_modes_are_read_from_the_score() {
+        let harmonic: Vec<usize> = (1..=LEVEL_MODES.len())
+            .filter(|&n| LEVEL_MODES[n - 1] == Mode::HarmonicMinor)
+            .collect();
+        assert_eq!(harmonic, [16, 19, 24, 29, 32]);
+    }
+
+    /// A campaign game on `level`, its first serve heard, so its track
+    /// plays.
+    fn serving(level: usize) -> (Director, Game) {
+        let (mut director, mut game) = playing();
+        game.level = level;
+        director.served_level = Some(level);
+        director.observe(&game, &[]);
+        assert_eq!(director.last_music, Some(Some(Cue::Level(level as u8))));
+        (director, game)
+    }
+
+    fn rally_of_ten(director: &mut Director, game: &Game) -> Vec<f32> {
+        (0..10)
+            .flat_map(|_| pitches(&director.observe(game, &[brick_at(400.0)])))
+            .collect()
+    }
+
+    #[test]
+    fn a_rally_over_harmonic_minor_plays_d_sharp_and_tops_out_on_the_tonic() {
+        let (mut director, game) = serving(16);
+        let heard = rally_of_ten(&mut director, &game);
+        assert_eq!(heard[4], semitones(11.0), "D sharp, not D");
+        assert_eq!(heard[9], semitones(24.0), "E, two octaves up");
+        let more = pitches(&director.observe(&game, &[brick_at(400.0)]));
+        assert_eq!(more, vec![semitones(24.0)], "a long rally holds the tonic");
+    }
+
+    #[test]
+    fn a_rally_over_a_track_with_d_keeps_its_d() {
+        let (mut director, game) = serving(1);
+        assert_eq!(LEVEL_MODES[0], Mode::Dorian);
+        let heard = rally_of_ten(&mut director, &game);
+        assert_eq!(heard[4], semitones(10.0));
+        assert_eq!(heard[9], semitones(24.0));
+    }
+
+    /// The last brick of a level is heard over that level's track: the
+    /// simulation has already moved to the next level, the music has not.
+    #[test]
+    fn the_rally_follows_the_track_heard_not_the_level_loaded() {
+        let (mut director, mut game) = serving(16);
+        for _ in 0..4 {
+            director.observe(&game, &[brick_at(400.0)]);
+        }
+        // Level 16's last brick is the rally's fifth: the tick that breaks
+        // it has already loaded level 17 (Aeolian, with its D).
+        game.level = 17;
+        let last = pitches(&director.observe(&game, &[brick_at(400.0), E::LevelCleared]));
+        assert_eq!(last, vec![semitones(11.0)], "D sharp, over Bridges");
     }
 
     #[test]

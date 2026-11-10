@@ -67,8 +67,11 @@ repeated:
 ## One key, four colors
 
 Every track is in E, because BRYX's brick sounds play the E minor
-pentatonic over the music and a rally must always harmonize. The variety
-comes from the mode:
+pentatonic over the music and a rally must always harmonize. The rally
+takes its seventh from the track it plays over: `build.rs` reads each
+track's `% mode` line, and the director plays D sharp, not D, over the
+harmonic-minor tracks (a test holds every rally note to its track's
+mode). The variety comes from the mode:
 - **Dorian** is the bright one (C sharp): Act I's optimism, Heart, Wave,
   the menu.
 - **Aeolian** is plain minor, the score's home.

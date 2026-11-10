@@ -17,8 +17,11 @@ Four ideas shape everything below:
 
 1. **The field plays in key.** The music is in E minor. Each brick
    broken in a rally sounds the next note up the E minor pentatonic scale
-   (E, G, A, B, D, E…), and the paddle sends it back to the root. A good
-   rally plays a phrase over the beat. A bad one plays one note. A blast
+   (E, G, A, B, D, E…), and the paddle sends it back to the root. The
+   seventh is the playing track's own: D sharp over the harmonic-minor
+   tracks, which never play a D. The tenth step is the tonic, two octaves
+   up, so a long rally holds the home note. A good rally plays a phrase
+   over the beat. A bad one plays one note. A blast
    is a ripple, not a chord: each brick it breaks or cracks sounds when
    the blast's front reaches it (`src/cadence.rs`), the moment its light
    starts.

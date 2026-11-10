@@ -1190,8 +1190,10 @@ impl Game {
         self.space_was_held = input.space;
 
         match self.state {
+            // A fresh press starts the run, and the serve waits for another
+            // (below): one press never both leaves the menu and serves.
             GameState::Menu => {
-                if input.space {
+                if space_pressed {
                     self.state = GameState::Playing;
                 }
             }
@@ -1261,10 +1263,13 @@ impl Game {
         }
 
         if self.ball.attached {
-            // Ride the paddle until launched.
+            // Ride the paddle until a fresh Space press serves. Holding
+            // Space (from the menu, an end screen, or a gun still firing
+            // when the last ball dropped) never serves: the player lines
+            // up every serve.
             self.ball.x = self.paddle.x;
             self.ball.y = self.paddle.top() - self.ball.radius;
-            if input.space {
+            if space_pressed {
                 self.launch_ball();
             }
             return;
@@ -2275,6 +2280,55 @@ mod tests {
         assert_eq!(game.state, GameState::Playing);
     }
 
+    /// The press that leaves the menu is not also the serve: however long
+    /// Space stays down, the ball waits on the paddle (and the HUD's serve
+    /// prompt shows) until a fresh press.
+    #[test]
+    fn the_press_that_starts_a_run_does_not_serve() {
+        let mut game = Game::new();
+        let space = held(|i| i.space = true);
+        for _ in 0..60 {
+            game.tick(&space, DT);
+        }
+        assert_eq!(game.state, GameState::Playing);
+        assert!(game.ball.attached, "a held Space never serves");
+
+        game.tick(&Input::default(), DT);
+        game.tick(&space, DT);
+        assert!(!game.ball.attached, "a fresh press serves");
+    }
+
+    #[test]
+    fn a_continue_waits_for_its_own_serve() {
+        let mut game = playing_game();
+        game.state = GameState::GameOver;
+        let space = held(|i| i.space = true);
+        for _ in 0..60 {
+            game.tick(&space, DT);
+        }
+        assert_eq!(game.state, GameState::Playing);
+        assert!(game.ball.attached, "the Continue press is not the serve");
+    }
+
+    /// Space held to fire a gun when the last ball drops does not serve
+    /// the next one straight back out.
+    #[test]
+    fn a_held_space_does_not_serve_after_a_lost_life() {
+        let mut game = rallying();
+        let space = held(|i| i.space = true);
+        game.tick(&space, DT);
+        game.lose_life();
+        assert!(game.ball.attached);
+        for _ in 0..60 {
+            game.tick(&space, DT);
+        }
+        assert!(game.ball.attached, "still held: no serve");
+
+        game.tick(&Input::default(), DT);
+        game.tick(&space, DT);
+        assert!(!game.ball.attached, "a fresh press serves");
+    }
+
     #[test]
     fn pause_toggles_on_press_not_on_hold() {
         let mut game = playing_game();
@@ -2678,7 +2732,14 @@ mod tests {
 
     #[test]
     fn random_and_joker_bonuses_draw_when_the_brick_breaks() {
-        let mut game = playing_game();
+        // Seeded: 60 uniform draws over 11 kinds miss Tiny about one run
+        // in 300 with an entropy seed, which is a coin flip, not a test.
+        let seeded = |seed| {
+            let mut game = Game::with_seed(seed);
+            game.state = GameState::Playing;
+            game
+        };
+        let mut game = seeded(1);
         game.load_external_levels(vec![authored_level(60, AuthoredDrop::Random)]);
         let random = drop_from_every_brick(&mut game);
         assert_eq!(random.len(), 60);
@@ -2687,7 +2748,7 @@ mod tests {
             "any power-up: {random:?}"
         );
 
-        let mut game = playing_game();
+        let mut game = seeded(2);
         game.load_external_levels(vec![authored_level(60, AuthoredDrop::RandomHelpful)]);
         let joker = drop_from_every_brick(&mut game);
         assert_eq!(joker.len(), 60);
