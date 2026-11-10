@@ -66,6 +66,12 @@ const BRICK_GRID_MARGIN_TOP: f32 = 60.0;
 
 /// Chance that destroying a brick drops a power-up (spec: 15%).
 const POWERUP_DROP_CHANCE: f64 = 0.15;
+
+/// The highest multiplier a rally reaches (`Features::rally_score`): its
+/// tenth brick and every one after it. The scale the brick notes climb has
+/// the same ten steps (`rally::STEPS`), so the note you hear is the
+/// multiplier you score.
+pub const RALLY_MAX_MULTIPLIER: u32 = 10;
 /// Fall speed for a dropped power-up (spec: 140 px/s).
 /// `pub` for the autopilot, which times a catch against it.
 pub const POWERUP_FALL_SPEED: f32 = 140.0;
@@ -202,6 +208,12 @@ pub struct Features {
     /// blows up the bricks around the one it hits, or breaks whatever it
     /// hits outright and flies on through.
     pub ball_powers: bool,
+    /// Rally scoring (experimental, `--rally-score`, off in `ALL` until it
+    /// is playtested): a brick scores its value times its place in the
+    /// rally (×1 to ×[`RALLY_MAX_MULTIPLIER`]), an armored brick half as
+    /// much again, and an asteroid times the rally it lands in. See
+    /// `docs/design/game-director-review.md`, "Rally is the score".
+    pub rally_score: bool,
 }
 
 impl Features {
@@ -213,6 +225,7 @@ impl Features {
         player: true,
         warp: true,
         ball_powers: true,
+        rally_score: false,
     };
     pub const V1: Self = Self {
         glue: false,
@@ -222,6 +235,7 @@ impl Features {
         player: false,
         warp: false,
         ball_powers: false,
+        rally_score: false,
     };
 }
 
@@ -971,6 +985,13 @@ pub struct Game {
     asteroid_timer: f32,
     /// Which post-v1 additions are on.
     pub features: Features,
+    /// Bricks broken since a ball last touched the paddle, or since the
+    /// serve: the rally the brick notes climb (`rally.rs` counts the same
+    /// run from the events) and, with `Features::rally_score`, the score's
+    /// multiplier.
+    pub rally: u32,
+    /// The longest rally of this run.
+    pub best_rally: u32,
     /// The built-in levels played when no levelset is loaded.
     built_in: BuiltInLevels,
     /// Seconds of flight since the last progress (see `STALL_SECS`).
@@ -1130,6 +1151,7 @@ impl Game {
         self.level = level.clamp(1, self.level_count());
         self.lives = STARTING_LIVES;
         self.score = 0;
+        self.best_rally = 0;
         self.paddle = Paddle::new();
         self.ball = Ball::attached_to(&self.paddle);
         self.extra_balls.clear();
@@ -1176,6 +1198,8 @@ impl Game {
             asteroids: Vec::new(),
             asteroid_timer: ASTEROID_FIRST_SPAWN_SECS,
             features: Features::default(),
+            rally: 0,
+            best_rally: 0,
             built_in: BuiltInLevels::V1,
             stall_secs: 0.0,
             stall_nudges: 0,
@@ -1473,6 +1497,7 @@ impl Game {
     }
 
     fn launch_ball(&mut self) {
+        self.rally = 0;
         self.ball.attached = false;
         let angle_rad = BALL_LAUNCH_ANGLE_DEG.to_radians();
         self.ball.vx = BALL_LAUNCH_SPEED * angle_rad.cos();
@@ -1507,6 +1532,7 @@ impl Game {
         // re-collide next tick.
         ball.y = self.paddle.top() - ball.radius;
         self.events.push(GameEvent::PaddleHit);
+        self.rally = 0;
         self.stall_secs = 0.0;
         if self.features.glue && self.glue_timer > 0.0 {
             ball.glued = Some(Glued {
@@ -1562,10 +1588,35 @@ impl Game {
         }
     }
 
+    /// What the next brick broken scores times: its place in the rally
+    /// under `Features::rally_score` (1 for the first brick after a paddle
+    /// touch, up to [`RALLY_MAX_MULTIPLIER`]), 1 otherwise.
+    pub fn score_multiplier(&self) -> u32 {
+        if self.features.rally_score {
+            (self.rally + 1).min(RALLY_MAX_MULTIPLIER)
+        } else {
+            1
+        }
+    }
+
+    /// A destroyed brick's points: its row's value, and under
+    /// `Features::rally_score` half as much again for an armored brick (it
+    /// took two hits), times the rally multiplier.
+    fn brick_points(&self, brick: &Brick) -> u32 {
+        let base = if self.features.rally_score && brick.kind == BrickKind::Armored {
+            brick.score * 3 / 2
+        } else {
+            brick.score
+        };
+        base * self.score_multiplier()
+    }
+
     /// Scores a destroyed brick, announces it and rolls its power-up drop,
     /// whatever destroyed it (a ball, or an asteroid's blast).
     fn on_brick_destroyed(&mut self, brick: Brick) {
-        self.score += brick.score;
+        self.score += self.brick_points(&brick);
+        self.rally += 1;
+        self.best_rally = self.best_rally.max(self.rally);
         self.events.push(GameEvent::BrickDestroyed);
         self.events.push(GameEvent::BrickDestroyedAt {
             x: brick.x,
@@ -1946,6 +1997,7 @@ impl Game {
     /// clean: no asteroid, no bolt, no open gate, and the countdown to the
     /// first asteroid restarted.
     fn reset_for_serve(&mut self) {
+        self.rally = 0;
         self.stall_secs = 0.0;
         self.gate_open = false;
         self.bolts.clear();
@@ -2023,7 +2075,7 @@ impl Game {
     /// the bricks around it (see `blast_bricks`).
     fn explode_asteroid(&mut self, x: f32, y: f32) {
         self.stall_secs = 0.0;
-        self.score += ASTEROID_SCORE;
+        self.score += ASTEROID_SCORE * self.score_multiplier();
         self.events.push(GameEvent::AsteroidExploded { x, y });
         let mut cracked = Vec::new();
         let destroyed = blast_bricks(
@@ -3658,6 +3710,87 @@ mod tests {
         assert!(!game.gate_open, "a new level starts with it shut");
         assert_eq!(game.paddle.x, PLAYFIELD_WIDTH / 2.0, "back in the middle");
         assert!(game.ball.attached && (game.ball.x - game.paddle.x).abs() < 1e-3);
+    }
+
+    /// A playing game with rally scoring on, and a brick worth `score`.
+    fn rally_scored() -> (Game, Brick) {
+        let mut game = playing_game();
+        game.features.rally_score = true;
+        let mut brick = game.bricks[0];
+        brick.kind = BrickKind::Normal;
+        brick.score = 10;
+        (game, brick)
+    }
+
+    #[test]
+    fn a_rally_multiplies_each_brick_by_its_place_up_to_ten() {
+        let (mut game, brick) = rally_scored();
+        let mut gained = Vec::new();
+        for _ in 0..12 {
+            let before = game.score;
+            game.on_brick_destroyed(brick);
+            gained.push(game.score - before);
+        }
+        assert_eq!(gained, [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 100, 100]);
+        assert_eq!((game.rally, game.best_rally), (12, 12));
+    }
+
+    #[test]
+    fn the_paddle_the_serve_and_a_lost_life_start_a_rally_over() {
+        let (mut game, brick) = rally_scored();
+        game.on_brick_destroyed(brick);
+        game.on_brick_destroyed(brick);
+        assert_eq!(game.score_multiplier(), 3);
+
+        game.ball.attached = false;
+        game.ball.x = game.paddle.x;
+        game.ball.y = game.paddle.top() - game.ball.radius + 1.0;
+        game.ball.vx = 0.0;
+        game.ball.vy = 200.0;
+        game.tick(&Input::default(), DT);
+        assert!(game.events.contains(&GameEvent::PaddleHit));
+        assert_eq!(game.score_multiplier(), 1, "a paddle touch");
+
+        game.on_brick_destroyed(brick);
+        game.lose_life();
+        assert_eq!(game.rally, 0, "a lost life");
+        game.on_brick_destroyed(brick);
+        game.launch_ball();
+        assert_eq!(game.rally, 0, "the serve");
+        assert_eq!(game.best_rally, 2, "the run keeps its best");
+        game.restart_at(1);
+        assert_eq!(game.best_rally, 0, "a new run starts its own");
+    }
+
+    #[test]
+    fn rally_scoring_pays_armored_bricks_half_again_and_asteroids_by_the_rally() {
+        let (mut game, mut brick) = rally_scored();
+        brick.kind = BrickKind::Armored;
+        game.on_brick_destroyed(brick);
+        assert_eq!(game.score, 15, "10 and half again, at ×1");
+
+        game.rally = 3;
+        let before = game.score;
+        game.explode_asteroid(400.0, 300.0);
+        assert_eq!(game.score - before, ASTEROID_SCORE * 4);
+        assert_eq!(game.rally, 3, "an asteroid is not a brick of the rally");
+    }
+
+    /// Off (the default, and always under v1's rules), a brick scores its
+    /// row's value whatever the rally, as before: only the count is kept.
+    #[test]
+    fn without_rally_scoring_the_score_is_unchanged_but_the_rally_is_counted() {
+        let (mut game, mut brick) = rally_scored();
+        game.features.rally_score = false;
+        brick.kind = BrickKind::Armored;
+        for _ in 0..5 {
+            game.on_brick_destroyed(brick);
+        }
+        assert_eq!(game.score, 50);
+        assert_eq!(game.best_rally, 5);
+        game.explode_asteroid(400.0, 300.0);
+        assert_eq!(game.score, 50 + ASTEROID_SCORE);
+        const { assert!(!Features::ALL.rally_score && !Features::V1.rally_score) };
     }
 
     /// Ticks `game` for `secs` with no keys, collecting the expiry warnings.

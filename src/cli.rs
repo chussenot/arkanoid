@@ -46,6 +46,9 @@ pub struct Args {
     /// `--classic`: v1's rules, without the post-v1 additions (the Glue
     /// power-up, asteroids). See `game::Features`.
     pub classic: bool,
+    /// `--rally-score`: the experimental rally scoring
+    /// (`game::Features::rally_score`), for every mode but Classic.
+    pub rally_score: bool,
 }
 
 /// Parses `std::env::args()` into [`Args`]. Thin wrapper around
@@ -77,6 +80,7 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
             },
             "--autopilot" => args.autopilot = true,
             "--classic" => args.classic = true,
+            "--rally-score" => args.rally_score = true,
             "--autopilot-every" => {
                 args.autopilot = true;
                 args.autopilot_every = it.next().and_then(|n| n.parse().ok());
@@ -108,6 +112,12 @@ mod tests {
     fn parse_recognizes_levelset_flag_with_its_value() {
         let args = parse_of(&["--levelset", "levels/custom.lbl"]);
         assert_eq!(args.levelset.as_deref(), Some("levels/custom.lbl"));
+    }
+
+    #[test]
+    fn parse_recognizes_rally_score() {
+        assert!(!parse_of(&[]).rally_score);
+        assert!(parse_of(&["--rally-score"]).rally_score);
     }
 
     #[test]
