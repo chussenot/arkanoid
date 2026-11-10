@@ -150,11 +150,17 @@ record.
 **Effects (added after v1)**, designed in `docs/design/kinetic-fx.md`:
 - Every brick contact pushes `GameEvent::BrickStruck`, from a ball or a
   bolt, indestructible bricks included. It carries the contact point, the
-  struck face's normal and the striker.
+  struck face's normal and the striker. A blast pushes one for each brick
+  it cracks without breaking.
 - Effects are presentation only. They read events, never change state, and
   leave `Input` and the pinned replay hash as they were.
 - The effect light's hue for a broken brick is the rally step its note is
   played on (`src/rally.rs`, shared with the sound director).
+- Sound and light share their timing (`src/cadence.rs`). A brick a blast
+  breaks or cracks lands when the blast's front reaches it, at 420 px/s:
+  its note sounds and its effect starts on that tick. A level's end sweeps
+  over one bar of its fanfare and lands on the next downbeat, with the
+  meter read from the cue.
 
 **Sound (added after v1)**, designed in `docs/design/audio.md`:
 - Cues are ABC text files in `audio/cues/`. `build.rs` renders them at build
