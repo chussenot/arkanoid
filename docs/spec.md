@@ -150,6 +150,11 @@ Space plays the highlighted one:
 - Shuffle: ten levels drawn at random from every fetched set, a new draw
   each time the row is picked.
 
+A last row, Music, is the jukebox and plays no run: ←/→ (A/D) picks one of
+the 33 tracks (the menu theme, then each campaign level's), which plays in
+place of the menu theme while the row is highlighted. Space does nothing
+there.
+
 ↑/↓ (W/S) move the highlight, wrapping. With no set fetched, the Levelset
 row is shown disabled with how to fetch one, skipped by ↑/↓, and Shuffle
 is not offered. Each built-in mode's row shows its best score. Q on the
