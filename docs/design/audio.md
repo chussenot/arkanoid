@@ -206,6 +206,7 @@ encode, and the mixer decodes it through a 256-entry table.
 | `gate` | the Break capsule opens the gate | a grinding pulse climbing E–B–E–B into an open fifth that rings out, over a low rumble; panned to the right wall |
 | `expiring` | a timed power has 2 s left | two soft ticks falling a fifth, B to E; on the ball for a ball power, on the paddle for the rest. Seen as its hue pulsing at 2 Hz on that object (a steady fade with reduced motion) |
 | `life_lost`, `level_clear`, `game_over`, `victory` | stingers | the score's themes in miniature ([`music.md`](music.md#stingers)) |
+| `act_clear` | an act's last level cleared (8, 16, 24) | the level fanfare's climb, then Ascent's head over a bass walking up to E, landing on a held E minor; three bars in `level_clear`'s meter, so the level-end sweep keeps its beat |
 | `music_menu`, `music_01`–`32` | loops | the score: see [`music.md`](music.md) |
 
 ## Mix

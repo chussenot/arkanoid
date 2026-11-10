@@ -36,6 +36,7 @@ use glyphon::{
 
 use crate::events::PowerUpKind;
 use crate::game::{Game, GameState, LevelSetKind, PLAYFIELD_HEIGHT, PLAYFIELD_WIDTH};
+use crate::movement;
 use crate::palette::{self, Rgb};
 
 /// Height of the HUD band above the field, in canvas pixels.
@@ -337,7 +338,7 @@ impl LifeCue {
 pub fn layout(frame: &Frame, cue: Option<LifeCue>) -> Layout {
     let game = frame.game;
     let mut out = Layout::default();
-    backdrop(&mut out);
+    backdrop(&mut out, game);
     band(&mut out, frame, cue);
     match game.state {
         GameState::Playing => {
@@ -351,7 +352,7 @@ pub fn layout(frame: &Frame, cue: Option<LifeCue>) -> Layout {
     out
 }
 
-fn backdrop(out: &mut Layout) {
+fn backdrop(out: &mut Layout, game: &Game) {
     let band = palette::BAND.linear();
     let field = palette::FIELD.linear();
     out.backdrop
@@ -367,7 +368,15 @@ fn backdrop(out: &mut Layout) {
     // with a major tick every 100 px -- the field drawn as the measured
     // 800-pixel instrument it is. Ticks rise into the band, never into the
     // field.
-    let rule = palette::RULE_STRONG.linear();
+    // In the campaign the rule takes the act's accent (`movement.rs`).
+    let rule = match movement::of(game) {
+        Some(act) => {
+            let (base, accent) = (palette::RULE_STRONG.linear(), act.accent.linear());
+            let mix = |i: usize| base[i] + 0.5 * (accent[i] - base[i]);
+            [mix(0), mix(1), mix(2), 1.0]
+        }
+        None => palette::RULE_STRONG.linear(),
+    };
     out.backdrop
         .push(Quad::rect(0.0, BAND_HEIGHT - 1.0, CANVAS_WIDTH, 1.0, rule));
     for i in 1..(CANVAS_WIDTH as u32 / 25) {
@@ -784,7 +793,24 @@ fn serve_prompt(out: &mut Layout, game: &Game) {
     // The field's middle band, clear in both lenses: below the deepest
     // brick rows and above the paddle, which the 3D camera draws about a
     // fifth of the field higher than 2D does.
-    let y = FIELD_CENTER_Y + 10.0;
+    let mut y = FIELD_CENTER_Y + 10.0;
+    // An act's first level opens with its title (`movement.rs`), and the
+    // level line and key move down under it: above them, the title would
+    // meet the deepest brick row where the 3D camera draws it.
+    if let Some(act) = movement::opening(game) {
+        out.lines.push(centered(
+            vec![
+                span(format!("{} · ", act.numeral), palette::TEXT_DIM, true),
+                span(act.name, palette::TEXT, true),
+            ],
+            size::TITLE,
+            // Tighter than the end screens' titles: an act's name is
+            // longer, and in 3D the walls close in at this height.
+            0.12,
+            y - 6.0,
+        ));
+        y += 56.0;
+    }
     out.lines.push(centered(spans, size::SUMMARY, 0.0, y));
     key_rows(out, y + 30.0, &[(&[&["SPACE"]], "Launch".into())]);
 }
@@ -1469,6 +1495,28 @@ mod tests {
             let text = all_text(&layout(&frame(&game), None));
             assert!(text.contains("SCORE 001234"), "{state:?}: {text}");
         }
+    }
+
+    #[test]
+    fn an_acts_first_serve_names_the_act() {
+        let mut game = Game::new().with_campaign();
+        game.state = GameState::Playing;
+        for (level, act) in [
+            (1, Some("I · FOUNDATIONS")),
+            (9, Some("II · STRUCTURES")),
+            (10, None),
+        ] {
+            game.level = level;
+            let text = all_text(&layout(&frame(&game), None));
+            match act {
+                Some(act) => assert!(text.contains(act), "level {level}: {text}"),
+                None => assert!(!text.contains(" · "), "level {level}: {text}"),
+            }
+        }
+        let mut classic = Game::new();
+        classic.state = GameState::Playing;
+        let text = all_text(&layout(&frame(&classic), None));
+        assert!(!text.contains("FOUNDATIONS"), "{text}");
     }
 
     #[test]

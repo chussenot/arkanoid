@@ -26,6 +26,7 @@ use crate::game::{
 };
 use crate::hud::{self, Hud, BAND_HEIGHT};
 use crate::levels::BrickKind;
+use crate::movement;
 use crate::palette;
 
 /// One corner of the shared unit quad every entity is drawn from. Kept in
@@ -153,6 +154,7 @@ const MAX_DESTROY_GHOSTS: usize = 16;
 /// (band, scrim, lives, text) is `hud.rs`'s. Sized once at the ceiling
 /// rather than resized per frame.
 const MAX_QUADS: usize = 2
+    + movement::MAX_GROUND_RECTS
     + TRAIL_LEN
     + MAX_BRICKS
     + MAX_DESTROY_GHOSTS
@@ -958,8 +960,21 @@ impl Renderer {
                 + curr.powerups.len().min(MAX_POWERUPS)
                 + curr.asteroids.len().min(MAX_ASTEROIDS)
                 + curr.bolts.len().min(MAX_BOLTS)
+                + movement::MAX_GROUND_RECTS
                 + 1,
         );
+        // The act's ground, first so everything in the field draws over
+        // it, and unshaken: it is the floor (`movement.rs`).
+        if let Some(act) = movement::of(curr) {
+            let color = movement::ground_color(act, curr.rally);
+            instances.extend(
+                movement::ground_rects(act.ground)
+                    .into_iter()
+                    .map(|[x, y, w, h]| {
+                        QuadInstance::new([x + w / 2.0, y + h / 2.0], [w / 2.0, h / 2.0], color)
+                    }),
+            );
+        }
         // A power about to run out pulses its hue; otherwise a gun shows
         // over Glue: it changes what Space does.
         let reduced_motion = hud::reduced_motion();

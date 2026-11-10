@@ -12,6 +12,7 @@ mod hud;
 mod levels;
 mod levelset;
 mod menu;
+mod movement;
 mod palette;
 mod rally;
 mod record;

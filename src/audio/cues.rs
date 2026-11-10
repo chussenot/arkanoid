@@ -38,6 +38,9 @@ pub enum Cue {
     // Stingers
     LifeLost,
     LevelClear,
+    /// An act's last level cleared (`movement.rs`): the level fanfare,
+    /// grown by a bar.
+    ActClear,
     GameOver,
     Victory,
     // Music loops
@@ -49,7 +52,7 @@ pub enum Cue {
 impl Cue {
     /// Every cue that is not a level track.
     #[cfg(test)]
-    pub const NAMED: [Cue; 23] = [
+    pub const NAMED: [Cue; 24] = [
         Cue::Paddle,
         Cue::Brick,
         Cue::Armor,
@@ -70,6 +73,7 @@ impl Cue {
         Cue::Expiring,
         Cue::LifeLost,
         Cue::LevelClear,
+        Cue::ActClear,
         Cue::GameOver,
         Cue::Victory,
         Cue::MusicMenu,
@@ -98,6 +102,7 @@ impl Cue {
             Cue::Expiring => "expiring",
             Cue::LifeLost => "life_lost",
             Cue::LevelClear => "level_clear",
+            Cue::ActClear => "act_clear",
             Cue::GameOver => "game_over",
             Cue::Victory => "victory",
             Cue::MusicMenu => "music_menu",
@@ -111,7 +116,12 @@ impl Cue {
     pub fn holds_music(self) -> bool {
         matches!(
             self,
-            Cue::LevelClear | Cue::GameOver | Cue::Victory | Cue::Launch | Cue::Warp
+            Cue::LevelClear
+                | Cue::ActClear
+                | Cue::GameOver
+                | Cue::Victory
+                | Cue::Launch
+                | Cue::Warp
         )
     }
 

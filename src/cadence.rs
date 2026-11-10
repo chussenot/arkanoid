@@ -151,4 +151,21 @@ mod tests {
         assert!((LEVEL_CLEAR.beat_secs() - 0.375).abs() < 1e-6);
         assert!((WARP.bar_secs() - 1.0).abs() < 1e-6);
     }
+
+    /// An act's end plays `act_clear` where a level's plays `level_clear`,
+    /// and the level-end sweep keeps `LEVEL_CLEAR`'s beat for both: the two
+    /// fanfares must share their meter and tempo.
+    #[test]
+    fn the_act_fanfare_keeps_the_level_fanfares_beat() {
+        let header = |abc: &str, key: &str| {
+            abc.lines()
+                .find_map(|l| l.strip_prefix(key))
+                .map(|v| v.trim().to_owned())
+        };
+        let level = include_str!("../audio/cues/level_clear.abc");
+        let act = include_str!("../audio/cues/act_clear.abc");
+        for key in ["M:", "L:", "Q:"] {
+            assert_eq!(header(level, key), header(act, key), "{key}");
+        }
+    }
 }

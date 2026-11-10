@@ -91,8 +91,11 @@ changes it in game.
 Keyboard only; menu and pause screens show the same keys on-screen.
 Switching to another window pauses the game.
 
-The campaign is four acts of eight levels, and the ball's top speed rises
-from 560 to 700 px/s across them. A Game Over continues from the start of
+The campaign is four acts of eight levels, each with its own look: I ·
+Foundations, II · Structures, III · Machines and IV · The Vault each lay
+their own motif under the bricks, in their own color, and it brightens as
+a rally climbs. The ball's top speed rises from 560 to 700 px/s across
+them. A Game Over continues from the start of
 its act with full lives and a fresh score. Your best campaign and
 `--classic` scores are kept in a small local file (`$XDG_DATA_HOME/bryx` or
 `~/.local/share/bryx` on Linux, `~/Library/Application Support/bryx` on

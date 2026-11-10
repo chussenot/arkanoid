@@ -39,6 +39,8 @@ mod hud;
 mod levels;
 #[path = "../levelset.rs"]
 mod levelset;
+#[path = "../movement.rs"]
+mod movement;
 #[path = "../palette.rs"]
 mod palette;
 #[path = "../rally.rs"]

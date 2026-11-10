@@ -428,8 +428,16 @@ impl Director {
                 }
                 // A warp skips the level: its whoosh is the transition, and
                 // the fanfare is for a level cleared brick by brick.
+                // An act's last level (the level now loaded opens the next
+                // movement) gets the longer act fanfare.
                 GameEvent::LevelCleared if !won && !warped => {
-                    out.push(stinger(Cue::LevelClear, 0.7, 2.7));
+                    let act_ended = game.level > 1 && crate::movement::opening(game).is_some();
+                    let cue = if act_ended {
+                        Cue::ActClear
+                    } else {
+                        Cue::LevelClear
+                    };
+                    out.push(stinger(cue, 0.7, 2.7));
                 }
                 // The run's music fades out under these; the duck keeps its
                 // tail from sounding over their first notes.
@@ -856,6 +864,22 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn an_acts_last_level_ends_on_the_act_fanfare() {
+        let (mut director, mut game) = playing();
+        game.level = 9;
+        let act = director.observe(&game, &[E::LevelCleared]);
+        assert!(cues(&act).contains(&Cue::ActClear), "{act:?}");
+        game.level = 10;
+        let level = director.observe(&game, &[E::LevelCleared]);
+        assert!(cues(&level).contains(&Cue::LevelClear), "{level:?}");
+
+        let mut classic = Game::new();
+        classic.state = GameState::Playing;
+        let out = director.observe(&classic, &[E::LevelCleared]);
+        assert!(cues(&out).contains(&Cue::LevelClear), "no acts in Classic");
     }
 
     #[test]
