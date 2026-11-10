@@ -2732,7 +2732,14 @@ mod tests {
 
     #[test]
     fn random_and_joker_bonuses_draw_when_the_brick_breaks() {
-        let mut game = playing_game();
+        // Seeded: 60 uniform draws over 11 kinds miss Tiny about one run
+        // in 300 with an entropy seed, which is a coin flip, not a test.
+        let seeded = |seed| {
+            let mut game = Game::with_seed(seed);
+            game.state = GameState::Playing;
+            game
+        };
+        let mut game = seeded(1);
         game.load_external_levels(vec![authored_level(60, AuthoredDrop::Random)]);
         let random = drop_from_every_brick(&mut game);
         assert_eq!(random.len(), 60);
@@ -2741,7 +2748,7 @@ mod tests {
             "any power-up: {random:?}"
         );
 
-        let mut game = playing_game();
+        let mut game = seeded(2);
         game.load_external_levels(vec![authored_level(60, AuthoredDrop::RandomHelpful)]);
         let joker = drop_from_every_brick(&mut game);
         assert_eq!(joker.len(), 60);
