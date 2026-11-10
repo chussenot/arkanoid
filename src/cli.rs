@@ -49,6 +49,9 @@ pub struct Args {
     /// `--rally-score`: the experimental rally scoring
     /// (`game::Features::rally_score`), for every mode but Classic.
     pub rally_score: bool,
+    /// `--playtest-log <file>`: append one CSV row per level played
+    /// (`playtest.rs`, `docs/playtest.md`).
+    pub playtest_log: Option<String>,
 }
 
 /// Parses `std::env::args()` into [`Args`]. Thin wrapper around
@@ -81,6 +84,7 @@ fn parse_args<I: Iterator<Item = String>>(mut it: I) -> Args {
             "--autopilot" => args.autopilot = true,
             "--classic" => args.classic = true,
             "--rally-score" => args.rally_score = true,
+            "--playtest-log" => args.playtest_log = it.next(),
             "--autopilot-every" => {
                 args.autopilot = true;
                 args.autopilot_every = it.next().and_then(|n| n.parse().ok());
@@ -118,6 +122,13 @@ mod tests {
     fn parse_recognizes_rally_score() {
         assert!(!parse_of(&[]).rally_score);
         assert!(parse_of(&["--rally-score"]).rally_score);
+    }
+
+    #[test]
+    fn parse_recognizes_the_playtest_log_with_its_file() {
+        assert_eq!(parse_of(&[]).playtest_log, None);
+        let args = parse_of(&["--playtest-log", "session.csv"]);
+        assert_eq!(args.playtest_log.as_deref(), Some("session.csv"));
     }
 
     #[test]

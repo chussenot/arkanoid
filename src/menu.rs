@@ -217,6 +217,20 @@ impl Menu {
         }
     }
 
+    /// The highlighted mode as the playtest log names it: "campaign",
+    /// "classic", "shuffle", or "levelset:" and the set's name.
+    pub fn label(&self) -> String {
+        match self.mode() {
+            Mode::Campaign => "campaign".into(),
+            Mode::Classic => "classic".into(),
+            Mode::Shuffle => "shuffle".into(),
+            Mode::Levelset => format!(
+                "levelset:{}",
+                self.sets.get(self.set).map_or("", |s| s.name.as_str())
+            ),
+        }
+    }
+
     /// The records a run of the highlighted mode counts toward.
     pub fn record_key(&self) -> RecordKey {
         self.key(self.mode(), self.set)

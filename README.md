@@ -37,6 +37,15 @@ cargo run --release -- --renderer 3d
 
 ![3D renderer](render3d.png)
 
+## Playtesting
+
+`--playtest-log FILE` appends one CSV row per level played: its time, the
+hunt for its last bricks, lives lost, the longest rally, capsules caught and
+points. `scripts/playtest-summary.py FILE...` compares sessions (baseline
+against `--rally-score`, human against autopilot) and flags the levels that
+drag. [`docs/playtest.md`](docs/playtest.md) is the protocol: who plays, what
+to watch, what to ask, and the listening pass. Nothing is sent anywhere.
+
 ## Autopilot
 
 The game can play itself. With the `typesafe` feature, a TypeSafe System One
