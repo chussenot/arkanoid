@@ -39,6 +39,7 @@
 pub mod geometry;
 pub mod gpu;
 
+use crate::cadence;
 use crate::events::{GameEvent, Striker};
 use crate::game::{
     Ball, BallMode, Game, GameState, ASTEROID_BLAST_RADIUS, ASTEROID_RADIUS, BALL_BLAST_RADIUS,
@@ -89,10 +90,6 @@ pub const MAX_PULSES: usize = 8;
 const BRICK_TOP: f32 = 22.5;
 const FLOOR: f32 = 0.5;
 const BALL_HEIGHT: f32 = 6.0;
-
-/// A blast's wave front, in field pixels per second: the bricks it breaks
-/// break as it reaches them, after the blast's own flash.
-const BLAST_FRONT_SPEED: f32 = 420.0;
 
 /// A shockwave for the composite pass, in field pixels: `fx::gpu` maps it
 /// to the screen for whichever renderer draws it.
@@ -206,9 +203,17 @@ enum Kind {
         strength: f32,
         light: f32,
     },
-    /// A level ending: a line of light crossing the field, down for a
-    /// level cleared, right (out through the gate) for a warp.
-    Sweep { color: Rgb, across: bool },
+    /// A level ending: a line of light crossing the field in one bar of
+    /// its fanfare, down for a level cleared, right (out through the gate)
+    /// for a warp. It brightens on each beat, lands on the next bar's
+    /// downbeat, then rests there and fades until `landing` later
+    /// (`cadence.rs`).
+    Sweep {
+        color: Rgb,
+        across: bool,
+        bar: f32,
+        beat: f32,
+    },
 }
 
 impl Kind {
@@ -240,7 +245,11 @@ pub struct FxSystem {
     effects: Vec<Effect>,
     meshes: Vec<Mesh>,
     mesh_busy: [bool; MESHES],
-    cracks: Vec<Crack>,
+    /// Cracked armored bricks, each with the seconds until its fissure
+    /// shows: a blast's crack waits for the blast's front.
+    cracks: Vec<(Crack, f32)>,
+    /// This tick's landing delays by event index (`cadence.rs`), reused.
+    delays: Vec<Option<f32>>,
     /// This tick's rally steps by event index, reused tick to tick.
     steps: Vec<Option<usize>>,
     frame: FxFrame,
@@ -301,6 +310,7 @@ impl FxSystem {
             meshes: vec![Mesh::default(); MESHES],
             mesh_busy: [false; MESHES],
             cracks: Vec::with_capacity(MAX_CRACKS),
+            delays: Vec::with_capacity(64),
             steps: Vec::with_capacity(64),
             frame,
         }
@@ -343,13 +353,18 @@ impl FxSystem {
             self.cracks.clear();
             self.level = game.level;
         }
+        let mut delays = std::mem::take(&mut self.delays);
+        delays.clear();
+        delays.resize(events.len(), None);
+        cadence::landing_delays(events, |i, d| delays[i] = Some(d));
         if self.quality != Quality::Off {
-            self.translate(events, &steps);
+            self.translate(events, &steps, &delays);
         }
         self.steps = steps;
+        self.delays = delays;
     }
 
-    fn translate(&mut self, events: &[GameEvent], steps: &[Option<usize>]) {
+    fn translate(&mut self, events: &[GameEvent], steps: &[Option<usize>], delays: &[Option<f32>]) {
         let has = |want: &GameEvent| events.iter().any(|e| e == want);
         let won = has(&GameEvent::Victory);
         // The last contact that broke a brick: its BrickDestroyedAt follows.
@@ -378,7 +393,9 @@ impl FxSystem {
                     match (kind, hits_left) {
                         (BrickKind::Indestructible, _) => self.deflect(rect, at, normal),
                         (_, 0) => contact = Some(Contact { rect, at, normal }),
-                        (BrickKind::Armored, _) => self.crack(rect, at, normal),
+                        (BrickKind::Armored, _) => {
+                            self.crack(rect, at, normal, delays[i].unwrap_or(0.0));
+                        }
                         _ => {}
                     }
                 }
@@ -392,13 +409,9 @@ impl FxSystem {
                     let rect = [x, y, width, height];
                     let step = steps[i].unwrap_or(0);
                     let matched = contact.filter(|c| c.rect[0] == x && c.rect[1] == y);
-                    let delay = match (matched, blast) {
-                        (None, Some(center)) => {
-                            let d = (x - center[0]).hypot(y - center[1]);
-                            d / BLAST_FRONT_SPEED
-                        }
-                        _ => 0.0,
-                    };
+                    // When the sound director plays its note: at once for a
+                    // struck brick, as the blast's front arrives otherwise.
+                    let delay = delays[i].unwrap_or(0.0);
                     let hit = matched.unwrap_or_else(|| {
                         let away = blast.map_or([0.0, 1.0], |c| normalize([x - c[0], y - c[1]]));
                         Contact {
@@ -421,18 +434,15 @@ impl FxSystem {
                     blast = Some([x, y]);
                 }
                 GameEvent::LevelCleared if !won && !has(&GameEvent::Warped) => {
-                    let kind = Kind::Sweep {
-                        color: palette::rally(0),
-                        across: false,
-                    };
-                    self.spawn(0.9, 0.0, FLOOR, kind);
+                    // The fanfare's first bar is its run up; the second
+                    // opens on the climb to the held high E, six sixteenths
+                    // (3/8 of a bar) after the downbeat the sweep lands on.
+                    let meter = cadence::LEVEL_CLEAR;
+                    self.sweep(palette::rally(0), false, meter, 0.375);
                 }
                 GameEvent::Warped => {
-                    let kind = Kind::Sweep {
-                        color: palette::CAPSULE_BREAK,
-                        across: true,
-                    };
-                    self.spawn(0.6, 0.0, FLOOR, kind);
+                    let meter = cadence::WARP;
+                    self.sweep(palette::CAPSULE_BREAK, true, meter, 0.25);
                 }
                 _ => {}
             }
@@ -460,9 +470,9 @@ impl FxSystem {
                 let record = self
                     .cracks
                     .iter()
-                    .position(|c| c.rect[0] == rect[0] && c.rect[1] == rect[1]);
+                    .position(|(c, _)| c.rect[0] == rect[0] && c.rect[1] == rect[1]);
                 let crack = match record {
-                    Some(i) => self.cracks.swap_remove(i),
+                    Some(i) => self.cracks.swap_remove(i).0,
                     None => Crack::new(rect, hit.at, hit.normal, seed),
                 };
                 if let Some(mesh) = self.take_mesh() {
@@ -569,29 +579,44 @@ impl FxSystem {
         self.spawn(0.2, delay, BRICK_TOP, kind);
     }
 
+    /// A level's end: a sweep over one bar of `meter`, resting on the
+    /// landing for `landing` of a bar more.
+    fn sweep(&mut self, color: Rgb, across: bool, meter: cadence::Meter, landing: f32) {
+        let (bar, beat) = (meter.bar_secs(), meter.beat_secs());
+        let kind = Kind::Sweep {
+            color,
+            across,
+            bar,
+            beat,
+        };
+        self.spawn(bar * (1.0 + landing), 0.0, FLOOR, kind);
+    }
+
     /// An armored brick's first hit: a crack from the impact point, lit
-    /// as it runs and then left as a fissure until the brick breaks.
-    fn crack(&mut self, rect: [f32; 4], at: [f32; 2], normal: [f32; 2]) {
+    /// as it runs and then left as a fissure until the brick breaks. A
+    /// blast's crack waits `delay` for the blast's front, the moment its
+    /// crack is heard.
+    fn crack(&mut self, rect: [f32; 4], at: [f32; 2], normal: [f32; 2], delay: f32) {
         let crack = Crack::new(rect, at, normal, seed(self.tick, at));
         if let Some(i) = self
             .cracks
             .iter()
-            .position(|c| c.rect[0] == rect[0] && c.rect[1] == rect[1])
+            .position(|(c, _)| c.rect[0] == rect[0] && c.rect[1] == rect[1])
         {
-            self.cracks[i] = crack;
+            self.cracks[i] = (crack, delay);
         } else if self.cracks.len() < MAX_CRACKS {
-            self.cracks.push(crack);
+            self.cracks.push((crack, delay));
         }
         if let Some(mesh) = self.take_mesh() {
             crack.stroke_into(&mut self.tess, 3.2, &mut self.meshes[mesh]);
-            self.spawn(0.5, 0.0, BRICK_TOP, Kind::CrackLight { mesh });
+            self.spawn(0.5, delay, BRICK_TOP, Kind::CrackLight { mesh });
         }
         let flash = Kind::Flash {
             rect,
             color: palette::FX_CRACK,
             peak: 1.4,
         };
-        self.spawn(0.1, 0.0, BRICK_TOP, flash);
+        self.spawn(0.1, delay, BRICK_TOP, flash);
     }
 
     /// An indestructible brick turning a striker back: a cold arc on the
@@ -689,6 +714,9 @@ impl FxSystem {
     /// (interpolated); the others are read from `game`.
     pub fn update(&mut self, dt: f32, game: &Game, ball: &Ball) -> &FxFrame {
         let dt = dt.clamp(0.0, 0.1);
+        for (_, wait) in &mut self.cracks {
+            *wait = (*wait - dt).max(0.0);
+        }
         let mut i = 0;
         while i < self.effects.len() {
             let e = &mut self.effects[i];
@@ -729,7 +757,7 @@ impl FxSystem {
     /// remembers where it was hit until it breaks.
     fn fissures(&self, canvas: &mut Canvas) {
         let ink = paint(palette::FX_FISSURE, 0.8);
-        for crack in &self.cracks {
+        for (crack, _) in self.cracks.iter().filter(|(_, wait)| *wait <= 0.0) {
             for arm in crack.arms() {
                 for pair in arm.windows(2) {
                     canvas.segment(pair[0], pair[1], 1.2, 1.2, BRICK_TOP, ink, ink);
@@ -942,11 +970,16 @@ impl FxSystem {
                     });
                 }
             }
-            Kind::Sweep { color, across } => {
-                let s = ease_out(t);
-                let fade = (std::f32::consts::PI * t).sin();
-                let hot = light(color, 1.8 * fade);
-                let trail = light(color, 0.25 * fade);
+            Kind::Sweep {
+                color,
+                across,
+                bar,
+                beat,
+            } => {
+                let time = t * e.life;
+                let (s, glow) = sweep_at(time, bar, beat, e.life);
+                let hot = light(color, glow);
+                let trail = light(color, 0.15 * glow);
                 let none = light(color, 0.0);
                 if across {
                     let x = PLAYFIELD_WIDTH * s;
@@ -981,6 +1014,27 @@ impl FxSystem {
 }
 
 const FX_SCALE_LEN: usize = palette::FX_SCALE.len();
+
+/// Where a level-end sweep is `time` seconds in (0 at the top or left
+/// edge, 1 at the far one) and how bright, for a sweep crossing in one
+/// `bar`, its light lifting on each `beat`, over a `life` that rests past
+/// the bar.
+///
+/// It accelerates through the bar (s = u²) and so lands moving, exactly on
+/// the next downbeat; there it flares and fades out by the end of its life.
+fn sweep_at(time: f32, bar: f32, beat: f32, life: f32) -> (f32, f32) {
+    if time < bar {
+        let u = time / bar;
+        // Each beat's onset lifts it, decaying before the next.
+        let phase = (time / beat).fract();
+        let pulse = (-8.0 * phase).exp();
+        let rise = (u * 4.0).min(1.0);
+        (u * u, rise * (0.8 + 0.7 * pulse))
+    } else {
+        let rest = ((time - bar) / (life - bar).max(1e-4)).clamp(0.0, 1.0);
+        (1.0, 2.2 * (1.0 - rest).powi(2))
+    }
+}
 
 /// The streak behind a ball: a metal ball's steel, an explosive ball's
 /// charge, and for an unpowered ball, only past 520 px/s, a faint trace

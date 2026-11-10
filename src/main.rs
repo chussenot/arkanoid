@@ -3,6 +3,7 @@
 mod assets;
 mod audio;
 mod autopilot;
+mod cadence;
 mod cli;
 mod events;
 mod fx;
@@ -126,7 +127,7 @@ const LOGICAL_WIDTH: u32 = hud::CANVAS_WIDTH as u32;
 const LOGICAL_HEIGHT: u32 = hud::CANVAS_HEIGHT as u32;
 
 /// Simulation tick rate: 120 Hz, independent of the display's refresh rate.
-const FIXED_DT: f32 = 1.0 / 120.0;
+const FIXED_DT: f32 = 1.0 / game::TICK_RATE;
 
 /// Cap on ticks run per frame. Without this, a long stall (window drag,
 /// debugger pause) would make the loop try to "catch up" by ticking

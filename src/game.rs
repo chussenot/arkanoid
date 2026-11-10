@@ -33,6 +33,10 @@ pub const PADDLE_SPEED: f32 = 520.0;
 /// Gap between the paddle's bottom edge and the playfield's bottom edge.
 const PADDLE_MARGIN_BOTTOM: f32 = 30.0;
 
+/// Simulation ticks per second (spec: a 120 Hz fixed timestep); the
+/// timestep is its inverse. Presentation counts delays in it.
+pub const TICK_RATE: f32 = 120.0;
+
 const BALL_RADIUS: f32 = 6.0;
 const BALL_LAUNCH_SPEED: f32 = 300.0;
 const BALL_SPEED_CAP: f32 = 700.0;
@@ -602,6 +606,10 @@ enum Strike {
     Hit {
         contact: Contact,
         destroyed: Vec<Brick>,
+        /// Bricks an explosive ball's blast hit without breaking (armored
+        /// ones on their first hit), the struck brick aside: it has its own
+        /// contact.
+        cracked: Vec<Brick>,
         blast: Option<(f32, f32)>,
     },
 }
@@ -618,6 +626,27 @@ struct Contact {
 }
 
 impl Contact {
+    /// A blast's contact with a brick it hit: at the point of the brick
+    /// nearest the blast's center, through the face toward it.
+    fn from_blast(brick: Brick, center: [f32; 2]) -> Self {
+        let near = [
+            center[0].clamp(brick.left(), brick.right()),
+            center[1].clamp(brick.top(), brick.bottom()),
+        ];
+        let (dx, dy) = (center[0] - near[0], center[1] - near[1]);
+        let len = dx.hypot(dy);
+        let normal = if len > 1e-4 {
+            [dx / len, dy / len]
+        } else {
+            [0.0, 1.0]
+        };
+        Self {
+            brick,
+            at: [near[0] + normal[0], near[1] + normal[1]],
+            normal,
+        }
+    }
+
     fn event(self, by: Striker) -> GameEvent {
         let b = self.brick;
         GameEvent::BrickStruck {
@@ -683,6 +712,7 @@ fn strike_brick(bricks: &mut Vec<Brick>, ball: &mut Ball, mode: Option<BallMode>
                 },
             ),
             destroyed: vec![bricks.remove(index)],
+            cracked: Vec::new(),
             blast: None,
         },
         Some(BallMode::Explosive) => {
@@ -694,9 +724,19 @@ fn strike_brick(bricks: &mut Vec<Brick>, ball: &mut Ball, mode: Option<BallMode>
                     ..struck
                 },
             );
+            let mut cracked = Vec::new();
+            let destroyed = blast_bricks(
+                bricks,
+                struck.x,
+                struck.y,
+                BALL_BLAST_RADIUS,
+                Some(&mut cracked),
+            );
+            cracked.retain(|b| b.x != struck.x || b.y != struck.y);
             Strike::Hit {
                 contact,
-                destroyed: blast_bricks(bricks, struck.x, struck.y, BALL_BLAST_RADIUS),
+                destroyed,
+                cracked,
                 blast: Some((struck.x, struck.y)),
             }
         }
@@ -713,6 +753,7 @@ fn strike_brick(bricks: &mut Vec<Brick>, ball: &mut Ball, mode: Option<BallMode>
             Strike::Hit {
                 contact,
                 destroyed,
+                cracked: Vec::new(),
                 blast: None,
             }
         }
@@ -1438,12 +1479,17 @@ impl Game {
             Strike::Hit {
                 contact,
                 destroyed,
+                cracked,
                 blast,
             } => {
                 self.stall_secs = 0.0;
                 self.events.push(contact.event(by));
                 if let Some((x, y)) = blast {
                     self.events.push(GameEvent::BallExploded { x, y });
+                    for brick in cracked {
+                        self.events
+                            .push(Contact::from_blast(brick, [x, y]).event(Striker::Blast));
+                    }
                 }
                 // Empty on an armored brick's first hit: its state changed
                 // (2 -> 1 hit left), no score, no event.
@@ -1897,7 +1943,19 @@ impl Game {
         self.stall_secs = 0.0;
         self.score += ASTEROID_SCORE;
         self.events.push(GameEvent::AsteroidExploded { x, y });
-        for brick in blast_bricks(&mut self.bricks, x, y, ASTEROID_BLAST_RADIUS) {
+        let mut cracked = Vec::new();
+        let destroyed = blast_bricks(
+            &mut self.bricks,
+            x,
+            y,
+            ASTEROID_BLAST_RADIUS,
+            Some(&mut cracked),
+        );
+        for brick in cracked {
+            self.events
+                .push(Contact::from_blast(brick, [x, y]).event(Striker::Blast));
+        }
+        for brick in destroyed {
             self.on_brick_destroyed(brick);
         }
     }
@@ -1943,8 +2001,15 @@ impl Asteroid {
 /// destructible brick within `radius` (to its closest point) takes one
 /// hit, the hit a ball would give it (a normal brick breaks, an armored
 /// one loses one of its two). Returns the bricks it destroyed, already
-/// removed from `bricks`.
-fn blast_bricks(bricks: &mut Vec<Brick>, x: f32, y: f32, radius: f32) -> Vec<Brick> {
+/// removed from `bricks`; the ones it only cracked go to `cracked`, when
+/// the caller wants them (presentation does; the forecast does not).
+fn blast_bricks(
+    bricks: &mut Vec<Brick>,
+    x: f32,
+    y: f32,
+    radius: f32,
+    mut cracked: Option<&mut Vec<Brick>>,
+) -> Vec<Brick> {
     let in_range = |brick: &Brick| {
         let dx = x - x.clamp(brick.left(), brick.right());
         let dy = y - y.clamp(brick.top(), brick.bottom());
@@ -1957,6 +2022,9 @@ fn blast_bricks(bricks: &mut Vec<Brick>, x: f32, y: f32, radius: f32) -> Vec<Bri
         }
         brick.hits_remaining = brick.hits_remaining.saturating_sub(1);
         if brick.hits_remaining > 0 {
+            if let Some(cracked) = cracked.as_deref_mut() {
+                cracked.push(*brick);
+            }
             return true;
         }
         destroyed.push(*brick);
@@ -2053,7 +2121,13 @@ pub fn forecast_crossing(
             {
                 let asteroid = asteroids.remove(index);
                 bounce_off_asteroid(&mut ball, &asteroid);
-                blast_bricks(&mut bricks, asteroid.x, asteroid.y, ASTEROID_BLAST_RADIUS);
+                blast_bricks(
+                    &mut bricks,
+                    asteroid.x,
+                    asteroid.y,
+                    ASTEROID_BLAST_RADIUS,
+                    None,
+                );
             }
             if ball.vy > 0.0 && ball.y >= line_y {
                 path.push((ball.x, ball.y));
@@ -3624,6 +3698,66 @@ mod tests {
             .events
             .iter()
             .any(|e| matches!(e, GameEvent::AsteroidExploded { .. })));
+    }
+
+    /// The `BrickStruck` events in `game.events` by a blast, as (brick
+    /// center, hits left, normal).
+    fn blast_strikes(game: &Game) -> Vec<([f32; 2], u8, [f32; 2])> {
+        game.events
+            .iter()
+            .filter_map(|e| match *e {
+                GameEvent::BrickStruck {
+                    rect,
+                    hits_left,
+                    normal,
+                    by: Striker::Blast,
+                    ..
+                } => Some(([rect[0], rect[1]], hits_left, normal)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_blast_reports_the_bricks_it_cracks_facing_it() {
+        let mut game = playing_game();
+        game.bricks = vec![
+            test_brick_at(452.0, 300.0, BrickKind::Armored, 2, 20), // right of it
+            test_brick_at(400.0, 322.0, BrickKind::Normal, 1, 10),  // breaks
+        ];
+        game.explode_asteroid(400.0, 300.0);
+        let strikes = blast_strikes(&game);
+        assert_eq!(strikes.len(), 1, "the cracked one only: {strikes:?}");
+        let (center, hits_left, normal) = strikes[0];
+        assert_eq!((center, hits_left), ([452.0, 300.0], 1));
+        assert_eq!(normal, [-1.0, 0.0], "its face toward the blast");
+        // It comes after the explosion, as the effects and the sound read it.
+        let exploded = game
+            .events
+            .iter()
+            .position(|e| matches!(e, GameEvent::AsteroidExploded { .. }));
+        let struck = game
+            .events
+            .iter()
+            .position(|e| matches!(e, GameEvent::BrickStruck { .. }));
+        assert!(exploded < struck);
+    }
+
+    #[test]
+    fn an_explosive_balls_blast_reports_the_neighbors_it_cracks_not_the_struck_brick() {
+        let mut game = powered(PowerUpKind::ExplosiveBall, 400.0, 316.0);
+        game.bricks = vec![
+            test_brick_at(400.0, 300.0, BrickKind::Armored, 2, 10), // struck
+            test_brick_at(452.0, 300.0, BrickKind::Armored, 2, 20), // neighbor
+            test_brick_at(20.0, 100.0, BrickKind::Indestructible, 1, 0),
+        ];
+        let mut ball = game.ball;
+        game.resolve_brick_collisions(&mut ball);
+        assert_eq!(
+            blast_strikes(&game).iter().map(|s| s.0).collect::<Vec<_>>(),
+            [[452.0, 300.0]],
+            "the struck brick has its own contact"
+        );
     }
 
     #[test]

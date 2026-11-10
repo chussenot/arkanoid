@@ -123,4 +123,8 @@ pub enum Striker {
     ExplosiveBall,
     Laser,
     SuperLaser,
+    /// An explosive ball's or an asteroid's blast, on a brick it hit
+    /// without breaking: the contact is the brick's point nearest the
+    /// blast. (Bricks a blast breaks are `BrickDestroyedAt` only.)
+    Blast,
 }
