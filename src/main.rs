@@ -233,8 +233,15 @@ impl App {
     fn show_menu(&mut self) {
         self.game = self.menu.build(&mut rand::rng());
         self.render_prev = RenderState::from(&self.game);
+        // Rally scoring is an experiment on another scale: its runs keep no
+        // record, and show none to beat (`update_record` skips them).
+        let best = if self.game.features.rally_score {
+            None
+        } else {
+            self.best(self.game.level_set())
+        };
         self.record = hud::Record {
-            best: self.best(self.game.level_set()),
+            best,
             new_best: false,
         };
         self.last_state = self.game.state;
@@ -678,7 +685,7 @@ fn main() {
     if args.levelset.is_none() && !sets.is_empty() {
         println!("levelsets: {} in {LEVELSET_DIR}/, in the menu", sets.len());
     }
-    let mut picker = menu::Menu::new(sets, args.classic);
+    let mut picker = menu::Menu::new(sets, args.classic).with_rally_score(args.rally_score);
     match wanted {
         Some(name) => picker.select_set(&name),
         None if args.classic => picker.select(menu::Mode::Classic),

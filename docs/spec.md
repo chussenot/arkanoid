@@ -148,6 +148,22 @@ offers that directory's sets instead of `levels/`'s. These are interface
 keys, never simulation input: `Input` and the pinned replay hash are
 unchanged.
 
+**Rally scoring (experimental, off by default; `--rally-score`)**: the
+rally is the run of bricks broken since a ball last touched the paddle, or
+since the serve; a lost life and a new level start it over too
+(`Game::rally`, the same run `rally.rs` counts for the notes and the light,
+and a property test holds the two together). With `Features::rally_score`,
+a brick scores its row's value times its place in that run, ×1 for the
+first up to ×10 from the tenth on (`RALLY_MAX_MULTIPLIER`, the scale's ten
+steps); an armored brick half as much again, for its second hit; an
+asteroid 100 times the multiplier the next brick would score. The Break
+gate still pays skipped bricks at ×1. The HUD shows the multiplier beside
+the score once it passes ×1, and the end screen the run's best rally. The
+flag applies to every mode but Classic and v1-rules sets, and its runs
+keep no best score (a different scale). Off, the score is exactly as
+below and the replay hash unchanged. It stays a flag until a playtest
+decides (`docs/design/game-director-review.md`, "Rally is the score").
+
 **Best score (added after v1)**: the best campaign and `--classic` scores
 are kept in a small per-user file (`src/record.rs`; never sent anywhere).
 The menu shows each mode's best on its row; the end screen marks a new

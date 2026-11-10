@@ -411,6 +411,21 @@ fn band(out: &mut Layout, frame: &Frame, cue: Option<LifeCue>) {
         align: Align::Left,
     });
 
+    // Rally scoring: what the next brick scores times, beside the score,
+    // once a rally pays more than ×1. The autopilot's tag takes that place.
+    let multiplier = game.score_multiplier();
+    if multiplier > 1 && !frame.autopilot {
+        let score_width = text_width(&format!("{:06}", game.score), size::VALUE, 0.0);
+        out.lines.push(Line {
+            spans: vec![span(format!("×{multiplier}"), palette::TEXT, true)],
+            size: size::VALUE,
+            tracking: 0.0,
+            x: MARGIN_X + score_width + 14.0,
+            y: VALUE_Y,
+            align: Align::Left,
+        });
+    }
+
     // The autopilot tag, beside the score it is earning.
     if frame.autopilot {
         let label = "AUTOPILOT";
@@ -829,6 +844,10 @@ fn state_screen(out: &mut Layout, frame: &Frame, state: GameState) {
                 span("    ", dim, true),
             ];
             summary.extend(reached);
+            if game.features.rally_score {
+                summary.push(span("    BEST RALLY ", dim, true));
+                summary.push(span(game.best_rally.to_string(), palette::TEXT, true));
+            }
             out.lines.push(centered(
                 summary,
                 size::SUMMARY,
@@ -1450,6 +1469,33 @@ mod tests {
             let text = all_text(&layout(&frame(&game), None));
             assert!(text.contains("SCORE 001234"), "{state:?}: {text}");
         }
+    }
+
+    #[test]
+    fn rally_scoring_shows_its_multiplier_and_best_rally_and_nothing_without_it() {
+        let mut game = Game::new();
+        game.state = GameState::Playing;
+        game.rally = 4;
+        game.best_rally = 12;
+        let text = all_text(&layout(&frame(&game), None));
+        assert!(
+            !text.contains('×'),
+            "no multiplier without the flag: {text}"
+        );
+
+        game.features.rally_score = true;
+        let text = all_text(&layout(&frame(&game), None));
+        assert!(text.contains("×5"), "the next brick's multiplier: {text}");
+        game.rally = 0;
+        let text = all_text(&layout(&frame(&game), None));
+        assert!(!text.contains('×'), "×1 is not shown: {text}");
+
+        game.state = GameState::GameOver;
+        let text = all_text(&layout(&frame(&game), None));
+        assert!(text.contains("BEST RALLY 12"), "{text}");
+        game.features.rally_score = false;
+        let text = all_text(&layout(&frame(&game), None));
+        assert!(!text.contains("RALLY"), "{text}");
     }
 
     #[test]

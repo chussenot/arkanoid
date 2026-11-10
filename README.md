@@ -160,6 +160,11 @@ too. Each is worth 100 points.
 `cargo run --release -- --classic` plays as the game was first specified:
 Widen, Slow and Multiball only, and no asteroids.
 
+`cargo run --release -- --rally-score` tries the experimental rally
+scoring: each brick broken before the ball comes back to the paddle scores
+one step more, ×1 up to ×10, the step its note plays on. The multiplier
+shows beside the score; these runs keep no best score.
+
 ## Thousands of levels
 
 The campaign's 32 levels ship in the binary and need no setup. For

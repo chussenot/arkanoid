@@ -892,6 +892,50 @@ mod tests {
 /// Not part of `cargo test`: plays every feature set over twenty seeds and
 /// prints wins, lives lost and game time, the numbers in docs/autopilot.md.
 /// `cargo test --release -- --ignored --nocapture benchmark_`
+/// The rally the score multiplies by (`Game::rally`) is the run the notes
+/// and the light climb (`rally::Rally`): two counts of one thing, kept in
+/// two places, so a property checks they never part.
+#[cfg(test)]
+mod rally_sync {
+    use super::*;
+    use crate::game::Features;
+    use crate::rally::Rally;
+
+    #[test]
+    fn the_scored_rally_is_the_rally_heard_and_seen() {
+        let mut compared = 0;
+        for seed in 1..=3 {
+            let mut game = Game::with_seed(seed)
+                .with_campaign()
+                .with_features(Features {
+                    rally_score: true,
+                    ..Features::ALL
+                });
+            game.state = GameState::Playing;
+            let mut autopilot = Autopilot::new(None, 1);
+            let mut rally = Rally::default();
+            for _ in 0..120 * 150 {
+                let input = autopilot.input(&game, 1.0 / 120.0);
+                game.tick(&input, 1.0 / 120.0);
+                rally.observe(&game, &game.events, |_, _| {});
+                autopilot.observe(&game);
+                game.events.clear();
+                // Between a level's end and its serve the ball waits on the
+                // paddle and no brick can break; both counts start over at
+                // the serve.
+                if game.state == GameState::Playing && !game.ball.attached {
+                    assert_eq!(rally.length() as u32, game.rally, "seed {seed}");
+                    compared += 1;
+                }
+            }
+        }
+        assert!(
+            compared > 120 * 60,
+            "the ball was in play: {compared} ticks"
+        );
+    }
+}
+
 #[cfg(test)]
 mod benchmark {
     use super::*;

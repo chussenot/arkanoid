@@ -61,6 +61,8 @@ pub struct Menu {
     set: usize,
     /// `--classic` with `--levelset`: loaded sets play v1's rules too.
     classic_rules: bool,
+    /// `--rally-score`: every mode but Classic scores by the rally.
+    rally_score: bool,
 }
 
 impl Menu {
@@ -80,7 +82,16 @@ impl Menu {
             sets,
             set: 0,
             classic_rules,
+            rally_score: false,
         }
+    }
+
+    /// Turns on rally scoring (`Features::rally_score`) for every mode
+    /// that plays BRYX's own rules: never Classic or v1-rules sets, whose
+    /// scores stay v1's.
+    pub fn with_rally_score(mut self, on: bool) -> Self {
+        self.rally_score = on;
+        self
     }
 
     /// Highlights `mode`, if it can be played.
@@ -148,13 +159,17 @@ impl Menu {
     /// A fresh game of the highlighted mode, on its menu screen. `rng`
     /// draws Shuffle's levels.
     pub fn build<R: Rng + ?Sized>(&self, rng: &mut R) -> Game {
+        let rules = Features {
+            rally_score: self.rally_score,
+            ..Features::ALL
+        };
         let loaded_rules = if self.classic_rules {
             Features::V1
         } else {
-            Features::ALL
+            rules
         };
         match self.mode() {
-            Mode::Campaign => Game::new().with_campaign(),
+            Mode::Campaign => Game::new().with_campaign().with_features(rules),
             Mode::Classic => Game::new().with_features(Features::V1),
             Mode::Levelset => {
                 let mut game = Game::new().with_features(loaded_rules);
