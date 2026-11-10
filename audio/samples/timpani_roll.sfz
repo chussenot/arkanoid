@@ -1,0 +1,7 @@
+// timpani_roll: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
+// Do not edit: rerun the script.
+<region> sample=percussion/timpani_roll/timpani_roll_42.flac lokey=39 hikey=44 pitch_keycenter=42 lovel=1 hivel=127 // Percussion/Timpani/Rolls/Timpani1_Roll_v5_rr1_Sum.wav
+<region> sample=percussion/timpani_roll/timpani_roll_46.flac lokey=45 hikey=47 pitch_keycenter=46 lovel=1 hivel=127 // Percussion/Timpani/Rolls/Timpani2_Roll_v5_rr1_Sum.wav
+<region> sample=percussion/timpani_roll/timpani_roll_49.flac lokey=48 hikey=50 pitch_keycenter=49 lovel=1 hivel=127 // Percussion/Timpani/Rolls/Timpani3_Roll_v5_rr1_Sum.wav
+<region> sample=percussion/timpani_roll/timpani_roll_52.flac lokey=51 hikey=53 pitch_keycenter=52 lovel=1 hivel=127 // Percussion/Timpani/Rolls/Timpani4_Roll_v5_rr1_Sum.wav
+<region> sample=percussion/timpani_roll/timpani_roll_54.flac lokey=54 hikey=57 pitch_keycenter=54 lovel=1 hivel=127 // Percussion/Timpani/Rolls/Timpani5_Roll_v4_rr1_Sum.wav

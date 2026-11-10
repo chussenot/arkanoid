@@ -1,0 +1,15 @@
+// celli_spic: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
+// Do not edit: rerun the script.
+<region> sample=strings/celli_spic/celli_spic_36.flac lokey=33 hikey=38 pitch_keycenter=36 lovel=1 hivel=127 // Strings/Cello Section/spic/spic_C1_v2_RR1.wav
+<region> sample=strings/celli_spic/celli_spic_40.flac lokey=39 hikey=41 pitch_keycenter=40 lovel=1 hivel=127 // Strings/Cello Section/spic/spic_E1_v2_RR1.wav
+<region> sample=strings/celli_spic/celli_spic_43.flac lokey=42 hikey=45 pitch_keycenter=43 lovel=1 hivel=127 // Strings/Cello Section/spic/spic_G1_v2_RR1.wav
+<region> sample=strings/celli_spic/celli_spic_47.flac lokey=46 hikey=48 pitch_keycenter=47 lovel=1 hivel=127 // Strings/Cello Section/spic/spic_B1_v2_RR1.wav
+<region> sample=strings/celli_spic/celli_spic_50.flac lokey=49 hikey=51 pitch_keycenter=50 lovel=1 hivel=127 // Strings/Cello Section/spic/spic_D2_v2_RR1.wav
+<region> sample=strings/celli_spic/celli_spic_53.flac lokey=52 hikey=55 pitch_keycenter=53 lovel=1 hivel=127 // Strings/Cello Section/spic/spic_F2_v2_RR1.wav
+<region> sample=strings/celli_spic/celli_spic_57.flac lokey=56 hikey=58 pitch_keycenter=57 lovel=1 hivel=127 // Strings/Cello Section/spic/spic_A2_v2_RR1.wav
+<region> sample=strings/celli_spic/celli_spic_60.flac lokey=59 hikey=62 pitch_keycenter=60 lovel=1 hivel=127 // Strings/Cello Section/spic/spic_C3_v2_RR1.wav
+<region> sample=strings/celli_spic/celli_spic_64.flac lokey=63 hikey=65 pitch_keycenter=64 lovel=1 hivel=127 // Strings/Cello Section/spic/spic_E3_v2_RR1.wav
+<region> sample=strings/celli_spic/celli_spic_67.flac lokey=66 hikey=69 pitch_keycenter=67 lovel=1 hivel=127 // Strings/Cello Section/spic/spic_G3_v2_RR1.wav
+<region> sample=strings/celli_spic/celli_spic_71.flac lokey=70 hikey=72 pitch_keycenter=71 lovel=1 hivel=127 // Strings/Cello Section/spic/spic_B3_v2_RR1.wav
+<region> sample=strings/celli_spic/celli_spic_74.flac lokey=73 hikey=75 pitch_keycenter=74 lovel=1 hivel=127 // Strings/Cello Section/spic/spic_D4_v2_RR2.wav
+<region> sample=strings/celli_spic/celli_spic_77.flac lokey=76 hikey=80 pitch_keycenter=77 lovel=1 hivel=127 // Strings/Cello Section/spic/spic_F4_v2_RR1.wav

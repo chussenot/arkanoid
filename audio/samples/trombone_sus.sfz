@@ -1,0 +1,13 @@
+// trombone_sus: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
+// Do not edit: rerun the script.
+<region> sample=brass/trombone_sus/trombone_sus_34.flac lokey=31 hikey=35 pitch_keycenter=34 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=140993 // Brass/Tenor Trombone/sus/tenortbn_sus_A#0_v2_1.wav
+<region> sample=brass/trombone_sus/trombone_sus_37.flac lokey=36 hikey=38 pitch_keycenter=37 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=140978 // Brass/Tenor Trombone/sus/tenortbn_sus_C#1_v2_1.wav
+<region> sample=brass/trombone_sus/trombone_sus_39.flac lokey=39 hikey=40 pitch_keycenter=39 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=121913 // Brass/Tenor Trombone/sus/tenortbn_sus_D#1_v3_1.wav
+<region> sample=brass/trombone_sus/trombone_sus_41.flac lokey=41 hikey=43 pitch_keycenter=41 tune=1 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=140993 // Brass/Tenor Trombone/sus/tenortbn_sus_F1_v3_1.wav
+<region> sample=brass/trombone_sus/trombone_sus_46.flac lokey=44 hikey=48 pitch_keycenter=46 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=125579 // Brass/Tenor Trombone/sus/tenortbn_sus_A#1_v3_1.wav
+<region> sample=brass/trombone_sus/trombone_sus_50.flac lokey=49 hikey=51 pitch_keycenter=50 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=106064 // Brass/Tenor Trombone/sus/tenortbn_sus_D2_v3_1.wav
+<region> sample=brass/trombone_sus/trombone_sus_53.flac lokey=52 hikey=56 pitch_keycenter=53 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=124802 // Brass/Tenor Trombone/sus/tenortbn_sus_F2_v3_1.wav
+<region> sample=brass/trombone_sus/trombone_sus_60.flac lokey=57 hikey=60 pitch_keycenter=60 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=127511 // Brass/Tenor Trombone/sus/tenortbn_sus_C3_v3_1.wav
+<region> sample=brass/trombone_sus/trombone_sus_61.flac lokey=61 hikey=62 pitch_keycenter=61 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=127991 // Brass/Tenor Trombone/sus/tenortbn_sus_C#3_v3_1.wav
+<region> sample=brass/trombone_sus/trombone_sus_63.flac lokey=63 hikey=64 pitch_keycenter=63 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=130829 // Brass/Tenor Trombone/sus/tenortbn_sus_D#3_v3_1.wav
+<region> sample=brass/trombone_sus/trombone_sus_65.flac lokey=65 hikey=68 pitch_keycenter=65 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=137304 // Brass/Tenor Trombone/sus/tenortbn_sus_F3_v3_1.wav

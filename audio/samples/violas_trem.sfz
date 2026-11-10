@@ -1,0 +1,14 @@
+// violas_trem: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
+// Do not edit: rerun the script.
+<region> sample=strings/violas_trem/violas_trem_48.flac lokey=45 hikey=50 pitch_keycenter=48 tune=10 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=120119 // Strings/Viola Section/trem/Violas_trem_C2_v2_rr1.wav
+<region> sample=strings/violas_trem/violas_trem_52.flac lokey=51 hikey=53 pitch_keycenter=52 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=122405 // Strings/Viola Section/trem/Violas_trem_E2_v2_rr1.wav
+<region> sample=strings/violas_trem/violas_trem_55.flac lokey=54 hikey=57 pitch_keycenter=55 tune=4 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=122359 // Strings/Viola Section/trem/Violas_trem_G2_v2_rr1.wav
+<region> sample=strings/violas_trem/violas_trem_59.flac lokey=58 hikey=60 pitch_keycenter=59 tune=3 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=122823 // Strings/Viola Section/trem/Violas_trem_B2_v2_rr1.wav
+<region> sample=strings/violas_trem/violas_trem_62.flac lokey=61 hikey=63 pitch_keycenter=62 tune=3 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=120232 // Strings/Viola Section/trem/Violas_trem_D3_v2_rr1.wav
+<region> sample=strings/violas_trem/violas_trem_65.flac lokey=64 hikey=67 pitch_keycenter=65 tune=-3 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=113744 // Strings/Viola Section/trem/Violas_trem_F3_v2_rr1.wav
+<region> sample=strings/violas_trem/violas_trem_69.flac lokey=68 hikey=70 pitch_keycenter=69 tune=-4 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=116564 // Strings/Viola Section/trem/Violas_trem_A3_v2_rr1.wav
+<region> sample=strings/violas_trem/violas_trem_72.flac lokey=71 hikey=74 pitch_keycenter=72 tune=3 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=113441 // Strings/Viola Section/trem/Violas_trem_C4_v2_rr1.wav
+<region> sample=strings/violas_trem/violas_trem_76.flac lokey=75 hikey=77 pitch_keycenter=76 tune=-5 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=106255 // Strings/Viola Section/trem/Violas_trem_E4_v2_rr1.wav
+<region> sample=strings/violas_trem/violas_trem_79.flac lokey=78 hikey=81 pitch_keycenter=79 tune=-3 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=105867 // Strings/Viola Section/trem/Violas_trem_G4_v2_rr1.wav
+<region> sample=strings/violas_trem/violas_trem_83.flac lokey=82 hikey=84 pitch_keycenter=83 tune=-1 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=113044 // Strings/Viola Section/trem/Violas_trem_B4_v2_rr1.wav
+<region> sample=strings/violas_trem/violas_trem_86.flac lokey=85 hikey=89 pitch_keycenter=86 tune=2 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=121922 // Strings/Viola Section/trem/Violas_trem_D5_v2_rr1.wav

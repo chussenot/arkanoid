@@ -1,0 +1,13 @@
+// horn_stac: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
+// Do not edit: rerun the script.
+<region> sample=brass/horn_stac/horn_stac_33.flac lokey=30 hikey=34 pitch_keycenter=33 lovel=1 hivel=127 // Brass/F Horn/stac/MOHorn_stac_A0_v1_rr1.wav
+<region> sample=brass/horn_stac/horn_stac_36.flac lokey=35 hikey=37 pitch_keycenter=36 lovel=1 hivel=127 // Brass/F Horn/stac/MOHorn_stac_C1_v2_rr1.wav
+<region> sample=brass/horn_stac/horn_stac_39.flac lokey=38 hikey=41 pitch_keycenter=39 lovel=1 hivel=127 // Brass/F Horn/stac/MOHorn_stac_D#1_v2_rr1.wav
+<region> sample=brass/horn_stac/horn_stac_43.flac lokey=42 hikey=44 pitch_keycenter=43 lovel=1 hivel=127 // Brass/F Horn/stac/MOHorn_stac_G1_v2_rr1.wav
+<region> sample=brass/horn_stac/horn_stac_46.flac lokey=45 hikey=48 pitch_keycenter=46 lovel=1 hivel=127 // Brass/F Horn/stac/MOHorn_stac_A#1_v3_rr1.wav
+<region> sample=brass/horn_stac/horn_stac_50.flac lokey=49 hikey=51 pitch_keycenter=50 lovel=1 hivel=127 // Brass/F Horn/stac/MOHorn_stac_D2_v3_rr1.wav
+<region> sample=brass/horn_stac/horn_stac_53.flac lokey=52 hikey=55 pitch_keycenter=53 lovel=1 hivel=127 // Brass/F Horn/stac/MOHorn_stac_F2_v3_rr1.wav
+<region> sample=brass/horn_stac/horn_stac_57.flac lokey=56 hikey=58 pitch_keycenter=57 lovel=1 hivel=127 // Brass/F Horn/stac/MOHorn_stac_A2_v3_rr1.wav
+<region> sample=brass/horn_stac/horn_stac_60.flac lokey=59 hikey=67 pitch_keycenter=60 lovel=1 hivel=127 // Brass/F Horn/stac/MOHorn_stac_C3_v3_rr1.wav
+<region> sample=brass/horn_stac/horn_stac_74.flac lokey=68 hikey=75 pitch_keycenter=74 lovel=1 hivel=127 // Brass/F Horn/stac/MOHorn_stac_D4_v3_rr1.wav
+<region> sample=brass/horn_stac/horn_stac_77.flac lokey=76 hikey=80 pitch_keycenter=77 lovel=1 hivel=127 // Brass/F Horn/stac/MOHorn_stac_F4_v3_rr1.wav

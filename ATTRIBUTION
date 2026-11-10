@@ -148,3 +148,20 @@ in src/hud.rs). It holds the only third-party content the game ships:
 The OFL lets the font be bundled and redistributed with software; the
 font stays under the OFL, not under this repository's MIT license, and
 OFL.txt must travel with it.
+
+
+Third-party audio samples
+=========================
+
+audio/samples/ holds a curated subset of orchestral samples from
+Versilian Studios' VSCO 2 Community Edition:
+
+  Source:  https://github.com/sgossner/VSCO-2-CE
+  Commit:  440300901dfe9275fd84e0b7763af1f8443ae62e
+  License: CC0 1.0 Universal (public domain dedication; no conditions)
+
+The subset was made by audio/samples/curate.py: mono, trimmed, looped
+(sustains), normalised per instrument, dithered to 16 bit and stored as
+FLAC. Every <region> line in audio/samples/*.sfz names the VSCO file it
+came from. CC0 asks for no credit; this record is kept so the source of
+every sound in the game is known.

@@ -1,0 +1,12 @@
+// trumpet_sus: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
+// Do not edit: rerun the script.
+<region> sample=brass/trumpet_sus/trumpet_sus_53.flac lokey=50 hikey=55 pitch_keycenter=53 tune=4 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=106154 // Brass/Trumpet/sus/Sum_SHTrumpet_sus_F2_v3_rr1.wav
+<region> sample=brass/trumpet_sus/trumpet_sus_57.flac lokey=56 hikey=58 pitch_keycenter=57 tune=2 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=127189 // Brass/Trumpet/sus/Sum_SHTrumpet_sus_A2_v3_rr1.wav
+<region> sample=brass/trumpet_sus/trumpet_sus_60.flac lokey=59 hikey=61 pitch_keycenter=60 tune=2 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=110585 // Brass/Trumpet/sus/Sum_SHTrumpet_sus_C3_v3_rr1.wav
+<region> sample=brass/trumpet_sus/trumpet_sus_63.flac lokey=62 hikey=65 pitch_keycenter=63 tune=-1 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=117949 // Brass/Trumpet/sus/Sum_SHTrumpet_sus_D#3_v3_rr1.wav
+<region> sample=brass/trumpet_sus/trumpet_sus_67.flac lokey=66 hikey=68 pitch_keycenter=67 tune=-3 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=124907 // Brass/Trumpet/sus/Sum_SHTrumpet_sus_G3_v3_rr1.wav
+<region> sample=brass/trumpet_sus/trumpet_sus_70.flac lokey=69 hikey=72 pitch_keycenter=70 tune=-2 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=122974 // Brass/Trumpet/sus/Sum_SHTrumpet_sus_A#3_v3_rr1.wav
+<region> sample=brass/trumpet_sus/trumpet_sus_74.flac lokey=73 hikey=75 pitch_keycenter=74 tune=-3 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=110123 // Brass/Trumpet/sus/Sum_SHTrumpet_sus_D4_v3_rr1.wav
+<region> sample=brass/trumpet_sus/trumpet_sus_77.flac lokey=76 hikey=79 pitch_keycenter=77 tune=2 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=108374 // Brass/Trumpet/sus/Sum_SHTrumpet_sus_F4_v3_rr1.wav
+<region> sample=brass/trumpet_sus/trumpet_sus_81.flac lokey=80 hikey=82 pitch_keycenter=81 tune=1 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=135719 // Brass/Trumpet/sus/Sum_SHTrumpet_sus_A4_v3_rr1.wav
+<region> sample=brass/trumpet_sus/trumpet_sus_84.flac lokey=83 hikey=87 pitch_keycenter=84 tune=4 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=140989 // Brass/Trumpet/sus/Sum_SHTrumpet_sus_C5_v3_rr1.wav
