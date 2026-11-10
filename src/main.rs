@@ -14,6 +14,7 @@ mod levelset;
 mod menu;
 mod movement;
 mod palette;
+mod playtest;
 mod rally;
 mod record;
 mod render;
@@ -191,6 +192,8 @@ struct App {
     records: std::collections::HashMap<record::RecordKey, record::Best>,
     /// Sound (`audio/`), opened in `main`; `None` only before that.
     audio: Option<audio::Audio>,
+    /// `--playtest-log`: the log and the file its rows are appended to.
+    playtest: Option<(playtest::PlaytestLog, std::fs::File)>,
 }
 
 impl App {
@@ -221,6 +224,41 @@ impl App {
             menu: menu::Menu::new(Vec::new(), false),
             menu_view: hud::MenuView::default(),
             records: std::collections::HashMap::new(),
+            playtest: None,
+        }
+    }
+
+    /// Appends `rows` to the playtest log, if one is open. A failed write
+    /// is reported once and closes the log; play goes on.
+    /// (A function over the field alone, so the frame loop can call it
+    /// while it holds the window.)
+    fn write_playtest(
+        playtest: &mut Option<(playtest::PlaytestLog, std::fs::File)>,
+        rows: &[playtest::Row],
+    ) {
+        use std::io::Write;
+        let Some((_, file)) = playtest else {
+            return;
+        };
+        let result = rows
+            .iter()
+            .try_for_each(|row| writeln!(file, "{}", row.csv()))
+            .and_then(|()| file.flush());
+        if let Err(err) = result {
+            eprintln!("warning: playtest log stopped ({err})");
+            *playtest = None;
+        }
+    }
+
+    /// A level in play when the run is left (Q, a picker change, closing
+    /// the window) is logged as abandoned.
+    fn abandon_playtest_level(&mut self) {
+        let row = self
+            .playtest
+            .as_mut()
+            .and_then(|(log, _)| log.abandon(&self.game));
+        if let Some(row) = row {
+            Self::write_playtest(&mut self.playtest, &[row]);
         }
     }
 
@@ -243,7 +281,11 @@ impl App {
     /// start, after every change in the picker, and on Q. Space then starts
     /// it through `Game::tick`'s own `Menu -> Playing`.
     fn show_menu(&mut self) {
+        self.abandon_playtest_level();
         self.game = self.menu.build(&mut rand::rng());
+        if let Some((log, _)) = &mut self.playtest {
+            log.set_mode(self.menu.label(), self.game.features.rally_score);
+        }
         self.render_prev = RenderState::from(&self.game);
         self.record_key = self.menu.record_key();
         let best = self.best(&self.record_key);
@@ -334,6 +376,7 @@ impl ApplicationHandler for App {
 
         match event {
             WindowEvent::CloseRequested => {
+                self.abandon_playtest_level();
                 if let Some(autopilot) = &self.autopilot {
                     println!("autopilot: {}", autopilot.stats());
                 }
@@ -468,6 +511,14 @@ impl ApplicationHandler for App {
             self.fx.observe(&self.game, &self.game.events);
             if let Some(audio) = &mut self.audio {
                 audio.observe(&self.game, &self.game.events);
+            }
+            let rows = self
+                .playtest
+                .as_mut()
+                .map(|(log, _)| log.observe(&self.game, &self.game.events))
+                .unwrap_or_default();
+            if !rows.is_empty() {
+                Self::write_playtest(&mut self.playtest, &rows);
             }
             self.game.events.clear();
             self.accumulator -= FIXED_DT;
@@ -707,6 +758,9 @@ fn main() {
     app.renderer_kind = args.renderer;
     app.menu = picker;
     app.load_records();
+    if let Some(path) = &args.playtest_log {
+        app.playtest = open_playtest_log(path, args.autopilot);
+    }
     app.show_menu();
     app.audio = Some(audio::Audio::new(audio::SoundMode::from_env()));
     if args.autopilot {
@@ -717,6 +771,41 @@ fn main() {
     event_loop
         .run_app(&mut app)
         .expect("event loop terminated with an error");
+}
+
+/// Opens (or creates) the playtest log at `path` for appending, writing
+/// the CSV header to a new or empty file. `None`, with a warning, when it
+/// cannot be opened: the game runs without it.
+fn open_playtest_log(
+    path: &str,
+    autopilot: bool,
+) -> Option<(playtest::PlaytestLog, std::fs::File)> {
+    use std::io::Write;
+    let opened = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .and_then(|mut file| {
+            if file.metadata()?.len() == 0 {
+                writeln!(file, "{}", playtest::Row::HEADER)?;
+            }
+            Ok(file)
+        });
+    match opened {
+        Ok(file) => {
+            // Seconds since the epoch: tells this session's rows apart in
+            // a file several sessions share.
+            let session = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs());
+            println!("playtest: logging session {session} to {path}");
+            Some((playtest::PlaytestLog::new(session, autopilot), file))
+        }
+        Err(err) => {
+            eprintln!("warning: no playtest log at {path} ({err})");
+            None
+        }
+    }
 }
 
 #[cfg(test)]
