@@ -19,7 +19,9 @@
 //!   the transition, so it plays without the level-clear fanfare, and
 //!   leaving an end screen cuts its stinger.
 
+use crate::cadence;
 use crate::events::{GameEvent, PowerUpKind};
+use crate::game::TICK_RATE;
 use crate::game::{Game, GameState, GunKind, LevelSetKind, PLAYFIELD_WIDTH};
 use crate::levels::BrickKind;
 use crate::rally::Rally;
@@ -75,6 +77,9 @@ const PENTATONIC: [f32; crate::rally::STEPS] =
 /// Brick sounds per tick at most: an explosion breaking eight bricks at
 /// once is one chord, not eight pops stacked into noise.
 const MAX_BRICK_SOUNDS_PER_TICK: usize = 3;
+/// Notes waiting on a blast's front, at most: two blasts' worth of
+/// neighbors and cracks.
+const MAX_PENDING: usize = 24;
 /// Stereo width: how far to the sides the field's edges sit.
 const PAN_WIDTH: f32 = 0.75;
 /// The music's level while paused.
@@ -161,10 +166,11 @@ pub struct Director {
     rally: Rally,
     /// This tick's breaks as (event index, step), reused tick to tick.
     steps: Vec<(usize, usize)>,
-    /// Armored bricks still on their first hit, by position, to hear the
-    /// hit that cracks one (no event carries it).
-    intact_armor: Vec<(f32, f32)>,
-    level: usize,
+    /// This tick's landing delays by event index (`cadence.rs`), reused.
+    delays: Vec<Option<f32>>,
+    /// Notes waiting for a blast's front to reach their brick, with the
+    /// ticks left until they sound. At most `MAX_PENDING`.
+    pending: Vec<(u32, Command)>,
     ball_attached: bool,
     /// The level whose first serve has been heard: its music plays from
     /// there. Cleared when a run ends, so a Continue waits for its serve.
@@ -180,8 +186,8 @@ impl Director {
             last_music: None,
             rally: Rally::default(),
             steps: Vec::new(),
-            intact_armor: Vec::new(),
-            level: 0,
+            delays: Vec::new(),
+            pending: Vec::with_capacity(MAX_PENDING),
             ball_attached: false,
             served_level: None,
         }
@@ -195,10 +201,15 @@ impl Director {
         steps.clear();
         self.rally
             .observe(game, events, |i, step| steps.push((i, step)));
+        let mut delays = std::mem::take(&mut self.delays);
+        delays.clear();
+        delays.resize(events.len(), None);
+        cadence::landing_delays(events, |i, d| delays[i] = Some(d));
         self.transitions(game, &mut out);
-        self.events(game, events, &steps, &mut out);
+        let released = self.release(game, &mut out);
+        self.events(game, events, &steps, &delays, released, &mut out);
         self.steps = steps;
-        self.armor(game, &mut out);
+        self.delays = delays;
         self.launch(game, &mut out);
         let mut music = music_for(game, &self.playlist);
         let in_play = matches!(game.state, GameState::Playing | GameState::Paused);
@@ -260,6 +271,8 @@ impl Director {
         game: &Game,
         events: &[GameEvent],
         steps: &[(usize, usize)],
+        delays: &[Option<f32>],
+        released: usize,
         out: &mut Vec<Command>,
     ) {
         let paddle_x = game.paddle.x;
@@ -267,7 +280,7 @@ impl Director {
         let run_over = has(&GameEvent::GameOver);
         let won = has(&GameEvent::Victory);
         let warped = has(&GameEvent::Warped);
-        let mut bricks = 0;
+        let mut bricks = released;
         // Several balls can blow up in one tick: one blast is heard.
         let mut ball_blast = false;
         for (i, event) in events.iter().enumerate() {
@@ -275,10 +288,29 @@ impl Director {
                 GameEvent::BrickDestroyedAt { x, .. } => {
                     let step = steps.iter().find(|&&(j, _)| j == i).map_or(0, |&(_, s)| s);
                     let degree = PENTATONIC[step];
-                    if bricks < MAX_BRICK_SOUNDS_PER_TICK {
-                        out.push(pitched(Cue::Brick, 0.6, x, semitones(degree)));
+                    let note = pitched(Cue::Brick, 0.6, x, semitones(degree));
+                    match delays[i].unwrap_or(0.0) {
+                        // A struck brick: at once, a few per tick at most.
+                        d if d <= 0.0 => {
+                            if bricks < MAX_BRICK_SOUNDS_PER_TICK {
+                                out.push(note);
+                            }
+                            bricks += 1;
+                        }
+                        // A blast's neighbor: when the front reaches it.
+                        d => self.land(d, note, out),
                     }
-                    bricks += 1;
+                }
+                // An armored brick cracking, whatever cracked it: a ball, a
+                // bolt, or a blast's front when it arrives.
+                GameEvent::BrickStruck {
+                    rect,
+                    kind: BrickKind::Armored,
+                    hits_left,
+                    ..
+                } if hits_left > 0 => {
+                    let crack = play(Cue::Armor, 0.5, rect[0]);
+                    self.land(delays[i].unwrap_or(0.0), crack, out);
                 }
                 GameEvent::PaddleHit => {
                     // 300 px/s at launch to the 700 cap: up a minor third.
@@ -341,25 +373,51 @@ impl Director {
     /// The hit that cracks an armored brick: a brick that was intact last
     /// tick, still standing, now on its last hit. Re-read from scratch on a
     /// new level, so a fresh grid never sounds.
-    fn armor(&mut self, game: &Game, out: &mut Vec<Command>) {
-        let intact: Vec<(f32, f32)> = game
-            .bricks
-            .iter()
-            .filter(|b| b.kind == BrickKind::Armored && b.hits_remaining >= 2)
-            .map(|b| (b.x, b.y))
-            .collect();
-        if game.level == self.level {
-            for b in &game.bricks {
-                if b.kind == BrickKind::Armored
-                    && b.hits_remaining == 1
-                    && self.intact_armor.contains(&(b.x, b.y))
-                {
-                    out.push(play(Cue::Armor, 0.5, b.x));
-                }
-            }
+    /// Sounds the notes whose blast front reached their brick this tick,
+    /// and returns how many brick notes that was (they count against the
+    /// tick's `MAX_BRICK_SOUNDS_PER_TICK`). Leaving play drops them: a
+    /// pause or a run's end is not the moment for a late crack.
+    fn release(&mut self, game: &Game, out: &mut Vec<Command>) -> usize {
+        if game.state != GameState::Playing {
+            self.pending.clear();
+            return 0;
         }
-        self.intact_armor = intact;
-        self.level = game.level;
+        let mut bricks = 0;
+        let mut i = 0;
+        while i < self.pending.len() {
+            self.pending[i].0 = self.pending[i].0.saturating_sub(1);
+            if self.pending[i].0 > 0 {
+                i += 1;
+                continue;
+            }
+            let (_, command) = self.pending.swap_remove(i);
+            let brick = matches!(
+                command,
+                Command::Play {
+                    cue: Cue::Brick,
+                    ..
+                }
+            );
+            if brick {
+                if bricks >= MAX_BRICK_SOUNDS_PER_TICK {
+                    continue;
+                }
+                bricks += 1;
+            }
+            out.push(command);
+        }
+        bricks
+    }
+
+    /// Plays `command` now, or after `delay` seconds (a blast's front on
+    /// its way to the brick): the same moment the effects draw it.
+    fn land(&mut self, delay: f32, command: Command, out: &mut Vec<Command>) {
+        let ticks = (delay * TICK_RATE).round() as u32;
+        if ticks == 0 {
+            out.push(command);
+        } else if self.pending.len() < MAX_PENDING {
+            self.pending.push((ticks, command));
+        }
     }
 
     /// The serve: the ball leaving the paddle at a launch, not a glue
@@ -631,32 +689,83 @@ mod tests {
         );
     }
 
+    fn crack(x: f32, by: crate::events::Striker) -> E {
+        E::BrickStruck {
+            rect: [x, 100.0, 52.0, 22.0],
+            at: [x, 117.0],
+            normal: [0.0, 1.0],
+            kind: BrickKind::Armored,
+            hits_left: 1,
+            by,
+        }
+    }
+
     #[test]
-    fn cracking_an_armored_brick_is_heard_and_a_new_level_is_not() {
-        let (mut director, mut game) = playing();
-        game.level = 3;
-        game.bricks = vec![crate::game::Brick {
-            x: 200.0,
-            y: 80.0,
+    fn cracking_an_armored_brick_is_heard_whatever_cracked_it() {
+        let (mut director, game) = playing();
+        let ball = director.observe(&game, &[crack(200.0, crate::events::Striker::Ball)]);
+        assert_eq!(cues(&ball), vec![Cue::Armor]);
+        let laser = director.observe(&game, &[crack(200.0, crate::events::Striker::Laser)]);
+        assert_eq!(cues(&laser), vec![Cue::Armor]);
+        // A level loading new armor is not a crack: no event, no sound.
+        assert!(cues(&director.observe(&game, &[])).is_empty());
+    }
+
+    #[test]
+    fn a_blasts_neighbors_are_heard_as_its_front_reaches_them() {
+        let (mut director, game) = playing();
+        // The struck brick at the blast's center, a neighbor 52 px over and
+        // an armored brick 104 px over that the blast cracks.
+        let tick = [
+            E::BallExploded { x: 400.0, y: 100.0 },
+            brick_at(400.0),
+            crack(504.0, crate::events::Striker::Blast),
+        ];
+        let neighbor = E::BrickDestroyedAt {
+            x: 452.0,
+            y: 100.0,
             width: 52.0,
             height: 22.0,
-            kind: BrickKind::Armored,
-            hits_remaining: 2,
-            score: 10,
-        }];
-        director.observe(&game, &[]);
-        game.bricks[0].hits_remaining = 1;
-        assert_eq!(cues(&director.observe(&game, &[])), vec![Cue::Armor]);
-        assert!(cues(&director.observe(&game, &[])).is_empty(), "once");
-        game.level = 4;
-        game.bricks[0].hits_remaining = 2;
-        director.observe(&game, &[]);
-        game.level = 5;
-        game.bricks[0].hits_remaining = 1;
-        assert!(
-            cues(&director.observe(&game, &[])).is_empty(),
-            "level change"
+            kind: BrickKind::Normal,
+        };
+        let first = director.observe(&game, &[tick[0], tick[1], neighbor, tick[2]]);
+        assert_eq!(
+            cues(&first),
+            vec![Cue::Explosion, Cue::Brick],
+            "the blast and the brick it centers on, at once"
         );
+        // 52 px at the front's speed, then 104 px: in ticks.
+        let due = |d: f32| (d / cadence::BLAST_FRONT_SPEED * TICK_RATE).round() as usize;
+        let mut heard = Vec::new();
+        for tick in 1..=due(110.0) {
+            for cue in cues(&director.observe(&game, &[])) {
+                heard.push((tick, cue));
+            }
+        }
+        assert_eq!(
+            heard,
+            vec![(due(52.0), Cue::Brick), (due(104.0), Cue::Armor)]
+        );
+    }
+
+    #[test]
+    fn a_pause_drops_the_notes_still_on_their_way() {
+        let (mut director, mut game) = playing();
+        let neighbor = E::BrickDestroyedAt {
+            x: 452.0,
+            y: 100.0,
+            width: 52.0,
+            height: 22.0,
+            kind: BrickKind::Normal,
+        };
+        director.observe(&game, &[E::BallExploded { x: 400.0, y: 100.0 }, neighbor]);
+        game.state = GameState::Paused;
+        director.observe(&game, &[]);
+        game.state = GameState::Playing;
+        for _ in 0..60 {
+            let out = director.observe(&game, &[]);
+            assert!(!cues(&out).contains(&Cue::Brick), "{out:?}");
+        }
     }
 
     fn music(commands: &[Command]) -> Option<Option<Cue>> {

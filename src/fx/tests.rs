@@ -58,7 +58,7 @@ fn an_armored_brick_cracks_where_it_was_hit_then_breaks_along_the_crack() {
     fx.observe(&game, &[struck(BrickKind::Armored, 1, Striker::Ball)]);
     assert_eq!(kinds(&fx), ["crack", "flash"]);
     assert_eq!(fx.cracks.len(), 1, "the brick remembers its crack");
-    let origin = fx.cracks[0].origin;
+    let origin = fx.cracks[0].0.origin;
     assert!((origin[0] - 410.0).abs() < 1.0 && (origin[1] - 210.0).abs() < 1.5);
 
     fx.observe(
@@ -313,4 +313,74 @@ fn only_a_powered_or_very_fast_ball_leaves_a_streak() {
         .vertices
         .iter()
         .all(|v| v.position[1] >= ball.y - 0.01));
+}
+
+#[test]
+fn a_blasts_crack_waits_for_its_front_light_and_fissure_alike() {
+    let game = playing();
+    let mut fx = FxSystem::new(Quality::Full);
+    fx.observe(
+        &game,
+        &[
+            GameEvent::BallExploded { x: 296.0, y: 200.0 },
+            GameEvent::BrickStruck {
+                rect: RECT,
+                at: [373.0, 200.0],
+                normal: [-1.0, 0.0],
+                kind: BrickKind::Armored,
+                hits_left: 1,
+                by: Striker::Blast,
+            },
+        ],
+    );
+    let wait = 104.0 / cadence::BLAST_FRONT_SPEED;
+    let crack_light = fx
+        .effects
+        .iter()
+        .find(|e| matches!(e.kind, Kind::CrackLight { .. }))
+        .expect("a crack");
+    assert!((crack_light.delay - wait).abs() < 1e-5);
+    // Facing the blast: it runs in from the left face.
+    assert!(fx.cracks[0].0.origin[0] < RECT[0] - 20.0);
+    // The fissure is held back until the front arrives, then stays.
+    let ball = game.ball;
+    assert!(fx.cracks[0].1 > 0.0);
+    fx.update(wait * 0.5, &game, &ball);
+    assert!(fx.cracks[0].1 > 0.0, "not yet");
+    for _ in 0..60 {
+        fx.update(1.0 / 60.0, &game, &ball);
+    }
+    assert_eq!(
+        fx.cracks[0].1, 0.0,
+        "drawn from then on, until the brick breaks"
+    );
+}
+
+#[test]
+fn a_level_end_sweep_lands_on_the_fanfares_next_downbeat() {
+    let meter = cadence::LEVEL_CLEAR;
+    let (bar, beat) = (meter.bar_secs(), meter.beat_secs());
+    let life = bar * 1.375;
+    // Still travelling just before the downbeat, at the floor on it.
+    let (before, _) = sweep_at(bar - 0.01, bar, beat, life);
+    let (on, flare) = sweep_at(bar, bar, beat, life);
+    assert!(before < 1.0 && on == 1.0);
+    // It flares on landing, brighter than anywhere on its way down.
+    let travel_peak = (0..100)
+        .map(|k| sweep_at(bar * k as f32 / 100.0, bar, beat, life).1)
+        .fold(0.0_f32, f32::max);
+    assert!(flare > travel_peak);
+    // Each beat lifts it: just after a beat is brighter than just before.
+    let (_, after_beat) = sweep_at(beat * 2.0 + 0.005, bar, beat, life);
+    let (_, before_beat) = sweep_at(beat * 2.0 - 0.005, bar, beat, life);
+    assert!(after_beat > before_beat);
+    // And the effect lives exactly that long.
+    let game = playing();
+    let mut fx = FxSystem::new(Quality::Full);
+    fx.observe(&game, &[GameEvent::LevelCleared]);
+    let sweep = fx
+        .effects
+        .iter()
+        .find(|e| matches!(e.kind, Kind::Sweep { .. }));
+    assert!((sweep.unwrap().life - life).abs() < 1e-5);
 }

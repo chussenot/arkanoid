@@ -25,6 +25,8 @@
 
 #[path = "../assets.rs"]
 mod assets;
+#[path = "../cadence.rs"]
+mod cadence;
 #[path = "../events.rs"]
 mod events;
 #[path = "../fx/mod.rs"]

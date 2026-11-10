@@ -338,7 +338,8 @@ beside the score. Shown whenever `--autopilot` drives the input (PRODUCT.md,
     reaches them.
   - **Asteroid:** rock and dust.
   - **Metal ball:** sparks.
-  - **Level end:** a sweep of light.
+  - **Level end:** a sweep of light over one bar of the fanfare, landing
+    on its next downbeat.
 
   The light's hue is the rally's step on the scale the brick notes climb
   (`FX_SCALE`). With `BRYX_FX=off`, the older one-frame brick flash, 2D
