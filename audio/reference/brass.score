@@ -1,0 +1,87 @@
+# Reference render: the brass (Phase 2 ear check, not music). A horn line
+# over low brass, a full-section swell, staccato stabs. E minor; 80 BPM.
+score 1
+title Reference: brass
+tempo 0 80
+length 32
+tail 4
+seed 1
+include ../instruments/desk.inc
+include ../instruments/orchestra.inc
+include ../instruments/electronic.inc
+
+# Horns: a slow stepwise line over low brass chords.
+note 0 3 brass_horns E4 96
+note 3 1 brass_horns F#4 96
+note 4 3 brass_horns G4 96
+note 7 1 brass_horns A4 96
+note 8 4 brass_horns B4 96
+note 12 2 brass_horns A4 96
+note 14 2 brass_horns G4 96
+note 0 4 brass_trombones E3 88
+note 0 4 brass_trombones B3 84
+note 0 4 brass_low E2 90
+note 4 4 brass_trombones C3 88
+note 4 4 brass_trombones G3 84
+note 4 4 brass_low C2 90
+note 8 4 brass_trombones G2 88
+note 8 4 brass_trombones D3 84
+note 8 4 brass_low G1 90
+note 12 4 brass_trombones B2 88
+note 12 4 brass_trombones F#3 84
+note 12 4 brass_low B1 90
+
+# Swell: the whole section from pianissimo to fortissimo on E minor.
+note 16 6 brass_low E2 120
+note 16 6 brass_trombones B2 120
+note 16 6 brass_trombones E3 120
+note 16 6 brass_horns G3 120
+note 16 6 brass_horns B3 120
+note 16 6 brass_trumpets E4 120
+note 16 6 brass_trumpets G4 120
+ramp brass_low.gain 16 21 -24 0 smooth
+ramp brass_trombones.gain 16 21 -24 0 smooth
+ramp brass_horns.gain 16 21 -24 0 smooth
+ramp brass_trumpets.gain 16 21 -24 0 smooth
+
+# Stabs: staccato chords, a rhythm the low brass answer.
+note 24 0.25 brass_trumpets_stac B4 118
+note 24 0.25 brass_trumpets_stac E5 118
+note 24 0.25 brass_horns_stac G4 118
+note 24 0.25 brass_trombones_stac E3 118
+note 24 0.25 brass_low_stac E2 118
+note 24.75 0.25 brass_trumpets_stac B4 118
+note 24.75 0.25 brass_trumpets_stac E5 118
+note 24.75 0.25 brass_horns_stac G4 118
+note 24.75 0.25 brass_trombones_stac E3 118
+note 24.75 0.25 brass_low_stac E2 118
+note 25.5 0.25 brass_trumpets_stac B4 118
+note 25.5 0.25 brass_trumpets_stac E5 118
+note 25.5 0.25 brass_horns_stac G4 118
+note 25.5 0.25 brass_trombones_stac E3 118
+note 25.5 0.25 brass_low_stac E2 118
+note 26 0.25 brass_trumpets_stac B4 118
+note 26 0.25 brass_trumpets_stac E5 118
+note 26 0.25 brass_horns_stac G4 118
+note 26 0.25 brass_trombones_stac E3 118
+note 26 0.25 brass_low_stac E2 118
+note 28 0.25 brass_trumpets_stac B4 118
+note 28 0.25 brass_trumpets_stac E5 118
+note 28 0.25 brass_horns_stac G4 118
+note 28 0.25 brass_trombones_stac E3 118
+note 28 0.25 brass_low_stac E2 118
+note 28.75 0.25 brass_trumpets_stac B4 118
+note 28.75 0.25 brass_trumpets_stac E5 118
+note 28.75 0.25 brass_horns_stac G4 118
+note 28.75 0.25 brass_trombones_stac E3 118
+note 28.75 0.25 brass_low_stac E2 118
+note 29.5 0.25 brass_trumpets_stac B4 118
+note 29.5 0.25 brass_trumpets_stac E5 118
+note 29.5 0.25 brass_horns_stac G4 118
+note 29.5 0.25 brass_trombones_stac E3 118
+note 29.5 0.25 brass_low_stac E2 118
+note 30 0.25 brass_trumpets_stac B4 118
+note 30 0.25 brass_trumpets_stac E5 118
+note 30 0.25 brass_horns_stac G4 118
+note 30 0.25 brass_trombones_stac E3 118
+note 30 0.25 brass_low_stac E2 118

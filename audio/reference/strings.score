@@ -1,0 +1,134 @@
+# Reference render: the string sections (Phase 2 ear check, not music).
+# Sustains swelling across the sections, a spiccato ostinato, a tremolo
+# crescendo, pizzicato. E minor; 72 BPM.
+score 1
+title Reference: strings
+tempo 0 72
+length 32
+tail 4
+seed 1
+include ../instruments/desk.inc
+include ../instruments/orchestra.inc
+include ../instruments/electronic.inc
+
+# Sustains: an E minor chord across the sections, swelling in and out.
+note 0 7.5 strings_bass E2 100
+note 0 7.5 strings_low B2 100
+note 0 7.5 strings_low E3 100
+note 0 7.5 strings_mid G3 100
+note 0 7.5 strings_mid B3 100
+note 0 7.5 strings_high E4 100
+note 0 7.5 strings_high G4 100
+note 0 7.5 strings_high B4 100
+ramp strings_high.gain 0 3 -18 0 smooth
+ramp strings_mid.gain 0 3 -18 0 smooth
+ramp strings_low.gain 0 3 -18 0 smooth
+ramp strings_bass.gain 0 3 -18 0 smooth
+ramp strings_high.gain 5 7.5 0 -14 smooth
+ramp strings_mid.gain 5 7.5 0 -14 smooth
+ramp strings_low.gain 5 7.5 0 -14 smooth
+ramp strings_bass.gain 5 7.5 0 -14 smooth
+
+# Spiccato: an eighth-note ostinato, low strings on the root, violins on the arpeggio.
+note 8.0 0.4 strings_high_spic E4 112
+note 8.0 0.4 strings_low_spic E3 112
+note 8.0 0.4 strings_bass_spic E2 112
+note 8.5 0.4 strings_high_spic G4 84
+note 8.5 0.4 strings_low_spic E3 84
+note 9.0 0.4 strings_high_spic B4 84
+note 9.0 0.4 strings_low_spic E3 84
+note 9.0 0.4 strings_bass_spic E2 84
+note 9.5 0.4 strings_high_spic G4 84
+note 9.5 0.4 strings_low_spic E3 84
+note 10.0 0.4 strings_high_spic E4 112
+note 10.0 0.4 strings_low_spic E3 112
+note 10.0 0.4 strings_bass_spic E2 112
+note 10.5 0.4 strings_high_spic G4 84
+note 10.5 0.4 strings_low_spic E3 84
+note 11.0 0.4 strings_high_spic B4 84
+note 11.0 0.4 strings_low_spic E3 84
+note 11.0 0.4 strings_bass_spic E2 84
+note 11.5 0.4 strings_high_spic D5 84
+note 11.5 0.4 strings_low_spic E3 84
+note 12.0 0.4 strings_high_spic E4 112
+note 12.0 0.4 strings_low_spic E3 112
+note 12.0 0.4 strings_bass_spic E2 112
+note 12.5 0.4 strings_high_spic G4 84
+note 12.5 0.4 strings_low_spic E3 84
+note 13.0 0.4 strings_high_spic B4 84
+note 13.0 0.4 strings_low_spic E3 84
+note 13.0 0.4 strings_bass_spic E2 84
+note 13.5 0.4 strings_high_spic G4 84
+note 13.5 0.4 strings_low_spic E3 84
+note 14.0 0.4 strings_high_spic E4 112
+note 14.0 0.4 strings_low_spic E3 112
+note 14.0 0.4 strings_bass_spic E2 112
+note 14.5 0.4 strings_high_spic G4 84
+note 14.5 0.4 strings_low_spic E3 84
+note 15.0 0.4 strings_high_spic B4 84
+note 15.0 0.4 strings_low_spic E3 84
+note 15.0 0.4 strings_bass_spic E2 84
+note 15.5 0.4 strings_high_spic D5 84
+note 15.5 0.4 strings_low_spic E3 84
+note 16.0 0.4 strings_high_spic E4 112
+note 16.0 0.4 strings_low_spic C3 112
+note 16.0 0.4 strings_bass_spic C2 112
+note 16.5 0.4 strings_high_spic G4 84
+note 16.5 0.4 strings_low_spic C3 84
+note 17.0 0.4 strings_high_spic B4 84
+note 17.0 0.4 strings_low_spic C3 84
+note 17.0 0.4 strings_bass_spic C2 84
+note 17.5 0.4 strings_high_spic G4 84
+note 17.5 0.4 strings_low_spic C3 84
+note 18.0 0.4 strings_high_spic E4 112
+note 18.0 0.4 strings_low_spic C3 112
+note 18.0 0.4 strings_bass_spic C2 112
+note 18.5 0.4 strings_high_spic G4 84
+note 18.5 0.4 strings_low_spic C3 84
+note 19.0 0.4 strings_high_spic B4 84
+note 19.0 0.4 strings_low_spic C3 84
+note 19.0 0.4 strings_bass_spic C2 84
+note 19.5 0.4 strings_high_spic D5 84
+note 19.5 0.4 strings_low_spic C3 84
+note 20.0 0.4 strings_high_spic E4 112
+note 20.0 0.4 strings_low_spic C3 112
+note 20.0 0.4 strings_bass_spic C2 112
+note 20.5 0.4 strings_high_spic G4 84
+note 20.5 0.4 strings_low_spic C3 84
+note 21.0 0.4 strings_high_spic B4 84
+note 21.0 0.4 strings_low_spic C3 84
+note 21.0 0.4 strings_bass_spic C2 84
+note 21.5 0.4 strings_high_spic G4 84
+note 21.5 0.4 strings_low_spic C3 84
+note 22.0 0.4 strings_high_spic E4 112
+note 22.0 0.4 strings_low_spic C3 112
+note 22.0 0.4 strings_bass_spic C2 112
+note 22.5 0.4 strings_high_spic G4 84
+note 22.5 0.4 strings_low_spic C3 84
+note 23.0 0.4 strings_high_spic B4 84
+note 23.0 0.4 strings_low_spic C3 84
+note 23.0 0.4 strings_bass_spic C2 84
+note 23.5 0.4 strings_high_spic D5 84
+note 23.5 0.4 strings_low_spic C3 84
+
+# Tremolo: a crescendo on B, then E.
+note 24 4 strings_high_trem B4 110
+note 24 4 strings_mid_trem F#3 110
+note 24 4 strings_low_trem B2 110
+ramp strings_high_trem.gain 24 28 -20 0 smooth
+ramp strings_mid_trem.gain 24 28 -20 0 smooth
+ramp strings_low_trem.gain 24 28 -20 0 smooth
+
+# Pizzicato: a walking line answered high.
+note 28.0 0.5 strings_low_pizz E2 100
+note 28.5 0.5 strings_low_pizz G2 80
+note 29.0 0.5 strings_low_pizz B2 100
+note 29.5 0.5 strings_low_pizz D3 80
+note 30.0 0.5 strings_low_pizz E3 100
+note 30.5 0.5 strings_low_pizz D3 80
+note 31.0 0.5 strings_low_pizz B2 100
+note 31.5 0.5 strings_low_pizz G2 80
+note 29 0.5 strings_high_pizz B4 96
+note 30 0.5 strings_high_pizz E5 96
+note 31 0.5 strings_high_pizz G5 96
+note 32 0.5 strings_high_pizz B5 96

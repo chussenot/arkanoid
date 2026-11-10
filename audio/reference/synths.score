@@ -1,0 +1,173 @@
+# Reference render: the electronic instruments (Phase 2 ear check, not
+# music). Bass and sequence ostinato, pad and drone, a gliding lead, glass
+# and air. E minor; 112 BPM.
+score 1
+title Reference: synths
+tempo 0 112
+length 24
+tail 6
+seed 1
+include ../instruments/desk.inc
+include ../instruments/orchestra.inc
+include ../instruments/electronic.inc
+
+# Bass and sequence: the machine's ostinato on E, then C.
+note 0.0 0.22 synth_bass E1 118
+note 0.0 0.2 synth_sequence E3 100
+note 0.25 0.22 synth_bass E1 88
+note 0.25 0.2 synth_sequence E4 76
+note 0.5 0.22 synth_bass E1 88
+note 0.5 0.2 synth_sequence B3 100
+note 0.75 0.22 synth_bass E1 88
+note 0.75 0.2 synth_sequence E4 76
+note 1.0 0.22 synth_bass E1 118
+note 1.0 0.2 synth_sequence G3 100
+note 1.25 0.22 synth_bass E1 88
+note 1.25 0.2 synth_sequence E4 76
+note 1.5 0.22 synth_bass E1 88
+note 1.5 0.2 synth_sequence B3 100
+note 1.75 0.22 synth_bass E1 88
+note 1.75 0.2 synth_sequence D4 76
+note 2.0 0.22 synth_bass E1 118
+note 2.0 0.2 synth_sequence E3 100
+note 2.25 0.22 synth_bass E1 88
+note 2.25 0.2 synth_sequence E4 76
+note 2.5 0.22 synth_bass E1 88
+note 2.5 0.2 synth_sequence B3 100
+note 2.75 0.22 synth_bass E1 88
+note 2.75 0.2 synth_sequence E4 76
+note 3.0 0.22 synth_bass E1 118
+note 3.0 0.2 synth_sequence G3 100
+note 3.25 0.22 synth_bass E1 88
+note 3.25 0.2 synth_sequence E4 76
+note 3.5 0.22 synth_bass E1 88
+note 3.5 0.2 synth_sequence B3 100
+note 3.75 0.22 synth_bass E1 88
+note 3.75 0.2 synth_sequence D4 76
+note 4.0 0.22 synth_bass E1 118
+note 4.0 0.2 synth_sequence E3 100
+note 4.25 0.22 synth_bass E1 88
+note 4.25 0.2 synth_sequence E4 76
+note 4.5 0.22 synth_bass E1 88
+note 4.5 0.2 synth_sequence B3 100
+note 4.75 0.22 synth_bass E1 88
+note 4.75 0.2 synth_sequence E4 76
+note 5.0 0.22 synth_bass E1 118
+note 5.0 0.2 synth_sequence G3 100
+note 5.25 0.22 synth_bass E1 88
+note 5.25 0.2 synth_sequence E4 76
+note 5.5 0.22 synth_bass E1 88
+note 5.5 0.2 synth_sequence B3 100
+note 5.75 0.22 synth_bass E1 88
+note 5.75 0.2 synth_sequence D4 76
+note 6.0 0.22 synth_bass E1 118
+note 6.0 0.2 synth_sequence E3 100
+note 6.25 0.22 synth_bass E1 88
+note 6.25 0.2 synth_sequence E4 76
+note 6.5 0.22 synth_bass E1 88
+note 6.5 0.2 synth_sequence B3 100
+note 6.75 0.22 synth_bass E1 88
+note 6.75 0.2 synth_sequence E4 76
+note 7.0 0.22 synth_bass E1 118
+note 7.0 0.2 synth_sequence G3 100
+note 7.25 0.22 synth_bass E1 88
+note 7.25 0.2 synth_sequence E4 76
+note 7.5 0.22 synth_bass E1 88
+note 7.5 0.2 synth_sequence B3 100
+note 7.75 0.22 synth_bass E1 88
+note 7.75 0.2 synth_sequence D4 76
+note 8.0 0.22 synth_bass C1 118
+note 8.0 0.2 synth_sequence C3 100
+note 8.25 0.22 synth_bass C1 88
+note 8.25 0.2 synth_sequence C4 76
+note 8.5 0.22 synth_bass C1 88
+note 8.5 0.2 synth_sequence G3 100
+note 8.75 0.22 synth_bass C1 88
+note 8.75 0.2 synth_sequence C4 76
+note 9.0 0.22 synth_bass C1 118
+note 9.0 0.2 synth_sequence G3 100
+note 9.25 0.22 synth_bass C1 88
+note 9.25 0.2 synth_sequence C4 76
+note 9.5 0.22 synth_bass C1 88
+note 9.5 0.2 synth_sequence G3 100
+note 9.75 0.22 synth_bass C1 88
+note 9.75 0.2 synth_sequence D4 76
+note 10.0 0.22 synth_bass C1 118
+note 10.0 0.2 synth_sequence C3 100
+note 10.25 0.22 synth_bass C1 88
+note 10.25 0.2 synth_sequence C4 76
+note 10.5 0.22 synth_bass C1 88
+note 10.5 0.2 synth_sequence G3 100
+note 10.75 0.22 synth_bass C1 88
+note 10.75 0.2 synth_sequence C4 76
+note 11.0 0.22 synth_bass C1 118
+note 11.0 0.2 synth_sequence G3 100
+note 11.25 0.22 synth_bass C1 88
+note 11.25 0.2 synth_sequence C4 76
+note 11.5 0.22 synth_bass C1 88
+note 11.5 0.2 synth_sequence G3 100
+note 11.75 0.22 synth_bass C1 88
+note 11.75 0.2 synth_sequence D4 76
+note 12.0 0.22 synth_bass C1 118
+note 12.0 0.2 synth_sequence C3 100
+note 12.25 0.22 synth_bass C1 88
+note 12.25 0.2 synth_sequence C4 76
+note 12.5 0.22 synth_bass C1 88
+note 12.5 0.2 synth_sequence G3 100
+note 12.75 0.22 synth_bass C1 88
+note 12.75 0.2 synth_sequence C4 76
+note 13.0 0.22 synth_bass C1 118
+note 13.0 0.2 synth_sequence G3 100
+note 13.25 0.22 synth_bass C1 88
+note 13.25 0.2 synth_sequence C4 76
+note 13.5 0.22 synth_bass C1 88
+note 13.5 0.2 synth_sequence G3 100
+note 13.75 0.22 synth_bass C1 88
+note 13.75 0.2 synth_sequence D4 76
+note 14.0 0.22 synth_bass C1 118
+note 14.0 0.2 synth_sequence C3 100
+note 14.25 0.22 synth_bass C1 88
+note 14.25 0.2 synth_sequence C4 76
+note 14.5 0.22 synth_bass C1 88
+note 14.5 0.2 synth_sequence G3 100
+note 14.75 0.22 synth_bass C1 88
+note 14.75 0.2 synth_sequence C4 76
+note 15.0 0.22 synth_bass C1 118
+note 15.0 0.2 synth_sequence G3 100
+note 15.25 0.22 synth_bass C1 88
+note 15.25 0.2 synth_sequence C4 76
+note 15.5 0.22 synth_bass C1 88
+note 15.5 0.2 synth_sequence G3 100
+note 15.75 0.22 synth_bass C1 88
+note 15.75 0.2 synth_sequence D4 76
+
+# Pad and drone enter under it.
+note 4 4 synth_pad E3 90
+note 4 4 synth_pad G3 90
+note 4 4 synth_pad B3 90
+note 8 8 synth_pad C3 90
+note 8 8 synth_pad E3 90
+note 8 8 synth_pad G3 90
+note 0 16 electronic_drone E1 100
+
+# The lead: a gliding line with delayed vibrato.
+note 8 1.5 synth_lead B4 100
+note 9.5 0.5 synth_lead A4 100
+note 10 2 synth_lead G4 100
+note 12 2 synth_lead E5 100
+note 14 1 synth_lead D5 100
+note 15 1 synth_lead B4 100
+
+# Glass and air: the high sparkle, and the room breathing.
+note 16.0 0.4 synth_glass B5 100
+note 16.5 0.4 synth_glass E6 100
+note 17.0 0.4 synth_glass G6 100
+note 17.5 0.4 synth_glass B6 100
+note 18.0 0.4 synth_glass G6 100
+note 18.5 0.4 synth_glass E6 100
+note 19.0 0.4 synth_glass D6 100
+note 19.5 0.4 synth_glass B5 100
+note 16 8 electronic_air A4 100
+note 16 8 electronic_drone E1 100
+note 16 8 synth_pad E3 80
+note 16 8 synth_pad B3 80

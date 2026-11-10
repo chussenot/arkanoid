@@ -262,6 +262,8 @@ Probes, extending `audio/probes` and `src/audio/probes.rs`:
 
 Each instrument family gets a short reference render. A technical report
 records capabilities and measured costs.
+Both are done: see [`studio-report.md`](studio-report.md) and
+`audio/reference/`.
 
 **The ear gate.** Phase 3's six cues (Act I sparse, Act II melodic,
 Act III mechanical, Act IV monumental, menu, and an act stinger) are

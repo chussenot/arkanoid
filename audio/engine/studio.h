@@ -36,7 +36,7 @@
 #define ST_BLOCK 32
 
 /* ------------------------------------------------------------------ */
-/* Shared helpers (studio.c defines them).                             */
+/* Shared helpers (studio_common.c defines them).                      */
 
 /* xorshift32; *state must start non-zero. Returns 0..2^32-1. */
 uint32_t st_rand(uint32_t *state);
