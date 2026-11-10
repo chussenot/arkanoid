@@ -109,18 +109,22 @@ const PADDLE_TINT_STRENGTH: f32 = 0.45;
 /// The paddle's color: brushed metal, tinted toward the capsule whose
 /// effect it carries (a gun shows over Glue: it changes what Space does).
 fn paddle_color(curr: &Game) -> [f32; 4] {
-    let tint = match curr.gun.map(|g| g.kind) {
-        Some(GunKind::Laser) => Some(palette::CAPSULE_LASER),
-        Some(GunKind::SuperLaser) => Some(palette::CAPSULE_SUPER_LASER),
-        None if curr.glue_timer > 0.0 => Some(palette::CAPSULE_GLUE),
-        None => None,
+    // A power about to run out pulses its hue (`palette::paddle_expiry`).
+    let tint = if let Some((hue, k)) = palette::paddle_expiry(curr, hud::reduced_motion()) {
+        Some((hue, PADDLE_TINT_STRENGTH * k))
+    } else {
+        match curr.gun.map(|g| g.kind) {
+            Some(GunKind::Laser) => Some((palette::CAPSULE_LASER, PADDLE_TINT_STRENGTH)),
+            Some(GunKind::SuperLaser) => Some((palette::CAPSULE_SUPER_LASER, PADDLE_TINT_STRENGTH)),
+            None if curr.glue_timer > 0.0 => Some((palette::CAPSULE_GLUE, PADDLE_TINT_STRENGTH)),
+            None => None,
+        }
     };
     let base = palette::PADDLE.linear();
     match tint {
         None => base,
-        Some(c) => {
+        Some((c, k)) => {
             let c = c.linear();
-            let k = PADDLE_TINT_STRENGTH;
             [
                 base[0] * (1.0 - k) + c[0] * k,
                 base[1] * (1.0 - k) + c[1] * k,
@@ -1581,7 +1585,14 @@ impl Renderer3D {
         // the opaque ball sphere below so the ball itself always ends up
         // layered on top of its own trail. Uses the trail as it stood at
         // the *start* of this frame, then updates it (`push_trail`) after.
-        let ball_color = palette::ball(curr.ball_power.map(|p| p.mode));
+        // The ball's power hue, pulsing in its last seconds.
+        let ball_color = {
+            let full = palette::ball(curr.ball_power.map(|p| p.mode)).linear();
+            let base = palette::BALL.linear();
+            let k = palette::ball_power_strength(curr, hud::reduced_motion());
+            let mix = |i: usize| base[i] + k * (full[i] - base[i]);
+            [mix(0), mix(1), mix(2), 1.0]
+        };
         let trail_len = self.ball_trail.len().max(1) as f32;
         sphere_instances.extend(self.ball_trail.iter().enumerate().map(|(i, &(x, y))| {
             let fade = (i + 1) as f32 / trail_len;
@@ -1590,7 +1601,12 @@ impl Renderer3D {
             Instance3D::new(
                 [wx, radius, wz],
                 [radius; 3],
-                ball_color.linear_alpha(TRAIL_BASE_ALPHA * fade),
+                [
+                    ball_color[0],
+                    ball_color[1],
+                    ball_color[2],
+                    TRAIL_BASE_ALPHA * fade,
+                ],
             )
         }));
         push_trail(&mut self.ball_trail, &drawn.ball);
@@ -1603,12 +1619,12 @@ impl Renderer3D {
             sphere_instances.push(Instance3D::new(
                 [x, drawn.ball.radius, z],
                 [drawn.ball.radius; 3],
-                ball_color.linear(),
+                ball_color,
             ));
         }
         sphere_instances.extend(curr.extra_balls.iter().take(MAX_EXTRA_BALLS).map(|ball| {
             let (x, z) = world_xz(ball.x, ball.y);
-            Instance3D::new([x, ball.radius, z], [ball.radius; 3], ball_color.linear())
+            Instance3D::new([x, ball.radius, z], [ball.radius; 3], ball_color)
         }));
         // Asteroids: the jagged rock mesh, turning slowly; each one's angle
         // is offset by where it is, so no two face the same way.

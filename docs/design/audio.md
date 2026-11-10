@@ -202,6 +202,9 @@ encode, and the mixer decodes it through a 256-entry table.
 | `ball_lost` | one ball of a multiball drops | a descending figure that fades as it falls |
 | `warp` | leaving through the Break gate | one note rising three octaves over a rising rush of noise, into an echoing room |
 | `select`, `pause` | start, continue, resume; pause | two-note blips, up (the second leaning in) and down (the second stepping back) |
+| `steel` | a ball turned back by an indestructible brick (once a tick) | a 40 ms triangle knock dropping an octave onto B, with a dry glint of metal noise; quiet, as walls of them turn balls back all the time |
+| `gate` | the Break capsule opens the gate | a grinding pulse climbing E–B–E–B into an open fifth that rings out, over a low rumble; panned to the right wall |
+| `expiring` | a timed power has 2 s left | two soft ticks falling a fifth, B to E; on the ball for a ball power, on the paddle for the rest. Seen as its hue pulsing at 2 Hz on that object (a steady fade with reduced motion) |
 | `life_lost`, `level_clear`, `game_over`, `victory` | stingers | the score's themes in miniature ([`music.md`](music.md#stingers)) |
 | `music_menu`, `music_01`–`32` | loops | the score: see [`music.md`](music.md) |
 

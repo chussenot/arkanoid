@@ -77,6 +77,11 @@ pub enum GameEvent {
     PowerUpSpawned(PowerUpKind),
     /// The paddle caught a falling power-up.
     PowerUpCaught(PowerUpKind),
+    /// A timed power has `game::POWER_WARNING_SECS` left: the warning the
+    /// player hears before it runs out. Once per running, when its timer
+    /// crosses the mark; catching it again refills the timer and warns again
+    /// later.
+    PowerUpExpiring(PowerUpKind),
     /// The last level was cleared: the player won.
     Victory,
     /// Lives reached zero.

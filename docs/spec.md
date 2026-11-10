@@ -42,7 +42,10 @@ in the order of the milestones, and ask before deviating.
 ## Gameplay spec
 
 Playfield: fixed logical resolution 800×600, letterboxed/scaled to the
-window (integer-independent; resize must not change physics).
+window (integer-independent; resize must not change physics). F11 toggles
+borderless fullscreen, which is one more resize. The window losing focus
+forgets every held key (their releases go to the other window) and pauses
+play, as the pause key would (`Game::pause`); never under the autopilot.
 
 **Paddle**: bottom-center, keyboard ←/→ (and A/D), speed 520 px/s,
 clamped to walls. Mouse control optional in v1 only if trivial.

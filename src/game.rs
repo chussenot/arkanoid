@@ -76,6 +76,11 @@ const WIDEN_MULTIPLIER: f32 = 1.5;
 /// back to the full duration rather than adding to it (spec: "timers
 /// refresh, not stack-add").
 const WIDEN_DURATION_SECS: f32 = 15.0;
+
+/// Seconds before a timed power (Widen, Glue, Tiny, a gun, a ball power)
+/// runs out that `GameEvent::PowerUpExpiring` warns of it.
+pub const POWER_WARNING_SECS: f32 = 2.0;
+
 /// Ball speed multiplier applied once when Slow is caught (spec: x0.7),
 /// floored at `BALL_LAUNCH_SPEED` so it can never slow a ball below its
 /// own launch speed.
@@ -1229,8 +1234,54 @@ impl Game {
         }
     }
 
+    /// Every timed power with its seconds left (0 when it is not running),
+    /// in a fixed order: what `PowerUpExpiring` watches.
+    fn power_timers(&self) -> [(PowerUpKind, f32); 5] {
+        let gun = self.gun.map_or((PowerUpKind::Laser, 0.0), |gun| {
+            let kind = match gun.kind {
+                GunKind::Laser => PowerUpKind::Laser,
+                GunKind::SuperLaser => PowerUpKind::SuperLaser,
+            };
+            (kind, gun.timer)
+        });
+        let ball = self
+            .ball_power
+            .map_or((PowerUpKind::ExplosiveBall, 0.0), |power| {
+                let kind = match power.mode {
+                    BallMode::Explosive => PowerUpKind::ExplosiveBall,
+                    BallMode::Metal => PowerUpKind::MetalBall,
+                };
+                (kind, power.timer)
+            });
+        [
+            (PowerUpKind::Widen, self.widen_timer),
+            (PowerUpKind::Glue, self.glue_timer),
+            (PowerUpKind::Tiny, self.tiny_timer),
+            gun,
+            ball,
+        ]
+    }
+
+    /// The timed powers inside their last [`POWER_WARNING_SECS`], with the
+    /// seconds each has left: what the renderers pulse before one runs out
+    /// (`palette::paddle_expiry`, `palette::ball_power_strength`).
+    pub fn expiring_powers(&self) -> impl Iterator<Item = (PowerUpKind, f32)> {
+        self.power_timers()
+            .into_iter()
+            .filter(|&(_, secs)| secs > 0.0 && secs <= POWER_WARNING_SECS)
+    }
+
+    /// Pauses play from outside the simulation (the window lost focus), as
+    /// the pause key would. Any state but `Playing` is left as it is.
+    pub fn pause(&mut self) {
+        if self.state == GameState::Playing {
+            self.state = GameState::Paused;
+        }
+    }
+
     /// The actual gameplay tick, run only while `state == Playing`.
     fn tick_playing(&mut self, input: &Input, space_pressed: bool, dt_fixed: f32) {
+        let timers_before = self.power_timers();
         if self.widen_timer > 0.0 {
             self.widen_timer = (self.widen_timer - dt_fixed).max(0.0);
         }
@@ -1248,6 +1299,11 @@ impl Game {
         }
         self.gun_cooldown = (self.gun_cooldown - dt_fixed).max(0.0);
         self.ball_power = self.ball_power.and_then(|power| power.tick(dt_fixed));
+        for ((kind, before), (_, after)) in timers_before.into_iter().zip(self.power_timers()) {
+            if before > POWER_WARNING_SECS && after <= POWER_WARNING_SECS {
+                self.events.push(GameEvent::PowerUpExpiring(kind));
+            }
+        }
         self.paddle.width = if self.widen_timer > 0.0 {
             PADDLE_WIDTH * WIDEN_MULTIPLIER
         } else if self.tiny_timer > 0.0 {
@@ -2348,6 +2404,23 @@ mod tests {
         game.tick(&Input::default(), DT);
         game.tick(&space, DT);
         assert!(!game.ball.attached, "a fresh press serves");
+    }
+
+    /// The window losing focus pauses play, and only play: the pause key
+    /// resumes it as usual.
+    #[test]
+    fn pausing_from_outside_stops_play_and_nothing_else() {
+        for state in [GameState::Menu, GameState::GameOver, GameState::Victory] {
+            let mut game = playing_game();
+            game.state = state;
+            game.pause();
+            assert_eq!(game.state, state);
+        }
+        let mut game = playing_game();
+        game.pause();
+        assert_eq!(game.state, GameState::Paused);
+        game.tick(&held(|i| i.pause = true), DT);
+        assert_eq!(game.state, GameState::Playing, "P resumes");
     }
 
     #[test]
@@ -3585,6 +3658,49 @@ mod tests {
         assert!(!game.gate_open, "a new level starts with it shut");
         assert_eq!(game.paddle.x, PLAYFIELD_WIDTH / 2.0, "back in the middle");
         assert!(game.ball.attached && (game.ball.x - game.paddle.x).abs() < 1e-3);
+    }
+
+    /// Ticks `game` for `secs` with no keys, collecting the expiry warnings.
+    fn warnings_over(game: &mut Game, secs: f32) -> Vec<PowerUpKind> {
+        let mut warned = Vec::new();
+        for _ in 0..(secs * 120.0) as usize {
+            game.tick(&Input::default(), DT);
+            warned.extend(game.events.drain(..).filter_map(|e| match e {
+                GameEvent::PowerUpExpiring(kind) => Some(kind),
+                _ => None,
+            }));
+        }
+        warned
+    }
+
+    #[test]
+    fn a_timed_power_warns_once_two_seconds_before_it_runs_out() {
+        let mut game = playing_game();
+        game.apply_powerup(PowerUpKind::Widen);
+        assert!(warnings_over(&mut game, 12.9).is_empty(), "not yet");
+        assert_eq!(warnings_over(&mut game, 0.2), [PowerUpKind::Widen]);
+        assert!(game.widen_timer > 0.0, "still running when it warns");
+        assert!(warnings_over(&mut game, 3.0).is_empty(), "once");
+    }
+
+    #[test]
+    fn a_refreshed_power_warns_again_and_each_kind_names_itself() {
+        let mut game = playing_game();
+        game.apply_powerup(PowerUpKind::SuperLaser);
+        game.apply_powerup(PowerUpKind::MetalBall);
+        game.apply_powerup(PowerUpKind::Glue);
+        let mut warned = warnings_over(&mut game, 14.0);
+        warned.sort_by_key(|k| format!("{k:?}"));
+        assert_eq!(
+            warned,
+            [
+                PowerUpKind::Glue,
+                PowerUpKind::MetalBall,
+                PowerUpKind::SuperLaser
+            ]
+        );
+        game.apply_powerup(PowerUpKind::Glue);
+        assert_eq!(warnings_over(&mut game, 14.0), [PowerUpKind::Glue]);
     }
 
     /// Every kind a campaign game draws on `level`, over many rolls.
