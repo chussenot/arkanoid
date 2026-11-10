@@ -2,6 +2,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## 0.5.0 - 2026-11-10
+#### Features
+- (**bench**) opt-in GPU stage timing, adapter line and BENCH_SIZE - (3d24472) - Clement Hussenot
+- (**fx,audio**) blast notes, blast cracks and level-end sweeps on one shared clock - (e4e9349) - Claude, *Claude Opus 5.5*
+#### Documentation
+- (**fx**) measure the kinetic effects on a Radeon 780M - (c663f8c) - Clement Hussenot
+- the shared cadence of blasts, cracks and level ends - (c7c1c3a) - Claude, *Claude Opus 5.5*
+#### Miscellaneous Chores
+- (**mise**) add deps task installing ALSA headers and vulkan-tools - (26341b4) - Clement Hussenot
+- Update the pact events - (58127a4) - Clement Hussenot
+
+- - -
+
 ## 0.4.0 - 2026-11-09
 #### Features
 - (**audio**) the sound pass: every effect, stinger and track on the new engine - (efbd862) - Claude, *Claude Opus 5.5*
