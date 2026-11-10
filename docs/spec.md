@@ -99,7 +99,10 @@ built-in grid, v1's and the campaign's, is at most 14×8, has a destructible
 brick, and has every destructible brick reachable from the open field
 through empty cells and destructible bricks only (checked by a test: a box
 of indestructible bricks with no way in, like level 3's first version,
-fails it).
+fails it). No campaign brick sits between two indestructible bricks in its
+column, since such a brick can only be hit through a one-brick lane from the
+side and was always a level's last-brick hunt (also checked by a test; v1's
+level 3 predates the rule and keeps its replay hash).
 
 **Campaign rules (added after v1; `--classic` and loaded levelsets keep
 v1's)**, Game Director decisions recorded in `docs/design/director-review.md`:
