@@ -183,11 +183,26 @@ Measured with `src/bin/bench_render3d.rs`:
   every 6 frames on a fixed 1/60 s clock: six breaks with contacts (one
   armored fracture, one metal), a blast with two neighbors, an asteroid,
   and a metal strike on an indestructible brick.
+- **Size:** `BENCH_SIZE=WxH` in physical pixels (default 800×648, the
+  canvas at 1×). A Wayland compositor sizes the window as it likes
+  (945×1023 here, whatever was asked), so the bench resizes the renderer
+  to that size itself and its header prints the surface and HDR sizes
+  the frame was really drawn at.
+- **GPU stages:** `BRYX_GPU_TIMING=1` times the scene, the bloom chain,
+  the composite and the HUD overlay with render-pass timestamps
+  (`fx::gpu::GpuTimer`), resolved and read back every frame; the bench
+  reports each stage's mean and p95. Off, nothing is requested or
+  recorded. Both renderers print the adapter they got (`gpu: …`) at
+  start, so a number is never read without its GPU.
 - **Scene:** a full 14×8 board and multiball, offscreen, 600 measured
-  frames, on **llvmpipe**: a CPU rasterizer and the only GPU here.
-  Fullscreen passes are its worst case. A real GPU runs this bloom chain
-  in well under a millisecond, but GPU timestamps were not available to
-  measure that.
+  frames after 60 of warm-up.
+
+### llvmpipe
+
+The first measurements, at 800×600 (the bench's window before
+`BENCH_SIZE`) on **llvmpipe**: a CPU rasterizer, the only Vulkan device
+on the machine the effects were built on. Fullscreen passes are its worst
+case.
 
 | Frame (mean / p95, ms) | 3D | 2D |
 |---|---|---|
@@ -205,9 +220,102 @@ Measured with `src/bin/bench_render3d.rs`:
   any transcendental fixed the cost under load.
 - **The direct path** brought idle frames back to master's cost.
 
+### Radeon 780M (RADV)
+
+- **Hardware:** AMD Radeon 780M (Phoenix, PCI `1002:1900`), the
+  integrated GPU of a Ryzen laptop, sharing its memory with the CPU;
+  Mesa 26.0.8 RADV, Vulkan; a 1920×1200 panel. Every run of the matrix
+  printed `gpu: AMD Radeon 780M Graphics (RADV PHOENIX) (Vulkan,
+  IntegratedGpu, driver radv Mesa 26.0.8)`. The db05d93 build predates
+  that line, so its device was settled by forcing each one with
+  `MESA_VK_DEVICE_SELECT`: forced to the 780M it matched its unforced
+  times; forced to llvmpipe (`10005:0!`) it took 2.8 ms a frame.
+- **Method:** 800×648 (the canvas at 1×) and 1920×1200 (the panel), the
+  header confirming both. Each cell is the median of two runs, or of
+  three when the first two differed by more than 10%. Wall clock and GPU
+  stages come from separate runs, because with `BRYX_GPU_TIMING=1` the
+  readback of a frame's timestamps is itself on the wall clock. The
+  db05d93 bench got the same resize as a local patch and ran interleaved
+  with the current build's idle frames, because a wall clock under a
+  millisecond follows the CPU's clock state: the same baseline measured
+  0.41 ms right after a compile and 0.67 ms on a cool machine. Clocks
+  were not pinned (`power_dpm_force_performance_level` at `auto`, the
+  `powersave` governor), and the game was being played on the same GPU
+  during the runs; sub-millisecond cells spread up to 40% between reps
+  and fifteen of them took a third run. GPU stage times repeat within 5%
+  between back-to-back runs under one condition, not across conditions:
+  with the game closed, the GPU idles between the bench's synchronized
+  frames and its clock drops, and the same four heavy cells ran up to
+  40% slower (below). Unpinned, a stage time is a range, not a number.
+
+**Wall clock** (mean / p95 ms, without timestamp queries):
+
+| Frame | 3D 800×648 | 3D 1920×1200 | 2D 800×648 | 2D 1920×1200 |
+|---|---|---|---|---|
+| master before effects (db05d93) | 0.68 / 0.85 | 0.65 / 0.93 | n/a | n/a |
+| idle, `off` (interleaved with master) | 0.58 / 0.80 | 0.73 / 1.07 | n/a | n/a |
+| idle, `full` (direct path) | 0.72 / 0.86 | 0.95 / 1.15 | 0.44 / 0.65 | 0.83 / 1.02 |
+| under load, `off` | 0.70 / 0.84 | 0.91 / 1.08 | 0.63 / 0.73 | 0.82 / 1.05 |
+| under load, `geometry` | 0.91 / 1.12 | 1.03 / 1.21 | 0.78 / 0.96 | 0.84 / 1.00 |
+| under load, `full` | 1.43 / 1.85 | 3.02 / 4.22 | 1.43 / 1.81 | 2.91 / 3.57 |
+
+**GPU stages** under load, `full` (mean / p95 ms, timestamp queries):
+
+| Stage | 3D 800×648 | 3D 1920×1200 | 2D 800×648 | 2D 1920×1200 |
+|---|---|---|---|---|
+| scene (into the HDR target) | 0.31 / 0.39 | 0.98 / 1.19 | 0.27 / 0.40 | 0.97 / 1.51 |
+| bloom chain (5 passes) | 0.17 / 0.20 | 0.41 / 0.51 | 0.18 / 0.25 | 0.41 / 0.61 |
+| composite | 0.17 / 0.19 | 0.61 / 0.67 | 0.18 / 0.23 | 0.53 / 0.75 |
+| HUD overlay | 0.01 / 0.01 | 0.01 / 0.01 | 0.01 / 0.01 | 0.01 / 0.01 |
+| sum of stages (mean) | 0.66 | 2.02 | 0.65 | 1.92 |
+| scene on the direct path (`geometry`, under load) | 0.19 / 0.21 | 0.34 / 0.37 | 0.08 / 0.08 | 0.31 / 0.38 |
+| scene on the direct path (`off`, idle) | 0.17 / 0.18 | 0.33 / 0.35 | 0.06 / 0.06 | 0.18 / 0.21 |
+
+The same four cells with the game closed, one run each (scene / bloom /
+composite, ms mean): 3D 800×648 0.43 / 0.22 / 0.20; 3D 1920×1200
+0.96 / 0.39 / 0.49; 2D 800×648 0.31 / 0.20 / 0.20; 2D 1920×1200
+1.24 / 0.48 / 0.58.
+
+With `RADV_DEBUG=nodcc` (3D, under load, `full`, game open): scene
+0.39 / 1.19, bloom 0.26 / 0.57, composite 0.33 / 1.16 ms at 800×648 /
+1920×1200.
+
+`FxSystem::update` under that load: 0.04–0.07 ms mean, p95 under 0.13 ms.
+
+**Conclusion.**
+- The heaviest frame, `full` under load, is 1.4 ms of wall clock at
+  800×648 and 3.0 ms (p95 4.2) at the panel's 1920×1200, in both
+  renderers: inside the 8.3 ms a 120 Hz display allows, with room, and
+  eight times faster than llvmpipe's 11.8 ms at 800×600. At the panel's
+  size the effects triple a loaded frame (0.9–1.0 → 3.0 ms); at the
+  canvas's they add half a millisecond. The direct path costs what master
+  costs (idle, interleaved: 0.58 against 0.68 ms, 0.73 against 0.65,
+  both within the noise).
+- Every stage scales with the pixel count, ×2.3–3.6 for ×4.4 pixels:
+  fullscreen work plus a fixed 0.05–0.1 ms per stage. Post-processing at
+  the panel's size is 0.9–1.1 ms across both conditions (bloom
+  0.39–0.48, composite 0.49–0.61), under the 1.5 ms that would have
+  called for a change.
+- The largest single cost of the effects is the scene pass into the
+  `Rgba16Float` target: +0.64–0.66 ms at 1920×1200 over the same scene
+  drawn to the surface (+0.12–0.19 ms at 800×648), both under the
+  matrix's condition; with the game closed that pass alone took
+  0.96–1.24 ms at 1920×1200. It grows with the pixels, so it is the
+  8-byte target's fill and blend, not a fixed transition. DCC is not the cause: without it every stage is slower and
+  the composite doubles. If it ever matters, the candidate is an
+  `Rg11b10Ufloat` target behind `RG11B10UFLOAT_RENDERABLE` (4 bytes,
+  light above 1.0, no alpha, which the scene does not use). Not done.
+- The composite's single pass, 0.5–0.6 ms for 2.3 Mpx, is most likely
+  limited by memory bandwidth: at the panel's size it reads the whole
+  `Rgba16Float` scene (about 18 MB) and writes the 9 MB surface, 0.4–0.5
+  ms on memory shared with the CPU. The pulse loop costs most pixels one
+  `length()` per pulse before rejecting it. A 0-pulse against 8-pulse run
+  would separate the two; untested.
+- A discrete GPU is still unmeasured.
+
 **CPU and memory:**
 - `FxSystem::update` takes 0.05–0.07 ms mean (p95 under 0.09 ms) under
-  that load.
+  that load on the llvmpipe machine, 0.04–0.07 ms on the 780M laptop.
 - The peak frame was 6,840 vertices, 18,315 indices and 8 pulses: one
   indexed draw call.
 - The limits are 24,576 vertices, 49,152 indices, 192 effects, 48 pooled
@@ -222,9 +330,11 @@ Measured with `src/bin/bench_render3d.rs`:
 
 ## 7. Remaining work
 
-- **GPU timing on real hardware.** Add timestamp queries to the bench
-  where the adapter supports them, and record the bloom chain's cost on an
-  integrated and a discrete GPU.
+- **GPU timing on a discrete GPU.** The bench reads render-pass
+  timestamps (`BRYX_GPU_TIMING=1`); only an integrated GPU has been
+  measured (§6). The two costs worth understanding before any change are
+  the HDR scene pass (+0.65 ms at 1920×1200) and the composite's
+  per-pixel pulse loop.
 - **Explosion sound vs. light.** The blast's neighbors break visibly as the
   front reaches them, up to about 0.19 s after the blast. Their notes sound
   at once, as a chord (the director caps three per tick). Delaying those
