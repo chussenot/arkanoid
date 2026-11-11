@@ -1,0 +1,17 @@
+# Gameplay effect: tiny. A sour falling arpeggio that fades as it shrinks.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: tiny
+# mode E None
+tempo 0 60
+length 0.20625
+tail 0.08
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 -0.7 -0.7 lin
+note 0.0000 0.0500 sfx_sour 83 108
+note 0.0312 0.0500 sfx_sour 78 98
+note 0.0625 0.0500 sfx_sour 74 88
+note 0.0938 0.0500 sfx_sour 71 78
+note 0.1250 0.0500 sfx_sour 66 66
+note 0.1562 0.0500 sfx_sour 62 54

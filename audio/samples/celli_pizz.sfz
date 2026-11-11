@@ -1,15 +1,15 @@
 // celli_pizz: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
 // Do not edit: rerun the script.
-<region> sample=strings/celli_pizz/celli_pizz_36.flac lokey=33 hikey=38 pitch_keycenter=36 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_C1_v2_RR1.wav
+<region> sample=strings/celli_pizz/celli_pizz_36.flac lokey=33 hikey=38 pitch_keycenter=36 tune=-5 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_C1_v2_RR1.wav
 <region> sample=strings/celli_pizz/celli_pizz_40.flac lokey=39 hikey=41 pitch_keycenter=40 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_E1_v2_RR1.wav
-<region> sample=strings/celli_pizz/celli_pizz_43.flac lokey=42 hikey=45 pitch_keycenter=43 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_G1_v2_RR1.wav
-<region> sample=strings/celli_pizz/celli_pizz_47.flac lokey=46 hikey=48 pitch_keycenter=47 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_B1_v2_RR1.wav
-<region> sample=strings/celli_pizz/celli_pizz_50.flac lokey=49 hikey=51 pitch_keycenter=50 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_D2_v2_RR1.wav
+<region> sample=strings/celli_pizz/celli_pizz_43.flac lokey=42 hikey=45 pitch_keycenter=43 tune=7 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_G1_v2_RR1.wav
+<region> sample=strings/celli_pizz/celli_pizz_47.flac lokey=46 hikey=48 pitch_keycenter=47 tune=19 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_B1_v2_RR1.wav
+<region> sample=strings/celli_pizz/celli_pizz_50.flac lokey=49 hikey=51 pitch_keycenter=50 tune=28 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_D2_v2_RR1.wav
 <region> sample=strings/celli_pizz/celli_pizz_53.flac lokey=52 hikey=55 pitch_keycenter=53 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_F2_v2_RR1.wav
 <region> sample=strings/celli_pizz/celli_pizz_57.flac lokey=56 hikey=58 pitch_keycenter=57 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_A2_v2_RR1.wav
-<region> sample=strings/celli_pizz/celli_pizz_60.flac lokey=59 hikey=62 pitch_keycenter=60 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_C3_v2_RR1.wav
-<region> sample=strings/celli_pizz/celli_pizz_64.flac lokey=63 hikey=65 pitch_keycenter=64 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_E3_v2_RR1.wav
-<region> sample=strings/celli_pizz/celli_pizz_67.flac lokey=66 hikey=69 pitch_keycenter=67 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_G3_v2_RR1.wav
-<region> sample=strings/celli_pizz/celli_pizz_71.flac lokey=70 hikey=72 pitch_keycenter=71 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_B3_v2_RR1.wav
-<region> sample=strings/celli_pizz/celli_pizz_74.flac lokey=73 hikey=75 pitch_keycenter=74 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_D4_v2_RR1.wav
+<region> sample=strings/celli_pizz/celli_pizz_60.flac lokey=59 hikey=62 pitch_keycenter=60 tune=-11 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_C3_v2_RR1.wav
+<region> sample=strings/celli_pizz/celli_pizz_64.flac lokey=63 hikey=65 pitch_keycenter=64 tune=10 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_E3_v2_RR1.wav
+<region> sample=strings/celli_pizz/celli_pizz_67.flac lokey=66 hikey=69 pitch_keycenter=67 tune=21 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_G3_v2_RR1.wav
+<region> sample=strings/celli_pizz/celli_pizz_71.flac lokey=70 hikey=72 pitch_keycenter=71 tune=-13 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_B3_v2_RR1.wav
+<region> sample=strings/celli_pizz/celli_pizz_74.flac lokey=73 hikey=75 pitch_keycenter=74 tune=-59 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_D4_v2_RR1.wav
 <region> sample=strings/celli_pizz/celli_pizz_77.flac lokey=76 hikey=80 pitch_keycenter=77 lovel=1 hivel=127 // Strings/Cello Section/pizzT/pizzT_F4_v2_RR1.wav

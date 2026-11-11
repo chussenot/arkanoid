@@ -9,7 +9,7 @@ title Act clear
 # mode E aeolian
 tempo 0 160
 length 12
-tail 0.9
+tail 0.3
 seed 1
 include ../instruments/desk.inc
 include ../instruments/orchestra.inc
@@ -65,4 +65,4 @@ note 8.0097 4.0000 brass_horns 55 93
 note 8.0000 4.0000 synth_bass 28 92
 note 7.9942 1.0000 timpani 40 107
 note 7.9893 4.0000 percussion 49 76
-ramp master.gain 11 14.4 0 -40 smooth
+ramp master.gain 11 12.8 0 -40 smooth

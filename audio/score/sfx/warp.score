@@ -1,0 +1,14 @@
+# Gameplay effect: warp. A note rising three octaves over rushing air and a swelling tremolo, into an echoing room.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: warp
+# mode E None
+tempo 0 60
+length 0.45
+tail 0.3
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 1.7 1.7 lin
+note 0.0000 0.1200 sfx_rise 100 92
+note 0.0000 0.1200 sfx_air 72 92
+note 0.0500 0.4000 sfx_trem 88 70

@@ -92,7 +92,8 @@ def fold(inst, m):
 
 
 class Score:
-    def __init__(self, name, title, mode, bpm, bars, loop=True, tail=0.0, comment=""):
+    def __init__(self, name, title, mode, bpm, bars, loop=True, tail=0.0, comment="",
+                 libs=("desk", "orchestra", "electronic")):
         self.name, self.mode, self.bars = name, mode, bars
         self.head = [f"# {line}" for line in comment.strip().splitlines()]
         self.head += [
@@ -100,7 +101,7 @@ class Score:
             f"length {bars * 4}",
         ]
         self.head.append("loop on" if loop else f"tail {tail}")
-        self.head += ["seed 1"] + [f"include {{INCLUDES}}/{lib}.inc" for lib in ("desk", "orchestra", "electronic")]
+        self.head += ["seed 1"] + [f"include {{INCLUDES}}/{lib}.inc" for lib in libs]
         self.extra, self.body = [], []
         self.swing = 0.0
         self.counter = 0
@@ -686,7 +687,7 @@ Written by audio/compose_studio.py: do not edit.""")
 
 
 def act_clear():
-    sc = Score("act_clear", "Act clear", "aeolian", 160, 3, loop=False, tail=0.9, comment="""
+    sc = Score("act_clear", "Act clear", "aeolian", 160, 3, loop=False, tail=0.3, comment="""
 Phase 3 reference cue: the act stinger (an act's last level cleared),
 the fanfare of audio/cues/act_clear.abc re-orchestrated: Spark bounding
 up, Ascent's head over a bass walking up to E, a held E minor. Its
@@ -718,7 +719,7 @@ audio/compose_studio.py: do not edit.""")
     # The game holds the next act's music until the stinger ends, and the
     # level-end sweep keeps its three bars (4.5 s): the held chord fades
     # over the last beat and the short tail, instead of ringing on.
-    sc.ramp("master.gain", 11, 14.4, 0, -40)
+    sc.ramp("master.gain", 11, 12.8, 0, -40)
     return sc
 
 
@@ -983,7 +984,7 @@ def tempo_map(r, tr, start):
 def lint(sc, mode):
     """The rules every track keeps: each pitched note in its mode (the
     rally's key), and a texture that can be heard."""
-    scale = {(4 + s) % 12 for s in C.MODES[mode]}
+    scale = {(4 + s) % 12 for s in C.MODES[mode]} if mode else set(range(12))
     steps = sc.bars * 16
     parts = [set() for _ in range(steps)]
     for line in sc.body:
@@ -1013,9 +1014,234 @@ def score():
     menu_sc = menu()
     menu_sc.name = "music_menu"
     out.append((menu_sc, "dorian"))
-    clear = act_clear()
-    out.append((clear, "aeolian"))
+    out.append((act_clear(), None))
+    for make in STINGERS:
+        out.append((make(), None))
     return out
+
+
+# ----------------------------------------------------------- stingers ---
+# The stingers' own notes (audio/cues/*.abc, from compose.py), re-
+# orchestrated. Notes are (MIDI or a chord tuple or None, sixteenths).
+# Level clear and life lost are timed by the game (the music waits for
+# them, the level-end sweep keeps level clear's bar): their tails fade
+# inside their slot.
+
+def put(sc, inst, notes, vel, beat0=0.0, legato=0.9, transpose=0, spread=0.008):
+    t = beat0
+    for p, steps in notes:
+        if p is not None:
+            for q in (p if isinstance(p, tuple) else (p,)):
+                sc.note(t, max(0.06, steps * 0.25 * legato), inst, q + transpose, vel, spread)
+        t += steps * 0.25
+
+
+def level_clear():
+    sc = Score("level_clear", "Level clear", "aeolian", 160, 2, loop=False, tail=0.15, comment="""
+The level stinger: Spark bounding up, then the E minor triad climbing to
+a held high E (audio/cues/level_clear.abc's notes). Light, as it is heard
+32 times a run: spiccato and the bell, horns on the climb, the strings'
+held chord. Two bars at 160 (3.0 s), the level-end sweep's meter.
+Written by audio/compose_studio.py: do not edit.""")
+    spark = [(71, 1), (None, 1), (74, 1), (76, 1), (None, 1), (79, 2), (None, 1),
+             (81, 1), (79, 1), (76, 1), (None, 1), (74, 2), (None, 2)]
+    put(sc, "strings_high_spic", spark, DYN["mf"], legato=0.7)
+    put(sc, "synth_glass", spark, DYN["mp"], transpose=12, legato=0.6)
+    put(sc, "strings_low_pizz", [(40, 4), (40, 4), (43, 4), (43, 4)], DYN["mf"], legato=1.0)
+    climb = [(76, 2), (79, 2), (83, 2), (88, 10)]
+    put(sc, "strings_high", climb, DYN["f"], beat0=4, legato=1.0)
+    put(sc, "brass_horns", [(64, 2), (67, 2), (71, 2), ((64, 67, 71), 10)], DYN["mf"], beat0=4, legato=0.95)
+    put(sc, "strings_mid", [(71, 2), (76, 2), (79, 2), ((79, 83), 10)], DYN["mf"], beat0=4, legato=1.0)
+    put(sc, "strings_low", [(48, 4), (50, 4), (52, 8)], DYN["mf"], beat0=4, legato=1.0)
+    sc.note(6, 2, "timpani", 40, DYN["mf"])
+    sc.note(6, 0.4, "synth_glass", 88, DYN["mf"])
+    sc.ramp("master.gain", 7, 8.4, 0, -40)
+    return sc
+
+
+def life_lost():
+    sc = Score("life_lost", "Life lost", "aeolian", 150, 1, loop=False, tail=0.25, comment="""
+A life lost: Ascent's opening leaps turned upside down and falling,
+fading as they fall, stopping on B, unresolved (audio/cues/life_lost.abc's
+notes). One bar at 150 (1.6 s): horns over the celli.
+Written by audio/compose_studio.py: do not edit.""")
+    put(sc, "brass_horns", [(76, 2), (69, 2), (64, 4), (66, 2), (69, 2), (59, 4)], DYN["f"], legato=0.9)
+    put(sc, "strings_low", [(52, 4), (45, 4), (48, 4), (47, 4)], DYN["mf"], legato=1.0)
+    sc.note(0, 0.5, "strings_low_pizz", 40, DYN["f"])
+    sc.ramp("master.gain", 0.5, 4, 0, -9)
+    sc.ramp("master.gain", 4, 4.6, -9, -40)
+    return sc
+
+
+def game_over():
+    sc = Score("game_over", "Game over", "phrygian", 112, 3, loop=False, tail=0.5, comment="""
+Game over: Ascent backwards and slowed, over a Phrygian F in the bass, a
+pad of thirds above, sinking to a low E as the tempo slows, in a large
+room (audio/cues/game_over.abc's notes). A horn, the strings' thirds, the
+low strings and tuba; the long hall. Written by audio/compose_studio.py:
+do not edit.""")
+    for k, bpm in enumerate([112, 105, 98, 91], start=4):
+        sc.tempo(k / 4, bpm)
+    sc.tempo(2, 84)
+    sc.define("ramp long.gain 0 0.001 4 4 lin")
+    # The last bar: the low E held half of it, the hall the rest.
+    put(sc, "brass_horns", [(71, 4), (69, 4), (71, 4), (74, 4), (76, 4), (71, 4), (64, 8)], DYN["mf"], legato=0.92)
+    put(sc, "strings_mid", [((64, 67), 8), ((62, 66), 8), ((60, 64), 8), ((59, 63), 8), ((59, 64), 8)],
+        DYN["p"], legato=1.0)
+    put(sc, "strings_low", [(48, 8), (45, 8), (41, 8), (47, 8), (40, 8)], DYN["mp"], legato=1.0)
+    put(sc, "brass_low", [(36, 8), (33, 8), (29, 8), (35, 8), (28, 8)], DYN["p"], legato=0.95)
+    put(sc, "brass_horns", [(None, 32), (52, 8)], DYN["p"], legato=1.0)
+    sc.note(8, 4, "timpani_roll", 40, DYN["p"])
+    sc.ramp("timpani_roll.gain", 8, 12, -20, -8)
+    sc.note(8, 4, "electronic_drone", 28, DYN["mp"])
+    return sc
+
+
+def victory():
+    sc = Score("victory", "Victory", "harmonic", 132, 4, loop=False, tail=0.5, comment="""
+Victory: Ascent in harmonic minor, Spark answering above, over a swept
+kick, broadening into a full E major chord: the score's one major chord
+(audio/cues/victory.abc's notes). Trumpets and horns on Ascent, spiccato
+and the bell on Spark, the Wall's bass and the pulse below.
+Written by audio/compose_studio.py: do not edit.""")
+    for k, bpm in enumerate([126, 120, 114, 108]):
+        sc.tempo(8 + k, bpm)
+    ascent = [(64, 2), (71, 2), (76, 4), (75, 2), (71, 2), (69, 2), (71, 2),
+              (67, 2), (69, 2), (71, 4), (75, 2), (76, 2), (79, 4),
+              (81, 2), (79, 2), (78, 2), (76, 2), (75, 4), (78, 4)]
+    put(sc, "brass_trumpets", ascent, DYN["f"], legato=0.88)
+    put(sc, "brass_horns", ascent, DYN["f"], transpose=-12, legato=0.9)
+    spark = [(71, 1), (None, 1), (74, 1), (76, 1), (None, 1), (79, 2), (None, 1),
+             (81, 1), (79, 1), (76, 1), (None, 1), (75, 2), (None, 2),
+             (84, 2), (83, 2), (81, 2), (79, 2), (78, 4), (83, 4)]
+    put(sc, "strings_high_spic", spark, DYN["f"], beat0=4, legato=0.7)
+    put(sc, "synth_glass", spark, DYN["mf"], beat0=4, transpose=12, legato=0.6)
+    bass = [(40, 4), (40, 4), (35, 4), (35, 4), (36, 4), (36, 4), (31, 4), (31, 4),
+            (33, 4), (33, 4), (35, 4), (35, 4)]
+    put(sc, "synth_bass", bass, DYN["f"], transpose=-12, legato=0.8, spread=0.0)
+    put(sc, "strings_low_spic", bass, DYN["mf"], legato=0.6)
+    for b in range(12):
+        sc.note(b, 0.2, "electronic_pulse", 28, DYN["f"], 0.0)
+    sc.note(8, 4, "timpani_roll", 40, DYN["f"])
+    sc.ramp("timpani_roll.gain", 8, 12, -18, 0)
+    sc.note(8, 4, "percussion", 54, DYN["f"])
+    # The E major chord.
+    # The E major chord: each section one job, the brass on top.
+    for inst, notes in [("brass_trumpets", (76, 80)), ("brass_horns", (64, 68, 71)), ("brass_trombones", (40, 52)),
+                        ("strings_high", (80, 83, 88)), ("strings_mid", (64, 71)), ("strings_low", (40, 52))]:
+        for q in notes:
+            sc.note(12, 2.5, inst, q, DYN["ff"])
+    sc.note(12, 1, "timpani", 40, DYN["ff"])
+    sc.note(12, 4, "percussion", 49, DYN["f"])
+    return sc
+
+
+STINGERS = [level_clear, life_lost, game_over, victory]
+
+
+# ------------------------------------------------------------ effects ---
+# The gameplay effects (audio/cues/*.abc's notes and gestures), built from
+# the score's parts (audio/instruments/sfx.inc). Each keeps its root (the
+# game pitches the brick and the paddle by playback rate from E5 and E3),
+# its gesture and its length. Times in seconds (tempo 60). build.rs folds
+# them to mono at 22.05 kHz for the mu-law effects path.
+# name: (what it says, tail seconds, [(seconds, length, instrument, MIDI, velocity)])
+
+S16 = 0.25 / 4  # a sixteenth at 240 BPM, in seconds
+
+EFFECTS = {
+    "paddle": ("A knock dropping onto E3: a pizzicato cello on a triangle knock, a click.", 0.08, [
+        (0, 0.07, "sfx_knock", 52, 112), (0, 0.06, "sfx_pizz_lo", 52, 88), (0, 0.01, "sfx_click", 84, 70)]),
+    "brick": ("A pop snapping down onto E5, a pizzicato violin in it, a glint of metal on top.", 0.1, [
+        (0, 0.1, "sfx_pop", 76, 120), (0, 0.08, "sfx_pizz_hi", 76, 64), (0, 0.02, "sfx_glint", 100, 44)]),
+    "armor": ("Two tinks, the second softer, on an anvil and a ring of metal: the armor holds.", 0.12, [
+        (0, 0.04, "sfx_tink", 95, 124), (S16, 0.04, "sfx_tink", 95, 90), (0, 0.15, "sfx_ring", 90, 100),
+        (0, 0.2, "sfx_kit", 56, 52), (0, 0.06, "sfx_glint", 83, 56)]),
+    "capsule": ("A quick rising arpeggio, spiccato with the bell an octave up, swelling into its top.", 0.15, [
+        (k * S16 / 2, 0.05, inst, p + o, v) for k, (p, v) in enumerate(
+            [(64, 64), (67, 70), (71, 78), (76, 84), (79, 90), (83, 98)])
+        for inst, o in (("sfx_spic", 0), ("sfx_bell", 12))]),
+    "tiny": ("A sour falling arpeggio that fades as it shrinks.", 0.08, [
+        (k * S16 / 2, 0.05, "sfx_sour", p, v) for k, (p, v) in enumerate(
+            [(83, 108), (78, 98), (74, 88), (71, 78), (66, 66), (62, 54)])]),
+    "oneup": ("A small fanfare up the triad on trumpets, landing on B and E in a little room.", 0.25, [
+        (0, 0.04, "sfx_trumpet_stac", 76, 92), (S16 * 2 / 3, 0.04, "sfx_trumpet_stac", 79, 96),
+        (2 * S16 * 2 / 3, 0.04, "sfx_trumpet_stac", 83, 100),
+        (3 * S16 * 2 / 3, 0.17, "sfx_trumpet", 83, 104), (3 * S16 * 2 / 3, 0.17, "sfx_bell", 88, 90),
+        (0, 0.08, "sfx_pizz_lo", 52, 90), (2 * S16 * 2 / 3, 0.08, "sfx_pizz_lo", 59, 88)]),
+    "laser": ("One note falling two octaves in 60 ms: a zap.", 0.03, [(0, 0.0625, "sfx_zap", 64, 100)]),
+    "superlaser": ("A heavier beam falling three octaves with a buzz, over a falling hiss.", 0.06, [
+        (0, 0.06, "sfx_beam", 59, 96), (0, 0.06, "sfx_hiss", 84, 70)]),
+    "asteroid": ("A low rumble swelling in over a wavering drone and a soft timpani roll.", 0.2, [
+        (0, 0.25, "sfx_rumble", 48, 96), (0, 0.25, "sfx_drone", 40, 96), (0, 0.25, "sfx_timp_roll", 40, 60)]),
+    "explosion": ("A crack falling into a rumble, over a bass drum and a timpani dropping a fifth.", 0.3, [
+        (0, 0.06, "sfx_blast", 60, 104), (0, 0.12, "sfx_thump", 28, 100), (0, 0.3, "sfx_kit", 35, 108),
+        (0, 0.3, "sfx_timp", 40, 96)]),
+    "ball_lost": ("A falling figure, pizzicato over a soft triangle, fading as it falls.", 0.1, [
+        (k * 0.05, 0.05, inst, p, v + dv) for k, (p, v) in enumerate([(71, 84), (67, 70), (64, 56), (59, 44)])
+        for inst, dv in (("sfx_pizz_hi", 4), ("sfx_fall", 0))]),
+    "launch": ("A whip up two octaves into E5 over a rising breath, on a low pizzicato and timpani tap.", 0.05, [
+        (0, 0.0625, "sfx_whip", 76, 96), (0, 0.0625, "sfx_breath", 84, 64), (0, 0.06, "sfx_pizz_lo", 52, 92),
+        (0, 0.08, "sfx_timp", 40, 64)]),
+    "warp": ("A note rising three octaves over rushing air and a swelling tremolo, into an echoing room.", 0.3, [
+        (0, 0.12, "sfx_rise", 100, 92), (0, 0.12, "sfx_air", 72, 92), (0.05, 0.4, "sfx_trem", 88, 70)]),
+    "select": ("Two plucks, up: the second leans in.", 0.04, [
+        (0, 0.03, "sfx_pizz_hi", 71, 80), (0, 0.03, "sfx_blip", 71, 70),
+        (S16 / 2, 0.03, "sfx_pizz_hi", 76, 96), (S16 / 2, 0.03, "sfx_blip", 76, 84)]),
+    "pause": ("Two plucks, down: the second steps back.", 0.04, [
+        (0, 0.03, "sfx_pizz_hi", 76, 96), (0, 0.03, "sfx_fall", 76, 84),
+        (S16 / 2, 0.03, "sfx_pizz_hi", 71, 80), (S16 / 2, 0.03, "sfx_fall", 71, 70)]),
+    "steel": ("A short dull knock with a dry glint: the ball turned back, nothing broken.", 0.02, [
+        (0, 0.025, "sfx_knock", 59, 96), (0, 0.016, "sfx_glint", 76, 60)]),
+    "gate": ("A grinding climb, then an open fifth on trumpet and violins that rings out: the wall gives way.", 0.3, [
+        (k * 0.05, 0.05, "sfx_grind", p, 92) for k, p in enumerate([52, 59, 64, 71])] + [
+        (0, 0.05, "sfx_trombone_stac", 52, 90), (0.1, 0.05, "sfx_trombone_stac", 64, 90),
+        (0.2, 0.2, "sfx_trumpet", 76, 100), (0.2, 0.25, "sfx_trem", 83, 84),
+        (0, 0.2, "sfx_timp_roll", 40, 56)]),
+    "expiring": ("Two soft ticks falling a fifth, B to E: the power is about to go.", 0.05, [
+        (0, 0.03, "sfx_tick", 83, 80), (0, 0.03, "sfx_bell", 83, 60),
+        (2 * S16 * 2 / 3, 0.03, "sfx_tick", 76, 64), (2 * S16 * 2 / 3, 0.03, "sfx_bell", 76, 50)]),
+}
+
+# Level trims (dB): each effect brought to the loudness of the ABC effect
+# it replaces (its loudest 30 ms of RMS), so the game's per-effect gains
+# and its balance against the music still hold. The chip effects were
+# near-square waves, loud for their peak; plucks and hits are spikier,
+# so the trims lean on the effects' -1 dBFS limiter for a few dB.
+EFFECT_TRIMS = {
+    "armor": 3,
+    "asteroid": -4.8,
+    "ball_lost": -2.5,
+    "brick": 3,
+    "capsule": 3,
+    "expiring": -3.9,
+    "explosion": -2.6,
+    "gate": 2.8,
+    "laser": 2.3,
+    "launch": 3,
+    "oneup": 3,
+    "paddle": 1.4,
+    "pause": -5.9,
+    "select": -0.3,
+    "steel": -10.3,
+    "superlaser": -2.9,
+    "tiny": -0.7,
+    "warp": 1.7,
+}
+
+
+def effect(name):
+    say, tail, notes = EFFECTS[name]
+    end = max(t + d for t, d, *_ in notes)
+    sc = Score(name, f"Effect: {name}", None, 60, 1, loop=False, tail=tail,
+               comment=f"""
+Gameplay effect: {name}. {say}
+Written by audio/compose_studio.py: do not edit.""", libs=("sfx",))
+    sc.head = [line if not line.startswith("length") else f"length {end:g}" for line in sc.head]
+    sc.trim(EFFECT_TRIMS.get(name, 0.0))
+    for t, d, inst, p, v in notes:
+        sc.note(t, d, inst, p, v, 0.0)
+    return sc
 
 
 REFERENCES = [act1_warmup, act2_frame, act3_armored, act4_vault, menu, act_clear]
@@ -1036,6 +1262,9 @@ def main():
         avg, peak = lint(sc, mode)
         sc.write(out)
         print(f"{sc.name:12s} {avg:4.1f} parts avg, {peak:2d} at most -> {os.path.relpath(out / (sc.name + '.score'))}")
+    for name in EFFECTS:
+        effect(name).write(out / "sfx")
+    print(f"{len(EFFECTS)} effects -> {os.path.relpath(out / 'sfx')}")
 
 
 if __name__ == "__main__":

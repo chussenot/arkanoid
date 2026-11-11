@@ -1,0 +1,18 @@
+# Gameplay effect: oneup. A small fanfare up the triad on trumpets, landing on B and E in a little room.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: oneup
+# mode E None
+tempo 0 60
+length 0.295
+tail 0.25
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 3 3 lin
+note 0.0000 0.0400 sfx_trumpet_stac 76 92
+note 0.0417 0.0400 sfx_trumpet_stac 79 96
+note 0.0833 0.0400 sfx_trumpet_stac 83 100
+note 0.1250 0.1700 sfx_trumpet 83 104
+note 0.1250 0.1700 sfx_bell 88 90
+note 0.0000 0.0800 sfx_pizz_lo 52 90
+note 0.0833 0.0800 sfx_pizz_lo 59 88

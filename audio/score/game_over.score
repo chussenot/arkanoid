@@ -1,0 +1,52 @@
+# Game over: Ascent backwards and slowed, over a Phrygian F in the bass, a
+# pad of thirds above, sinking to a low E as the tempo slows, in a large
+# room (audio/cues/game_over.abc's notes). A horn, the strings' thirds, the
+# low strings and tuba; the long hall. Written by audio/compose_studio.py:
+# do not edit.
+score 1
+title Game over
+# mode E phrygian
+tempo 0 112
+length 12
+tail 0.5
+seed 1
+include ../instruments/desk.inc
+include ../instruments/orchestra.inc
+include ../instruments/electronic.inc
+tempo 4 112
+tempo 5 105
+tempo 6 98
+tempo 7 91
+tempo 8 84
+ramp long.gain 0 0.001 4 4 lin
+note 0.0000 0.9200 brass_horns 71 73
+note 1.0057 0.9200 brass_horns 69 79
+note 2.0079 0.9200 brass_horns 71 76
+note 2.9941 0.9200 brass_horns 74 72
+note 3.9938 0.9200 brass_horns 76 74
+note 5.0008 0.9200 brass_horns 71 75
+note 6.0019 1.8400 brass_horns 64 72
+note 0.0030 2.0000 strings_mid 64 46
+note 0.0000 2.0000 strings_mid 67 51
+note 1.9961 2.0000 strings_mid 62 49
+note 1.9981 2.0000 strings_mid 66 47
+note 4.0010 2.0000 strings_mid 60 54
+note 4.0029 2.0000 strings_mid 64 50
+note 5.9961 2.0000 strings_mid 59 46
+note 5.9934 2.0000 strings_mid 63 53
+note 7.9960 2.0000 strings_mid 59 48
+note 8.0051 2.0000 strings_mid 64 49
+note 0.0015 2.0000 strings_low 48 63
+note 2.0032 2.0000 strings_low 45 62
+note 3.9928 2.0000 strings_low 41 65
+note 6.0055 2.0000 strings_low 47 62
+note 8.0054 2.0000 strings_low 40 67
+note 0.0000 1.9000 brass_low 36 46
+note 1.9968 1.9000 brass_low 33 49
+note 3.9955 1.9000 brass_low 29 48
+note 5.9983 1.9000 brass_low 35 53
+note 7.9928 1.9000 brass_low 28 46
+note 8.0050 2.0000 brass_horns 52 53
+note 8.0059 4.0000 timpani_roll 40 48
+ramp timpani_roll.gain 8 12 -20 -8 smooth
+note 8.0000 4.0000 electronic_drone 28 64

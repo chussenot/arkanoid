@@ -14,7 +14,8 @@ For every instrument in INSTRUMENTS it:
     layers where two are kept);
   - checks each file's pitch against its name (VSCO names notes one
     octave below standard: its "A2" is MIDI 57) and stores the measured
-    offset as `tune`, so the samples play in tune;
+    offset as `tune`, so the samples play in tune (short notes too, where
+    their pitch can be measured);
   - trims the silence before the attack;
   - for sustained articulations, finds a steady loop and bakes a
     crossfade into it, so a plain loop is click-free;
@@ -274,9 +275,12 @@ def curate_pitched(src, out, name, pattern, kind, layers, longest, family):
         fs.sort(key=lambda t: t[0])
         chosen = [fs[0], fs[-1]] if layers == 2 and len(fs) > 1 else [fs[-1]]
         for li, (layer, f, x, det, period) in enumerate(chosen):
-            tune = 0
+            # A measured pitch tunes the sample to its key: sustains always,
+            # short notes when their pitch could be measured (it is how
+            # their name was checked); a pizzicato a few cents off its
+            # neighbours beats against anything played with it.
+            tune = int(round((root - det) * 100)) if det is not None else 0
             if kind == "sustain":
-                tune = int(round((root - det) * 100))
                 y, ls, le = loop_sustain(x, longest, period)
             else:
                 y, ls, le = cut_short(x, longest), None, None

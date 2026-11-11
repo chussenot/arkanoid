@@ -1,0 +1,13 @@
+# Gameplay effect: superlaser. A heavier beam falling three octaves with a buzz, over a falling hiss.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: superlaser
+# mode E None
+tempo 0 60
+length 0.06
+tail 0.06
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 -2.9 -2.9 lin
+note 0.0000 0.0600 sfx_beam 59 96
+note 0.0000 0.0600 sfx_hiss 84 70

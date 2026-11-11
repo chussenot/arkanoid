@@ -1,16 +1,16 @@
 // basses_spic: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
 // Do not edit: rerun the script.
 <region> sample=strings/basses_spic/basses_spic_28.flac lokey=25 hikey=29 pitch_keycenter=28 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_E0_v3_rr1.wav
-<region> sample=strings/basses_spic/basses_spic_30.flac lokey=30 hikey=30 pitch_keycenter=30 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_F#0_v3_rr1.wav
-<region> sample=strings/basses_spic/basses_spic_31.flac lokey=31 hikey=32 pitch_keycenter=31 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_G0_v3_rr1.wav
-<region> sample=strings/basses_spic/basses_spic_34.flac lokey=33 hikey=35 pitch_keycenter=34 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_A#0_v3_rr1.wav
-<region> sample=strings/basses_spic/basses_spic_36.flac lokey=36 hikey=37 pitch_keycenter=36 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_C1_v3_rr2.wav
-<region> sample=strings/basses_spic/basses_spic_38.flac lokey=38 hikey=39 pitch_keycenter=38 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_D1_v3_rr2.wav
-<region> sample=strings/basses_spic/basses_spic_40.flac lokey=40 hikey=41 pitch_keycenter=40 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_E1_v3_rr1.wav
-<region> sample=strings/basses_spic/basses_spic_42.flac lokey=42 hikey=43 pitch_keycenter=42 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_F#1_v1_rr1.wav
-<region> sample=strings/basses_spic/basses_spic_44.flac lokey=44 hikey=44 pitch_keycenter=44 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_G#1_v1_rr1.wav
-<region> sample=strings/basses_spic/basses_spic_45.flac lokey=45 hikey=47 pitch_keycenter=45 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_A1_v1_rr1.wav
-<region> sample=strings/basses_spic/basses_spic_49.flac lokey=48 hikey=50 pitch_keycenter=49 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_C#2_v1_rr1.wav
-<region> sample=strings/basses_spic/basses_spic_52.flac lokey=51 hikey=54 pitch_keycenter=52 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_E2_v1_rr1.wav
-<region> sample=strings/basses_spic/basses_spic_56.flac lokey=55 hikey=57 pitch_keycenter=56 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_G#2_v1_rr1.wav
+<region> sample=strings/basses_spic/basses_spic_30.flac lokey=30 hikey=30 pitch_keycenter=30 tune=1 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_F#0_v3_rr1.wav
+<region> sample=strings/basses_spic/basses_spic_31.flac lokey=31 hikey=32 pitch_keycenter=31 tune=2 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_G0_v3_rr1.wav
+<region> sample=strings/basses_spic/basses_spic_34.flac lokey=33 hikey=35 pitch_keycenter=34 tune=5 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_A#0_v3_rr1.wav
+<region> sample=strings/basses_spic/basses_spic_36.flac lokey=36 hikey=37 pitch_keycenter=36 tune=6 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_C1_v3_rr2.wav
+<region> sample=strings/basses_spic/basses_spic_38.flac lokey=38 hikey=39 pitch_keycenter=38 tune=14 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_D1_v3_rr2.wav
+<region> sample=strings/basses_spic/basses_spic_40.flac lokey=40 hikey=41 pitch_keycenter=40 tune=9 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_E1_v3_rr1.wav
+<region> sample=strings/basses_spic/basses_spic_42.flac lokey=42 hikey=43 pitch_keycenter=42 tune=-1 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_F#1_v1_rr1.wav
+<region> sample=strings/basses_spic/basses_spic_44.flac lokey=44 hikey=44 pitch_keycenter=44 tune=-8 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_G#1_v1_rr1.wav
+<region> sample=strings/basses_spic/basses_spic_45.flac lokey=45 hikey=47 pitch_keycenter=45 tune=48 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_A1_v1_rr1.wav
+<region> sample=strings/basses_spic/basses_spic_49.flac lokey=48 hikey=50 pitch_keycenter=49 tune=9 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_C#2_v1_rr1.wav
+<region> sample=strings/basses_spic/basses_spic_52.flac lokey=51 hikey=54 pitch_keycenter=52 tune=34 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_E2_v1_rr1.wav
+<region> sample=strings/basses_spic/basses_spic_56.flac lokey=55 hikey=57 pitch_keycenter=56 tune=10 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_G#2_v1_rr1.wav
 <region> sample=strings/basses_spic/basses_spic_59.flac lokey=58 hikey=62 pitch_keycenter=59 lovel=1 hivel=127 // Strings/Solo Contrabass/Spic/BKCtbss_Spic_B2_v1_rr1.wav

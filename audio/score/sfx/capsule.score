@@ -1,0 +1,23 @@
+# Gameplay effect: capsule. A quick rising arpeggio, spiccato with the bell an octave up, swelling into its top.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: capsule
+# mode E None
+tempo 0 60
+length 0.20625
+tail 0.15
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 3 3 lin
+note 0.0000 0.0500 sfx_spic 64 64
+note 0.0000 0.0500 sfx_bell 76 64
+note 0.0312 0.0500 sfx_spic 67 70
+note 0.0312 0.0500 sfx_bell 79 70
+note 0.0625 0.0500 sfx_spic 71 78
+note 0.0625 0.0500 sfx_bell 83 78
+note 0.0938 0.0500 sfx_spic 76 84
+note 0.0938 0.0500 sfx_bell 88 84
+note 0.1250 0.0500 sfx_spic 79 90
+note 0.1250 0.0500 sfx_bell 91 90
+note 0.1562 0.0500 sfx_spic 83 98
+note 0.1562 0.0500 sfx_bell 95 98

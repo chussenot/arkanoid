@@ -1,0 +1,140 @@
+# Victory: Ascent in harmonic minor, Spark answering above, over a swept
+# kick, broadening into a full E major chord: the score's one major chord
+# (audio/cues/victory.abc's notes). Trumpets and horns on Ascent, spiccato
+# and the bell on Spark, the Wall's bass and the pulse below.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Victory
+# mode E harmonic
+tempo 0 132
+length 16
+tail 0.5
+seed 1
+include ../instruments/desk.inc
+include ../instruments/orchestra.inc
+include ../instruments/electronic.inc
+tempo 32 126
+tempo 36 120
+tempo 40 114
+tempo 44 108
+note 0.0000 0.4400 brass_trumpets 64 89
+note 0.4948 0.4400 brass_trumpets 71 95
+note 0.9924 0.8800 brass_trumpets 76 94
+note 1.9934 0.4400 brass_trumpets 75 95
+note 2.4922 0.4400 brass_trumpets 71 89
+note 3.0061 0.4400 brass_trumpets 69 94
+note 3.5002 0.4400 brass_trumpets 71 92
+note 4.0029 0.4400 brass_trumpets 67 94
+note 4.5063 0.4400 brass_trumpets 69 91
+note 5.0039 0.8800 brass_trumpets 71 95
+note 5.9921 0.4400 brass_trumpets 75 92
+note 6.4988 0.4400 brass_trumpets 76 93
+note 7.0006 0.8800 brass_trumpets 79 89
+note 8.0052 0.4400 brass_trumpets 81 95
+note 8.4944 0.4400 brass_trumpets 79 93
+note 9.0049 0.4400 brass_trumpets 78 94
+note 9.4955 0.4400 brass_trumpets 76 91
+note 10.0049 0.8800 brass_trumpets 75 93
+note 10.9955 0.8800 brass_trumpets 78 94
+note 0.0069 0.4500 brass_horns 52 94
+note 0.5029 0.4500 brass_horns 59 88
+note 1.0076 0.9000 brass_horns 64 90
+note 2.0026 0.4500 brass_horns 63 90
+note 2.5060 0.4500 brass_horns 59 93
+note 2.9950 0.4500 brass_horns 57 93
+note 3.4995 0.4500 brass_horns 59 93
+note 3.9986 0.4500 brass_horns 55 90
+note 4.5050 0.4500 brass_horns 57 95
+note 5.0009 0.9000 brass_horns 59 93
+note 6.0055 0.4500 brass_horns 63 90
+note 6.4976 0.4500 brass_horns 64 94
+note 7.0026 0.9000 brass_horns 67 90
+note 8.0039 0.4500 brass_horns 69 91
+note 8.4939 0.4500 brass_horns 67 96
+note 9.0074 0.4500 brass_horns 66 91
+note 9.5019 0.4500 brass_horns 64 92
+note 9.9983 0.9000 brass_horns 63 91
+note 11.0001 0.9000 brass_horns 66 91
+note 4.0074 0.1750 strings_high_spic 71 92
+note 4.4965 0.1750 strings_high_spic 74 91
+note 4.7465 0.1750 strings_high_spic 76 92
+note 5.2517 0.3500 strings_high_spic 79 91
+note 6.0035 0.1750 strings_high_spic 81 88
+note 6.2512 0.1750 strings_high_spic 79 96
+note 6.4976 0.1750 strings_high_spic 76 90
+note 7.0037 0.3500 strings_high_spic 75 90
+note 8.0050 0.3500 strings_high_spic 84 89
+note 8.4975 0.3500 strings_high_spic 83 95
+note 8.9926 0.3500 strings_high_spic 81 95
+note 9.4952 0.3500 strings_high_spic 79 95
+note 10.0000 0.7000 strings_high_spic 78 91
+note 11.0056 0.7000 strings_high_spic 83 89
+note 4.0000 0.1500 synth_glass 83 76
+note 4.5000 0.1500 synth_glass 86 76
+note 4.7500 0.1500 synth_glass 88 76
+note 5.2500 0.3000 synth_glass 91 76
+note 6.0000 0.1500 synth_glass 93 76
+note 6.2500 0.1500 synth_glass 91 76
+note 6.5000 0.1500 synth_glass 88 76
+note 7.0000 0.3000 synth_glass 87 76
+note 8.0000 0.3000 synth_glass 96 76
+note 8.5000 0.3000 synth_glass 95 76
+note 9.0000 0.3000 synth_glass 93 76
+note 9.5000 0.3000 synth_glass 91 76
+note 10.0000 0.6000 synth_glass 90 76
+note 11.0000 0.6000 synth_glass 95 76
+note 0.0000 0.8000 synth_bass 28 92
+note 1.0000 0.8000 synth_bass 28 92
+note 2.0000 0.8000 synth_bass 23 92
+note 3.0000 0.8000 synth_bass 23 92
+note 4.0000 0.8000 synth_bass 24 92
+note 5.0000 0.8000 synth_bass 24 92
+note 6.0000 0.8000 synth_bass 19 92
+note 7.0000 0.8000 synth_bass 19 92
+note 8.0000 0.8000 synth_bass 21 92
+note 9.0000 0.8000 synth_bass 21 92
+note 10.0000 0.8000 synth_bass 23 92
+note 11.0000 0.8000 synth_bass 23 92
+note 0.0000 0.6000 strings_low_spic 40 78
+note 0.9994 0.6000 strings_low_spic 40 78
+note 1.9953 0.6000 strings_low_spic 47 76
+note 3.0030 0.6000 strings_low_spic 47 77
+note 3.9941 0.6000 strings_low_spic 36 77
+note 4.9931 0.6000 strings_low_spic 36 74
+note 6.0071 0.6000 strings_low_spic 43 77
+note 7.0015 0.6000 strings_low_spic 43 77
+note 7.9938 0.6000 strings_low_spic 45 74
+note 9.0079 0.6000 strings_low_spic 45 78
+note 9.9965 0.6000 strings_low_spic 47 79
+note 10.9975 0.6000 strings_low_spic 47 79
+note 0.0000 0.2000 electronic_pulse 28 92
+note 1.0000 0.2000 electronic_pulse 28 92
+note 2.0000 0.2000 electronic_pulse 28 92
+note 3.0000 0.2000 electronic_pulse 28 92
+note 4.0000 0.2000 electronic_pulse 28 92
+note 5.0000 0.2000 electronic_pulse 28 92
+note 6.0000 0.2000 electronic_pulse 28 92
+note 7.0000 0.2000 electronic_pulse 28 92
+note 8.0000 0.2000 electronic_pulse 28 92
+note 9.0000 0.2000 electronic_pulse 28 92
+note 10.0000 0.2000 electronic_pulse 28 92
+note 11.0000 0.2000 electronic_pulse 28 92
+note 8.0039 4.0000 timpani_roll 40 90
+ramp timpani_roll.gain 8 12 -18 0 smooth
+note 8.0045 4.0000 percussion 54 91
+note 12.0020 2.5000 brass_trumpets 76 111
+note 11.9998 2.5000 brass_trumpets 80 106
+note 11.9913 2.5000 brass_horns 64 110
+note 12.0075 2.5000 brass_horns 68 111
+note 11.9933 2.5000 brass_horns 71 104
+note 11.9996 2.5000 brass_trombones 40 104
+note 11.9990 2.5000 brass_trombones 52 108
+note 12.0016 2.5000 strings_high 80 108
+note 11.9893 2.5000 strings_high 83 108
+note 12.0114 2.5000 strings_high 88 104
+note 11.9969 2.5000 strings_mid 64 112
+note 12.0029 2.5000 strings_mid 71 107
+note 11.9986 2.5000 strings_low 40 109
+note 12.0032 2.5000 strings_low 52 106
+note 11.9945 1.0000 timpani 40 108
+note 11.9903 4.0000 percussion 49 91

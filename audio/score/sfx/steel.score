@@ -1,0 +1,13 @@
+# Gameplay effect: steel. A short dull knock with a dry glint: the ball turned back, nothing broken.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: steel
+# mode E None
+tempo 0 60
+length 0.025
+tail 0.02
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 -10.3 -10.3 lin
+note 0.0000 0.0250 sfx_knock 59 96
+note 0.0000 0.0160 sfx_glint 76 60

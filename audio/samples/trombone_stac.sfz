@@ -1,9 +1,9 @@
 // trombone_stac: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
 // Do not edit: rerun the script.
-<region> sample=brass/trombone_stac/trombone_stac_34.flac lokey=31 hikey=37 pitch_keycenter=34 lovel=1 hivel=127 // Brass/Tenor Trombone/stac/tenortbn_stac_A#0_v4_rr1.wav
-<region> sample=brass/trombone_stac/trombone_stac_41.flac lokey=38 hikey=43 pitch_keycenter=41 lovel=1 hivel=127 // Brass/Tenor Trombone/stac/tenortbn_stac_F1_v4_rr1.wav
-<region> sample=brass/trombone_stac/trombone_stac_46.flac lokey=44 hikey=49 pitch_keycenter=46 lovel=1 hivel=127 // Brass/Tenor Trombone/stac/tenortbn_stac_A#1_v4_rr1.wav
-<region> sample=brass/trombone_stac/trombone_stac_53.flac lokey=50 hikey=55 pitch_keycenter=53 lovel=1 hivel=127 // Brass/Tenor Trombone/stac/tenortbn_stac_F2_v4_rr1.wav
+<region> sample=brass/trombone_stac/trombone_stac_34.flac lokey=31 hikey=37 pitch_keycenter=34 tune=30 lovel=1 hivel=127 // Brass/Tenor Trombone/stac/tenortbn_stac_A#0_v4_rr1.wav
+<region> sample=brass/trombone_stac/trombone_stac_41.flac lokey=38 hikey=43 pitch_keycenter=41 tune=11 lovel=1 hivel=127 // Brass/Tenor Trombone/stac/tenortbn_stac_F1_v4_rr1.wav
+<region> sample=brass/trombone_stac/trombone_stac_46.flac lokey=44 hikey=49 pitch_keycenter=46 tune=7 lovel=1 hivel=127 // Brass/Tenor Trombone/stac/tenortbn_stac_A#1_v4_rr1.wav
+<region> sample=brass/trombone_stac/trombone_stac_53.flac lokey=50 hikey=55 pitch_keycenter=53 tune=-3 lovel=1 hivel=127 // Brass/Tenor Trombone/stac/tenortbn_stac_F2_v4_rr1.wav
 <region> sample=brass/trombone_stac/trombone_stac_58.flac lokey=56 hikey=60 pitch_keycenter=58 lovel=1 hivel=127 // Brass/Tenor Trombone/stac/tenortbn_stac_A#2_v4_r2.wav
-<region> sample=brass/trombone_stac/trombone_stac_62.flac lokey=61 hikey=63 pitch_keycenter=62 lovel=1 hivel=127 // Brass/Tenor Trombone/stac/tenortbn_stac_D3_v4_rr1.wav
-<region> sample=brass/trombone_stac/trombone_stac_65.flac lokey=64 hikey=68 pitch_keycenter=65 lovel=1 hivel=127 // Brass/Tenor Trombone/stac/tenortbn_stac_F3_v4_rr1.wav
+<region> sample=brass/trombone_stac/trombone_stac_62.flac lokey=61 hikey=63 pitch_keycenter=62 tune=-5 lovel=1 hivel=127 // Brass/Tenor Trombone/stac/tenortbn_stac_D3_v4_rr1.wav
+<region> sample=brass/trombone_stac/trombone_stac_65.flac lokey=64 hikey=68 pitch_keycenter=65 tune=-2 lovel=1 hivel=127 // Brass/Tenor Trombone/stac/tenortbn_stac_F3_v4_rr1.wav

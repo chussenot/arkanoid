@@ -1,14 +1,14 @@
 // violas_spic: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
 // Do not edit: rerun the script.
-<region> sample=strings/violas_spic/violas_spic_48.flac lokey=45 hikey=50 pitch_keycenter=48 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_C2_v2_rr1.wav
-<region> sample=strings/violas_spic/violas_spic_52.flac lokey=51 hikey=53 pitch_keycenter=52 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_E2_v2_rr1.wav
-<region> sample=strings/violas_spic/violas_spic_55.flac lokey=54 hikey=57 pitch_keycenter=55 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_G2_v2_rr1.wav
-<region> sample=strings/violas_spic/violas_spic_59.flac lokey=58 hikey=60 pitch_keycenter=59 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_B2_v2_rr1.wav
-<region> sample=strings/violas_spic/violas_spic_62.flac lokey=61 hikey=63 pitch_keycenter=62 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_D3_v2_rr1.wav
-<region> sample=strings/violas_spic/violas_spic_65.flac lokey=64 hikey=67 pitch_keycenter=65 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_F3_v2_rr1.wav
-<region> sample=strings/violas_spic/violas_spic_69.flac lokey=68 hikey=70 pitch_keycenter=69 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_A3_v2_rr1.wav
-<region> sample=strings/violas_spic/violas_spic_72.flac lokey=71 hikey=74 pitch_keycenter=72 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_C4_v2_rr1.wav
-<region> sample=strings/violas_spic/violas_spic_76.flac lokey=75 hikey=77 pitch_keycenter=76 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_E4_v2_rr1.wav
-<region> sample=strings/violas_spic/violas_spic_79.flac lokey=78 hikey=81 pitch_keycenter=79 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_G4_v2_rr1.wav
-<region> sample=strings/violas_spic/violas_spic_83.flac lokey=82 hikey=84 pitch_keycenter=83 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_B4_v2_rr1.wav
-<region> sample=strings/violas_spic/violas_spic_86.flac lokey=85 hikey=89 pitch_keycenter=86 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_D5_v2_rr1.wav
+<region> sample=strings/violas_spic/violas_spic_48.flac lokey=45 hikey=50 pitch_keycenter=48 tune=-10 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_C2_v2_rr1.wav
+<region> sample=strings/violas_spic/violas_spic_52.flac lokey=51 hikey=53 pitch_keycenter=52 tune=4 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_E2_v2_rr1.wav
+<region> sample=strings/violas_spic/violas_spic_55.flac lokey=54 hikey=57 pitch_keycenter=55 tune=-5 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_G2_v2_rr1.wav
+<region> sample=strings/violas_spic/violas_spic_59.flac lokey=58 hikey=60 pitch_keycenter=59 tune=6 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_B2_v2_rr1.wav
+<region> sample=strings/violas_spic/violas_spic_62.flac lokey=61 hikey=63 pitch_keycenter=62 tune=1 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_D3_v2_rr1.wav
+<region> sample=strings/violas_spic/violas_spic_65.flac lokey=64 hikey=67 pitch_keycenter=65 tune=-3 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_F3_v2_rr1.wav
+<region> sample=strings/violas_spic/violas_spic_69.flac lokey=68 hikey=70 pitch_keycenter=69 tune=9 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_A3_v2_rr1.wav
+<region> sample=strings/violas_spic/violas_spic_72.flac lokey=71 hikey=74 pitch_keycenter=72 tune=23 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_C4_v2_rr1.wav
+<region> sample=strings/violas_spic/violas_spic_76.flac lokey=75 hikey=77 pitch_keycenter=76 tune=-17 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_E4_v2_rr1.wav
+<region> sample=strings/violas_spic/violas_spic_79.flac lokey=78 hikey=81 pitch_keycenter=79 tune=7 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_G4_v2_rr1.wav
+<region> sample=strings/violas_spic/violas_spic_83.flac lokey=82 hikey=84 pitch_keycenter=83 tune=6 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_B4_v2_rr1.wav
+<region> sample=strings/violas_spic/violas_spic_86.flac lokey=85 hikey=89 pitch_keycenter=86 tune=-7 lovel=1 hivel=127 // Strings/Viola Section/spic/Violas_spic_D5_v2_rr1.wav

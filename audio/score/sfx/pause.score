@@ -1,0 +1,15 @@
+# Gameplay effect: pause. Two plucks, down: the second steps back.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: pause
+# mode E None
+tempo 0 60
+length 0.06125
+tail 0.04
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 -5.9 -5.9 lin
+note 0.0000 0.0300 sfx_pizz_hi 76 96
+note 0.0000 0.0300 sfx_fall 76 84
+note 0.0312 0.0300 sfx_pizz_hi 71 80
+note 0.0312 0.0300 sfx_fall 71 70

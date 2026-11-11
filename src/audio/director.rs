@@ -107,6 +107,12 @@ impl Mode {
         [0.0, 3.0, 5.0, 7.0, seventh, 12.0, 15.0, 17.0, 19.0, 24.0]
     }
 }
+/// The brick's level. The studio brick (a driven pop on a pizzicato) is
+/// spikier than the chip's square wave was: at the same peak it measures
+/// 5.6 dB quieter over its first 30 ms (audio/compose_studio.py,
+/// EFFECT_TRIMS), so it plays louder here, where the mixer's soft limiter
+/// takes its attack as it took the chip's sustain. Was 0.6.
+const BRICK_GAIN: f32 = 1.1;
 /// Brick sounds per tick at most: an explosion breaking eight bricks at
 /// once is one chord, not eight pops stacked into noise.
 const MAX_BRICK_SOUNDS_PER_TICK: usize = 3;
@@ -335,7 +341,7 @@ impl Director {
                 GameEvent::BrickDestroyedAt { x, .. } => {
                     let step = steps.iter().find(|&&(j, _)| j == i).map_or(0, |&(_, s)| s);
                     let degree = scale[step];
-                    let note = pitched(Cue::Brick, 0.6, x, semitones(degree));
+                    let note = pitched(Cue::Brick, BRICK_GAIN, x, semitones(degree));
                     match delays[i].unwrap_or(0.0) {
                         // A struck brick: at once, a few per tick at most.
                         d if d <= 0.0 => {

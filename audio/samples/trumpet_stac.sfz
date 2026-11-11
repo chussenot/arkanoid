@@ -1,13 +1,13 @@
 // trumpet_stac: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
 // Do not edit: rerun the script.
-<region> sample=brass/trumpet_stac/trumpet_stac_53.flac lokey=50 hikey=55 pitch_keycenter=53 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_F2_v3_rr1.wav
-<region> sample=brass/trumpet_stac/trumpet_stac_57.flac lokey=56 hikey=58 pitch_keycenter=57 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_A2_v3_rr1.wav
-<region> sample=brass/trumpet_stac/trumpet_stac_60.flac lokey=59 hikey=61 pitch_keycenter=60 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_C3_v3_rr1.wav
-<region> sample=brass/trumpet_stac/trumpet_stac_63.flac lokey=62 hikey=64 pitch_keycenter=63 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_D#3_v3_rr1.wav
-<region> sample=brass/trumpet_stac/trumpet_stac_65.flac lokey=65 hikey=66 pitch_keycenter=65 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_F3_v3_rr1.wav
-<region> sample=brass/trumpet_stac/trumpet_stac_67.flac lokey=67 hikey=68 pitch_keycenter=67 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_G3_v3_rr1.wav
-<region> sample=brass/trumpet_stac/trumpet_stac_70.flac lokey=69 hikey=72 pitch_keycenter=70 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_A#3_v3_rr1.wav
-<region> sample=brass/trumpet_stac/trumpet_stac_74.flac lokey=73 hikey=75 pitch_keycenter=74 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_D4_v3_rr1.wav
-<region> sample=brass/trumpet_stac/trumpet_stac_77.flac lokey=76 hikey=79 pitch_keycenter=77 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_F4_v3_rr1.wav
-<region> sample=brass/trumpet_stac/trumpet_stac_81.flac lokey=80 hikey=82 pitch_keycenter=81 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_A4_v3_rr1.wav
-<region> sample=brass/trumpet_stac/trumpet_stac_84.flac lokey=83 hikey=87 pitch_keycenter=84 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_C5_v3_rr1.wav
+<region> sample=brass/trumpet_stac/trumpet_stac_53.flac lokey=50 hikey=55 pitch_keycenter=53 tune=19 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_F2_v3_rr1.wav
+<region> sample=brass/trumpet_stac/trumpet_stac_57.flac lokey=56 hikey=58 pitch_keycenter=57 tune=20 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_A2_v3_rr1.wav
+<region> sample=brass/trumpet_stac/trumpet_stac_60.flac lokey=59 hikey=61 pitch_keycenter=60 tune=26 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_C3_v3_rr1.wav
+<region> sample=brass/trumpet_stac/trumpet_stac_63.flac lokey=62 hikey=64 pitch_keycenter=63 tune=10 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_D#3_v3_rr1.wav
+<region> sample=brass/trumpet_stac/trumpet_stac_65.flac lokey=65 hikey=66 pitch_keycenter=65 tune=3 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_F3_v3_rr1.wav
+<region> sample=brass/trumpet_stac/trumpet_stac_67.flac lokey=67 hikey=68 pitch_keycenter=67 tune=1 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_G3_v3_rr1.wav
+<region> sample=brass/trumpet_stac/trumpet_stac_70.flac lokey=69 hikey=72 pitch_keycenter=70 tune=6 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_A#3_v3_rr1.wav
+<region> sample=brass/trumpet_stac/trumpet_stac_74.flac lokey=73 hikey=75 pitch_keycenter=74 tune=9 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_D4_v3_rr1.wav
+<region> sample=brass/trumpet_stac/trumpet_stac_77.flac lokey=76 hikey=79 pitch_keycenter=77 tune=15 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_F4_v3_rr1.wav
+<region> sample=brass/trumpet_stac/trumpet_stac_81.flac lokey=80 hikey=82 pitch_keycenter=81 tune=12 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_A4_v3_rr1.wav
+<region> sample=brass/trumpet_stac/trumpet_stac_84.flac lokey=83 hikey=87 pitch_keycenter=84 tune=3 lovel=1 hivel=127 // Brass/Trumpet/stac/Sum_SHTrumpet_stac_C5_v3_rr1.wav
