@@ -202,10 +202,22 @@ These are ranked by how much they could change the score.
    are slower attacks, overlap, and doubling the line with
    `synth_lead`. If they are not enough, a legato sample set is the next
    step, and that is a new licensing question.
-3. **The top octave is dark.** In the orchestral renders, 8–16 kHz sits
-   around −40 dB. VSCO's recordings and the hall's damping both
-   contribute. A high shelf on the orchestra bus is one line in
-   `desk.inc`, but it should follow a listen, not precede it.
+3. **The top octave was dark; diagnosed and lifted.** Measured stage by
+   stage on the strings reference, in dB at 8–12 kHz relative to
+   300 Hz–1 kHz:
+
+   | Stage | Contribution |
+   |---|---|
+   | VSCO's recordings | Most of it: one channel of a violin section sits at −38 dB |
+   | Mono fold-down at curation | About 2 dB more |
+   | Sampler | Transparent: a note at its keycenter renders within 0.3 dB of its file up to 12 kHz |
+   | Reverb return | 1–4 dB darker than the dry signal, but the mix sits on the dry. Cutting the hall's damping from 5 to 6.5 kHz moved the return by 0.6 dB and the mix by 0.1 dB, so the presets stay |
+
+   The fix is on the orchestra bus only (`desk.inc`): a +2 dB presence peak
+   at 3.2 kHz and a +4 dB shelf above 7 kHz. The strings gain 3.3 dB at
+   8–12 kHz and 1.7 dB at 2–4 kHz, peaks move by under 1 dB, and the
+   synths and percussion are untouched. The strings still sit about 7 dB
+   under the synths up there: defined, not bright.
 4. **Two dynamic layers, switched at velocity 80.** A crescendo across
    separate notes changes timbre in one step. Swells inside a held note
    use gain ramps (`ramp <inst>.gain`) instead, as the references do.
