@@ -240,6 +240,13 @@ mod tests {
         }
     }
 
+    /// A cue's studio render, decoded, if it has one.
+    #[cfg(feature = "audio")]
+    fn studio_frames(cue: Cue) -> Option<Vec<[i16; 2]>> {
+        let mut q = crate::audio::qoa::QoaStream::new(studio(cue)?).unwrap();
+        Some(std::iter::from_fn(|| q.next_frame()).collect())
+    }
+
     #[cfg(feature = "audio")]
     fn every_cue() -> impl Iterator<Item = Cue> {
         Cue::NAMED
@@ -251,6 +258,16 @@ mod tests {
     #[test]
     fn every_cue_was_rendered_and_is_audible() {
         for cue in every_cue() {
+            // A studio render replaces the ABC one, which is then not
+            // embedded at all: one render per cue, never both.
+            if let Some(frames) = studio_frames(cue) {
+                assert!(pcm(cue).is_empty(), "{cue:?} embeds both renders");
+                assert!(
+                    frames.iter().any(|f| f[0].abs().max(f[1].abs()) > 2_048),
+                    "{cue:?} is silent"
+                );
+                continue;
+            }
             let pcm = pcm(cue);
             assert!(!pcm.is_empty(), "{cue:?} has no render");
             assert!(
@@ -266,6 +283,15 @@ mod tests {
     #[test]
     fn effects_are_trimmed_short_and_music_loops_are_long() {
         for cue in every_cue() {
+            if let Some(frames) = studio_frames(cue) {
+                let secs = frames.len() as f32 / 48_000.0;
+                if cue.is_music() {
+                    assert!(secs > 20.0, "{cue:?}: {secs:.1}s");
+                } else {
+                    assert!(secs < 9.0, "{cue:?}: {secs:.1}s");
+                }
+                continue;
+            }
             let pcm = pcm(cue);
             let secs = pcm.len() as f32 / CUE_SAMPLE_RATE;
             if cue.is_music() {
@@ -301,6 +327,17 @@ mod tests {
     #[test]
     fn no_music_track_clips() {
         for n in 1..=LEVEL_TRACKS {
+            if let Some(frames) = studio_frames(Cue::Level(n)) {
+                // The studio's limiter holds -1 dBFS; QOA may overshoot
+                // by its error, never to full scale.
+                let hot = frames
+                    .iter()
+                    .flatten()
+                    .filter(|s| s.unsigned_abs() >= 32_700)
+                    .count();
+                assert_eq!(hot, 0, "level {n} clips");
+                continue;
+            }
             let pcm = pcm(Cue::Level(n));
             let hot = pcm.iter().filter(|b| FULL_SCALE.contains(b)).count();
             assert_eq!(hot, 0, "level {n} clips");

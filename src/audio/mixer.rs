@@ -57,9 +57,7 @@ const MASTER: f32 = 1.5;
 const CUT_SECS: f32 = 0.08;
 
 struct Voice {
-    data: &'static [u8],
-    pos: f64,
-    step: f64,
+    source: Source,
     left: f32,
     right: f32,
     /// New music waits while this voice sounds (`Cue::holds_music`).
@@ -78,9 +76,34 @@ struct Loop {
     target: f32,
 }
 
+/// What an effect voice plays.
+// A studio stream stays inline (see `Track`), so starting a voice in the
+// callback never allocates.
+#[allow(clippy::large_enum_variant)]
+enum Source {
+    /// An ABC or studio effect: mu-law mono, read in place at `step`
+    /// cue samples per output frame (its pitch).
+    Mulaw {
+        data: &'static [u8],
+        pos: f64,
+        step: f64,
+    },
+    /// A studio stinger: QOA stereo, played once.
+    Studio(StudioLoop),
+}
+
+impl Source {
+    fn finished(&self) -> bool {
+        match self {
+            Source::Mulaw { data, pos, .. } => *pos >= data.len() as f64,
+            Source::Studio(stream) => stream.finished(),
+        }
+    }
+}
+
 // A studio loop is a few hundred bytes (its decoder's state) against a
 // slice and a position; boxing it would allocate in the audio callback,
-// where the mixer must not, so the two loops a mixer holds carry it inline.
+// where the mixer must not, so the loops a mixer holds carry it inline.
 #[allow(clippy::large_enum_variant)]
 enum Track {
     /// The ABC render: mu-law mono at [`CUE_SAMPLE_RATE`], read in place.
@@ -92,7 +115,7 @@ enum Track {
 impl Track {
     fn for_cue(cue: Cue, output_rate: f32) -> Self {
         studio(cue)
-            .and_then(|bytes| StudioLoop::new(bytes, output_rate))
+            .and_then(|bytes| StudioLoop::new(bytes, output_rate, true))
             .map_or(
                 Track::Mulaw {
                     data: pcm(cue),
@@ -133,12 +156,16 @@ pub struct StudioLoop {
     frac: f64,
     /// Source frames per output frame.
     step: f64,
+    /// A loop wraps to its start; a one-shot stops at its end.
+    looping: bool,
+    /// A one-shot has run out of frames.
+    done: bool,
 }
 
 impl StudioLoop {
     /// `None` for bytes that are not a QOA stream (`build.rs` only embeds
     /// what the studio wrote, so in practice: never).
-    pub fn new(bytes: &'static [u8], output_rate: f32) -> Option<Self> {
+    pub fn new(bytes: &'static [u8], output_rate: f32, looping: bool) -> Option<Self> {
         let qoa = QoaStream::new(bytes).ok()?;
         let step = f64::from(qoa.sample_rate()) / f64::from(output_rate.max(1.0));
         let mut stream = Self {
@@ -146,6 +173,8 @@ impl StudioLoop {
             hist: [[0.0; 2]; 4],
             frac: 0.0,
             step,
+            looping,
+            done: false,
         };
         // Prime so the first output is the first frame: [0, f0, f1, f2].
         for i in 1..4 {
@@ -154,17 +183,26 @@ impl StudioLoop {
         Some(stream)
     }
 
-    /// The next source frame, wrapping to the start at the end: the studio
-    /// renders a loop with its tails already wrapped (`loop on`), so the
-    /// seam is part of the music.
+    /// The next source frame. A loop wraps to its start at the end (the
+    /// studio renders it with its tails already wrapped, `loop on`, so the
+    /// seam is part of the music); a one-shot is silent past it.
     fn pull(&mut self) -> [f32; 2] {
         let frame = self.qoa.next_frame().or_else(|| {
+            if !self.looping {
+                self.done = true;
+                return None;
+            }
             self.qoa.rewind();
             self.qoa.next_frame()
         });
         frame.map_or([0.0; 2], |[l, r]| {
             [f32::from(l) / 32_768.0, f32::from(r) / 32_768.0]
         })
+    }
+
+    /// A one-shot that has played its last frame.
+    pub fn finished(&self) -> bool {
+        self.done
     }
 
     pub fn next(&mut self) -> (f32, f32) {
@@ -314,10 +352,24 @@ impl Mixer {
                     self.voices.remove(0);
                 }
                 let (l, r) = pan_gains(pan);
+                let pitch = f64::from(pitch.max(0.05));
+                // A stinger with a studio render plays it, in stereo; the
+                // effects (and any cue without one) play mu-law.
+                let source = studio(cue)
+                    .and_then(|bytes| StudioLoop::new(bytes, self.output_rate, false))
+                    .map_or(
+                        Source::Mulaw {
+                            data: pcm(cue),
+                            pos: 0.0,
+                            step: self.rate_ratio * pitch,
+                        },
+                        |mut stream| {
+                            stream.step *= pitch;
+                            Source::Studio(stream)
+                        },
+                    );
                 self.voices.push(Voice {
-                    data: pcm(cue),
-                    pos: 0.0,
-                    step: self.rate_ratio * f64::from(pitch.max(0.05)),
+                    source,
                     left: gain * l,
                     right: gain * r,
                     holds_music: cue.holds_music(),
@@ -362,10 +414,16 @@ impl Mixer {
             let (mut left, mut right) = (0.0f32, 0.0f32);
 
             for voice in &mut self.voices {
-                let s = sample_at(voice.data, voice.pos) * voice.fade;
-                left += s * voice.left;
-                right += s * voice.right;
-                voice.pos += voice.step;
+                let (l, r) = match &mut voice.source {
+                    Source::Mulaw { data, pos, step } => {
+                        let s = sample_at(data, *pos);
+                        *pos += *step;
+                        (s, s)
+                    }
+                    Source::Studio(stream) => stream.next(),
+                };
+                left += l * voice.fade * voice.left;
+                right += r * voice.fade * voice.right;
                 voice.fade = (voice.fade - voice.fade_step).max(0.0);
             }
 
@@ -405,8 +463,7 @@ impl Mixer {
                 [] => {}
             }
         }
-        self.voices
-            .retain(|v| v.pos < v.data.len() as f64 && v.fade > 0.0);
+        self.voices.retain(|v| !v.source.finished() && v.fade > 0.0);
         self.music.retain(|t| t.target > 0.0 || t.level > 0.0);
         if self.pending.is_some() && !self.music_held() {
             if let Some(next) = self.pending.take() {
@@ -466,7 +523,7 @@ mod tests {
 
     #[test]
     fn a_studio_loop_at_its_own_rate_plays_the_decoded_frames_and_wraps() {
-        let mut stream = StudioLoop::new(REF_QOA, 48_000.0).unwrap();
+        let mut stream = StudioLoop::new(REF_QOA, 48_000.0, true).unwrap();
         let mut reference = QoaStream::new(REF_QOA).unwrap();
         let len = reference.len() as usize;
         let decoded: Vec<[i16; 2]> = std::iter::from_fn(|| reference.next_frame()).collect();
@@ -509,7 +566,7 @@ mod tests {
         // 12,000-frame reference has gone round four times. The loop's step
         // carries no drift: its position is a whole number of source frames
         // plus the fraction the rates leave.
-        let mut stream = StudioLoop::new(REF_QOA, 44_100.0).unwrap();
+        let mut stream = StudioLoop::new(REF_QOA, 44_100.0, true).unwrap();
         assert!((stream.step - 48_000.0 / 44_100.0).abs() < 1e-12);
         for _ in 0..44_100 {
             let (l, r) = stream.next();
@@ -548,12 +605,48 @@ mod tests {
         assert_eq!(sample_looped(&data, 3.0), sample(0x80), "and wraps");
     }
 
+    /// How long a cue plays at pitch 1: its studio render if it has one.
+    fn cue_secs(cue: Cue) -> f64 {
+        studio(cue).map_or_else(
+            || pcm(cue).len() as f64 / f64::from(CUE_SAMPLE_RATE),
+            |bytes| {
+                let q = QoaStream::new(bytes).unwrap();
+                f64::from(q.len()) / f64::from(q.sample_rate())
+            },
+        )
+    }
+
+    #[test]
+    fn a_studio_one_shot_plays_once_and_frees_its_voice() {
+        let mut mixer = Mixer::new(44_100);
+        mixer.voices.push(Voice {
+            source: Source::Studio(StudioLoop::new(REF_QOA, 44_100.0, false).unwrap()),
+            left: 0.7,
+            right: 0.7,
+            holds_music: true,
+            fade: 1.0,
+            fade_step: 0.0,
+        });
+        // The reference is 12,000 frames at 48 kHz: a quarter second.
+        let mut out = vec![0.0f32; 2 * 4_410];
+        mixer.render(&mut out, 2);
+        assert!(out.iter().any(|s| s.abs() > 0.01), "audible");
+        assert!(mixer.music_held(), "and holding the music while it sounds");
+        for _ in 0..2 {
+            mixer.render(&mut out, 2);
+        }
+        assert_eq!(mixer.voice_count(), 0, "gone after its last frame");
+        assert!(!mixer.music_held());
+        mixer.render(&mut out, 2);
+        assert!(out.iter().all(|s| *s == 0.0), "and silent after it");
+    }
+
     #[test]
     fn a_studio_track_plays_in_stereo_through_the_mixer() {
         let mut mixer = Mixer::new(44_100);
         mixer.music.push(Loop {
             cue: Cue::MusicMenu,
-            track: Track::Studio(StudioLoop::new(REF_QOA, 44_100.0).unwrap()),
+            track: Track::Studio(StudioLoop::new(REF_QOA, 44_100.0, true).unwrap()),
             level: 1.0,
             target: 1.0,
         });
@@ -657,7 +750,7 @@ mod tests {
             None,
             "the old track fades, the new one waits"
         );
-        let fanfare = pcm(Cue::LevelClear).len() as f64 / f64::from(CUE_SAMPLE_RATE);
+        let fanfare = cue_secs(Cue::LevelClear);
         let mut played = 0.0;
         while mixer.music_track().is_none() {
             mixer.render(&mut out, 2);
