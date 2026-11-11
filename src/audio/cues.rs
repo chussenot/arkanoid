@@ -321,6 +321,27 @@ mod tests {
         assert_eq!(studio(Cue::Level(33)), None);
     }
 
+    /// A studio loop starts with the predictor its own end leaves
+    /// (`audio/render.c`, `qoa_encode_seamless`): QOA's default cold start
+    /// would code the first slice coarsely and click at every wrap.
+    #[cfg(feature = "audio")]
+    #[test]
+    fn every_studio_loop_starts_warm() {
+        for cue in every_cue().filter(|c| c.is_music()) {
+            let Some(bytes) = studio(cue) else { continue };
+            // File header (8), first frame header (8), then per channel
+            // the history: four big-endian 16-bit samples.
+            for c in 0..2 {
+                let at = 16 + c * 16;
+                let history = &bytes[at..at + 8];
+                assert!(
+                    history.iter().any(|&b| b != 0),
+                    "{cue:?} channel {c} starts cold"
+                );
+            }
+        }
+    }
+
     /// The score is mastered (`audio/compose.py`): no level track clips,
     /// so no level is ever louder than the limiter expects.
     #[cfg(feature = "audio")]

@@ -1067,6 +1067,7 @@ int st_render_score(const char *path, int rate, StRender *out, char *err, size_t
     out->frames = pcm;
     out->frame_count = (int)keep_frames;
     out->rate = s.rate;
+    out->loop = s.loop;
     pcm = NULL;
     rc = 0;
 done:

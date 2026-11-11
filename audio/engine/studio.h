@@ -181,6 +181,7 @@ typedef struct {
     float *frames;         /* interleaved stereo, frame_count * 2 floats */
     int frame_count;
     int rate;
+    int loop;              /* 1: a loop (its end flows into its start) */
 } StRender;
 
 /* Render the .score at `path` at `rate` Hz (0 = the score's own `rate`,

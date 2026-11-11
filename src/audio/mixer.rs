@@ -762,10 +762,14 @@ mod tests {
             "started {played:.1}s in, under a {fanfare:.1}s fanfare"
         );
         assert_eq!(mixer.music_track(), Some(Cue::Level(2)));
-        let Track::Mulaw { pos, .. } = mixer.music[0].track else {
-            panic!("level 2 is an ABC render")
+        // And from its start: under 0.2 s in, whichever render plays.
+        let secs = match &mixer.music[0].track {
+            Track::Mulaw { pos, .. } => pos / f64::from(CUE_SAMPLE_RATE),
+            Track::Studio(stream) => {
+                f64::from(stream.qoa.position()) / f64::from(stream.qoa.sample_rate())
+            }
         };
-        assert!(pos < 2.0 * 2_205.0, "and from its start");
+        assert!(secs < 0.2, "{secs:.2}s in");
     }
 
     #[cfg(feature = "audio")]

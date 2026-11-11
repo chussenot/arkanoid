@@ -134,6 +134,12 @@ impl<'a> QoaStream<'a> {
         self.channels
     }
 
+    /// Samples per channel handed out so far (tests).
+    #[cfg(test)]
+    pub fn position(&self) -> u32 {
+        self.position
+    }
+
     pub fn sample_rate(&self) -> u32 {
         self.rate
     }

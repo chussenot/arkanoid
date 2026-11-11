@@ -51,7 +51,6 @@ sys.path.insert(0, str(HERE))
 import compose as C  # noqa: E402  (the themes, modes and harmony)
 
 OUT = HERE / "reference" / "cues"
-INCLUDES = "../../instruments"
 
 # Velocities per dynamic. The samplers switch to their f layer at 80, so mf
 # stays on the p layer (louder) and f crosses to the f layer.
@@ -101,8 +100,7 @@ class Score:
             f"length {bars * 4}",
         ]
         self.head.append("loop on" if loop else f"tail {tail}")
-        self.head += ["seed 1", f"include {INCLUDES}/desk.inc",
-                      f"include {INCLUDES}/orchestra.inc", f"include {INCLUDES}/electronic.inc"]
+        self.head += ["seed 1"] + [f"include {{INCLUDES}}/{lib}.inc" for lib in ("desk", "orchestra", "electronic")]
         self.extra, self.body = [], []
         self.swing = 0.0
         self.counter = 0
@@ -143,7 +141,10 @@ class Score:
 
     def write(self, out):
         out.mkdir(parents=True, exist_ok=True)
-        text = "\n".join(self.head + self.extra + self.head_ramps + self.body) + "\n"
+        # Includes resolve against the score's own directory.
+        libs = os.path.relpath(HERE / "instruments", out.resolve())
+        head = [line.replace("{INCLUDES}", libs) for line in self.head]
+        text = "\n".join(head + self.extra + self.head_ramps + self.body) + "\n"
         (out / f"{self.name}.score").write_text(text)
         return len(self.body)
 
@@ -685,7 +686,7 @@ Written by audio/compose_studio.py: do not edit.""")
 
 
 def act_clear():
-    sc = Score("act_clear", "Act clear reference", "aeolian", 160, 3, loop=False, tail=3.5, comment="""
+    sc = Score("act_clear", "Act clear", "aeolian", 160, 3, loop=False, tail=0.9, comment="""
 Phase 3 reference cue: the act stinger (an act's last level cleared),
 the fanfare of audio/cues/act_clear.abc re-orchestrated: Spark bounding
 up, Ascent's head over a bass walking up to E, a held E minor. Its
@@ -714,18 +715,327 @@ audio/compose_studio.py: do not edit.""")
         sc.note(8, 4, inst, p, DYN["f"])
     sc.note(8, 1, "timpani", 40, DYN["ff"])
     sc.note(8, 4, "percussion", 49, DYN["mf"])
+    # The game holds the next act's music until the stinger ends, and the
+    # level-end sweep keeps its three bars (4.5 s): the held chord fades
+    # over the last beat and the short tail, instead of ringing on.
+    sc.ramp("master.gain", 11, 14.4, 0, -40)
     return sc
 
 
-CUES = [act1_warmup, act2_frame, act3_armored, act4_vault, menu, act_clear]
+# ------------------------------------------------------------ the score ---
+# The other 28 tracks: compose.py's own parts (lead, counter, bass,
+# arpeggio, pad, drums, as lines of degrees with a dynamic per step),
+# orchestrated by act with the rules the reference cues proved. The notes
+# and their rhythm are the score's; the studio decides who plays them.
+
+LEVEL_NAMES = ["ppp", "pp", "p", "mp", "mf", "f", "ff", "fff"]
+# Each act's dynamic shift against compose.py's (intro mp, A mf, B mf,
+# break p, A' f, turn mp) and its ceiling.
+ACT_SHIFT = {1: -1, 2: 0, 3: 0, 4: 1}
+ACT_CEILING = {1: "mf", 2: "f", 3: "f", 4: "ff"}
+UNPITCHED = ("percussion", "electronic_metal", "electronic_air", "electronic_pulse")
+
+# Who carries a theme, by act and by its family: (instrument, octave,
+# level offset, length factor). Melody goes to articulated voices.
+LEAD = {
+    1: {"spark": [("strings_high_pizz", 0, 1, 1.0), ("synth_glass", 1, -1, 0.7)],
+        "ascent": [("brass_horns", -1, 0, 0.88), ("synth_glass", 0, -2, 0.7)],
+        "wall": [("strings_mid_spic", 0, 1, 0.5), ("synth_glass", 1, -2, 0.6)]},
+    2: {"spark": [("strings_high", 0, 1, 0.7), ("synth_glass", 1, -1, 0.6)],
+        "ascent": [("brass_horns", -1, 1, 0.9), ("strings_high", 0, 0, 0.95)],
+        "wall": [("strings_mid_spic", 0, 1, 0.5), ("strings_high_spic", 1, 0, 0.5)]},
+    3: {"spark": [("strings_high_spic", 0, 1, 0.6), ("synth_glass", 1, -1, 0.6)],
+        "ascent": [("brass_horns", 0, 1, 0.8)],
+        "wall": [("strings_mid_spic", 0, 1, 0.5), ("strings_high_spic", 1, 0, 0.5)]},
+    4: {"spark": [("strings_high_spic", 0, 1, 0.6), ("synth_glass", 1, -1, 0.6)],
+        "ascent": [("brass_trumpets", 0, 1, 0.88), ("brass_horns", -1, 1, 0.9)],
+        "wall": [("strings_mid_spic", 0, 1, 0.5), ("strings_high_spic", 1, 0, 0.5)]},
+}
+# A short variant (staccato, diminished) on its short instruments.
+SHORT = {"brass_horns": "brass_horns_stac", "brass_trumpets": "brass_trumpets_stac",
+         "strings_high": "strings_high_spic"}
+# The counter-line under the recap.
+COUNTER = {
+    1: {"spark": ("synth_glass", 1, -1, 0.6), "ascent": ("strings_low", 0, -1, 0.95),
+        "wall": ("strings_low", 0, -1, 0.95), "auto": ("strings_mid", 0, -1, 0.95)},
+    2: {"spark": ("synth_glass", 1, -1, 0.6), "ascent": ("strings_low", 0, -1, 0.95),
+        "wall": ("strings_low", 0, -1, 0.95), "auto": ("strings_mid", 0, -1, 0.95)},
+    3: {"spark": ("strings_mid_spic", 0, -1, 0.5), "ascent": ("brass_trombones", 0, -1, 0.85),
+        "wall": ("brass_trombones", 0, -1, 0.85), "auto": ("brass_trombones", 0, -1, 0.85)},
+    4: {"spark": ("synth_glass", 1, -1, 0.6), "ascent": ("brass_trombones", 0, -1, 0.85),
+        "wall": ("brass_trombones", 0, -1, 0.85), "auto": ("brass_trombones", 0, -1, 0.85),
+        "canon": ("synth_glass", 1, -1, 0.6)},
+}
+ARP = {"pulse": "synth_sequence", "buzz": "synth_sequence", "soft": "synth_sequence", "glass": "synth_glass"}
+
+
+def lvl(name, shift):
+    i = LEVEL_NAMES.index(name) + shift
+    return LEVEL_NAMES[max(0, min(len(LEVEL_NAMES) - 1, i))]
+
+
+def capped(name, act, shift=0):
+    v = lvl(name, ACT_SHIFT[act] + shift)
+    cap = ACT_CEILING[act]
+    if LEVEL_NAMES.index(v) > LEVEL_NAMES.index(cap) + max(0, shift):
+        v = lvl(cap, max(0, shift))
+    return DYN[v]
+
+
+def events(line):
+    """(step, degree or chord, steps) for each sounding note of a line."""
+    t = 0
+    for p, s in line:
+        if p is not None:
+            yield t, p, s
+        t += s
+
+
+def family(theme):
+    return theme.split("_")[0] if theme not in ("auto", "canon") else theme
+
+
+def arrange(level):
+    r = track(level)
+    tr = C.compose(r)
+    act = C.act_of(level)
+    mode = r["mode"]
+    total = tr["total"]
+    nbars = total // 16
+    sc = Score(f"music_{level:02d}", f"BRYX {level:02d} {r['name']}", mode, r["bpm"], nbars, comment=f"""
+Level {level:02d}, {r['name']}: {r['note']}
+E {mode}, {r['bpm']} BPM; Act {act}; A {r['a']}, B {r['b']}, counter {r['counter']}.
+compose.py's parts, orchestrated for Act {act} by audio/compose_studio.py:
+do not edit.""")
+    sc.swing = r["swing"]
+    sc.trim({1: -0.5, 2: -1.5, 3: -1.5, 4: 2.0}[act])
+    bars = tr["bars"]
+    section_at = lambda t: bars[min(t // 16, nbars - 1)][0]
+    dyn = tr["dyn"]
+    parts = tr["parts"]
+    beat = lambda t: sc.at(t // 16, t % 16)
+    start = {}
+    for k, (section, i, *_rest) in enumerate(bars):
+        if i == 0:
+            start[section] = k
+
+    def emit(inst, t, deg, steps, base, octave, level, legato, spread=0.012):
+        degs = deg if isinstance(deg, tuple) else (deg,)
+        for d in degs:
+            sc.note(beat(t), max(0.06, steps * 0.25 * legato), inst,
+                    m(d, mode, base) + 12 * octave, level, spread)
+
+    # Act III's pad breathes with the pulse.
+    if act == 3:
+        sc.define("bus pump gain=-2 comp=-28:6:0.002:0.14 key=electronic_pulse send=hall:-14")
+        sc.define("inst pad_pumped synth bus=pump gain=-14 send=long:-16 wave=saw stack=5 detune=12 spread=0.8 "
+                  "filter=lp cutoff=1600 res=0.15 keytrack=0.3 attack=0.3 decay=0.5 sustain=0.9 release=0.8")
+
+    # Lead.
+    for t, deg, steps in events(parts["lead"]):
+        section = section_at(t)
+        theme = r["b"] if section == "B" else r["a"]
+        voices = LEAD[act][family(theme)]
+        short = theme.endswith(("_stac", "_dim"))
+        long_ = theme.endswith("_aug")
+        if section == "intro" or (section == "break" and act == 1):
+            voices = [("synth_glass", 0, 0, 0.7)]
+        elif section == "break":
+            voices = [("brass_horns", -1, -1, 0.92)]
+        accent = 1 if t in tr["acc"]["lead"] else 0
+        for inst, octv, off, legato in voices:
+            if short:
+                inst, legato = SHORT.get(inst, inst), 0.5
+            emit(inst, t, deg, steps, C.E4, octv, capped(dyn["lead"][t], act, off + accent), legato)
+        if long_ and act in (1, 2) and section in ("A", "B", "A2"):
+            # Long notes: a soft synth lead carries the connection.
+            emit("synth_lead", t, deg, steps, C.E4, 0, capped(dyn["lead"][t], act, -2), 1.0)
+
+    # Counter, under the recap.
+    if r["counter"]:
+        kind = r["counter"] if r["counter"] in ("auto", "canon") else family(r["counter"])
+        inst, octv, off, legato = COUNTER[act].get(kind, COUNTER[act]["auto"])
+        for t, deg, steps in events(parts["counter"]):
+            emit(inst, t, deg, steps, C.E4, octv, capped(dyn["counter"][t], act, off), legato)
+
+    # Bass.
+    for t, deg, steps in events(parts["bass"]):
+        section = section_at(t)
+        level = dyn["bass"][t]
+        if act == 1:
+            emit("strings_low_pizz", t, deg, steps, C.E4 - 12, 0, capped(level, act, -1), 1.0)
+            continue
+        emit("synth_bass", t, deg, steps, C.E4 - 12, -1, capped(level, act, -1 if act == 2 else 0), 0.7, 0.0)
+        if act in (2, 4) and t % 4 == 0 and section != "break":
+            emit("strings_low_spic", t, deg, min(steps, 2), C.E4 - 12, 0, capped(level, act, -2), 0.6, 0.006)
+    if act == 3:
+        # Celli chop off-beats against the saw: gears, not a doubling.
+        for k, (section, *_rest, chords) in enumerate(bars):
+            if section in ("A", "B", "A2"):
+                chops(sc, k, [chords], "strings_low_spic", capped("mf", act, -1), base=40)
+
+    # Arpeggio: the palette's machine; thinned to eighths in Act I.
+    arp_inst = ARP[r["palette"]]
+    for t, deg, steps in events(parts["arp"]):
+        if act == 1 and t % 2:
+            continue
+        off = -2 if (act == 1 or r["palette"] == "soft") else -1
+        emit(arp_inst, t, deg, steps, C.E4, 1 if arp_inst == "synth_glass" else 0,
+             capped(dyn["arp"][t], act, off), 0.8, 0.0)
+
+    # Each act's floor, as its reference cue has it: Act I's drone and low
+    # strings holding the root; Act II's string pad under A.
+    if act == 1:
+        sc.note(0, nbars * 4, "electronic_drone", 28, DYN["mp"])
+        for k, (section, *_rest, chords) in enumerate(bars):
+            if section != "intro":
+                pad(sc, k, [chords], "strings_low", DYN["pp"], start=(40,))
+    if act == 2:
+        for k, (section, *_rest, chords) in enumerate(bars):
+            if section == "A":
+                pad(sc, k, [chords], "strings_mid", DYN["p"], start=(52, 55, 59))
+
+    # Pad: the harmony, by act.
+    for t, chord, steps in events(parts["pad"]):
+        section = section_at(t)
+        inst = {1: "strings_mid_trem", 2: "strings_mid", 3: "pad_pumped",
+                4: "brass_trombones" if section == "A2" else "strings_mid_trem"}[act]
+        emit(inst, t, chord, steps, C.E4 - 12, 0, capped(dyn["pad"][t], act, -2 if act < 3 else -1), 1.0)
+
+    # Drums: the pulse is the kick; metal from Act III; toms are timpani.
+    for t, _, _ in events(parts["kick"]):
+        sc.note(beat(t), 0.2, "electronic_pulse", 28, capped(dyn["kick"][t], act, -1 if act < 3 else 0), 0.0)
+    if act >= 3:
+        for t, _, _ in events(parts["snare"]):
+            sc.note(beat(t), 0.15, "electronic_metal", 76, capped(dyn["snare"][t], act, -1), 0.0)
+        for t, _, _ in events(parts["hat"]):
+            sc.note(beat(t), 0.08, "electronic_metal", 88, capped(dyn["hat"][t], act, -3), 0.0)
+    for t, deg, steps in events(parts["tom"]):
+        sc.note(beat(t), 0.5, "timpani", fold("timpani", m(deg, mode, C.E4 - 12)), capped(dyn["tom"][t], act, 0))
+    # Timpani mark the phrases; a cymbal swells into the recap; Act IV's
+    # recap lands on the gong.
+    for k, (section, i, *_rest, chords) in enumerate(bars):
+        root = chords[0][0]
+        if act >= 3 and section in ("A", "B", "A2") and i in (0, 2):
+            sc.note(k * 4, 0.8, "timpani", m(root, mode, 40), capped("f" if section == "A2" else "mf", act))
+        elif act == 2 and section == "A2":
+            sc.note(k * 4, 1, "timpani", m(root, mode, 40), capped("mf", act))
+    if "A2" in start and act >= 2:
+        sc.note((start["A2"] - 1) * 4, 4, "percussion", 53, capped("mf", act))
+    if act == 4 and "A2" in start:
+        sc.note(start["A2"] * 4, 6, "percussion", 55, capped("f", act))
+    if act == 3 and "B" in start:
+        last_b = start["B"] + 3
+        root = bars[last_b][-1][0][0]
+        for off in (2.5, 3.0, 3.5):
+            sc.note(last_b * 4 + off, 0.25, "brass_trombones_stac", m(root, mode, 52), capped("f", act))
+
+    # The recipe's touches.
+    b0 = start.get("B", 0) * 4
+    if r.get("squelch") or r["fx"] == "machine":
+        sc.ramp("synth_bass.cutoff", 0, 0.001, 0, 0, "lin")
+        sc.ramp("synth_bass.cutoff", b0, b0 + 16, 0, 1.4)
+        sc.ramp("synth_bass.cutoff", b0 + 16, b0 + 17, 1.4, 0)
+    room = r.get("room")
+    if room:
+        hall = 2.0 if room[0] >= 10 else -6.0
+        sc.ramp("hall.gain", 0, 0.001, hall, hall, "lin")
+        if "break" in start:
+            k = start["break"] * 4
+            sc.ramp("hall.gain", k, k + 4, hall, hall + 3)
+            sc.ramp("hall.gain", k + 6, k + 8, hall + 3, hall)
+    if r.get("room_b"):
+        sc.ramp("long.gain", b0, b0 + 2, 0, 5)
+        sc.ramp("long.gain", b0 + 14, b0 + 16, 5, 0)
+    if r.get("throws"):
+        for k in range(4):
+            t = b0 + 4 * k + 3
+            sc.ramp("echo.gain", t, t + 0.05, -3, 6, "lin")
+            sc.ramp("echo.gain", t + 0.9, t + 1.0, 6, -3, "lin")
+    for bpm_at in tempo_map(r, tr, start):
+        sc.head.append(f"tempo {bpm_at[0]:g} {bpm_at[1]:g}")
+    return sc
+
+
+def tempo_map(r, tr, start):
+    """compose.py's tempo arcs and push, as tempo steps a beat apart."""
+    out = []
+    def line(b0, b1, frm, to):
+        n = int(b1 - b0)
+        for k in range(n + 1):
+            out.append((b0 + k, round(frm + (to - frm) * k / max(1, n), 2)))
+    form = dict(tr["form"])
+    for arc in r.get("arc", ()):
+        section, frm, to = arc[:3]
+        first, last = (arc[3], arc[4]) if len(arc) == 5 else (0, form[section] - 1)
+        b0 = (start[section] + first) * 4
+        b1 = (start[section] + last + 1) * 4 - 1
+        line(b0, b1, frm, to)
+        out.append((b1 + 1, r["bpm"]))
+    if r.get("push") and "break" in start:
+        b, k = start["B"] * 4, start["break"] * 4
+        line(b, b + 15, r["bpm"], r["push"])
+        line(k, k + 7, r["push"], r["bpm"])
+        out.append((k + 8, r["bpm"]))
+    return sorted(set(out))
+
+
+def lint(sc, mode):
+    """The rules every track keeps: each pitched note in its mode (the
+    rally's key), and a texture that can be heard."""
+    scale = {(4 + s) % 12 for s in C.MODES[mode]}
+    steps = sc.bars * 16
+    parts = [set() for _ in range(steps)]
+    for line in sc.body:
+        if not line.startswith("note "):
+            continue
+        _, b, d, inst, pitch, _v = line.split()
+        if not inst.startswith(UNPITCHED) and int(pitch) % 12 not in scale:
+            raise SystemExit(f"{sc.name}: {inst} {pitch} is outside E {mode}")
+        for k in range(int(float(b) * 4), min(steps, int((float(b) + max(float(d), 0.25)) * 4 + 0.999))):
+            parts[k].add(inst)
+    avg = sum(len(p) for p in parts) / steps
+    peak = max(len(p) for p in parts)
+    if avg > 7.0 or peak > 12:
+        raise SystemExit(f"{sc.name}: {avg:.1f} parts on average, {peak} at once: too dense to hear")
+    return avg, peak
+
+
+def score():
+    """The whole score: the approved reference cues where they exist, the
+    arranger everywhere else."""
+    fixed = {1: act1_warmup, 9: act2_frame, 22: act3_armored, 32: act4_vault}
+    out = []
+    for level in range(1, C.LEVEL_TRACKS + 1 if hasattr(C, "LEVEL_TRACKS") else 33):
+        sc = fixed[level]() if level in fixed else arrange(level)
+        sc.name = f"music_{level:02d}"
+        out.append((sc, track(level)["mode"]))
+    menu_sc = menu()
+    menu_sc.name = "music_menu"
+    out.append((menu_sc, "dorian"))
+    clear = act_clear()
+    out.append((clear, "aeolian"))
+    return out
+
+
+REFERENCES = [act1_warmup, act2_frame, act3_armored, act4_vault, menu, act_clear]
 
 
 def main():
-    out = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else OUT
-    for make in CUES:
-        sc = make()
-        n = sc.write(out)
-        print(f"{sc.name:14s} {n:5d} lines -> {os.path.relpath(out / (sc.name + '.score'))}")
+    """`compose_studio.py` writes the score to audio/score/;
+    `compose_studio.py --reference [DIR]` rewrites the Phase 3 cues."""
+    if len(sys.argv) > 1 and sys.argv[1] == "--reference":
+        out = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else OUT
+        for make in REFERENCES:
+            sc = make()
+            sc.write(out)
+            print(f"{sc.name:14s} -> {os.path.relpath(out / (sc.name + '.score'))}")
+        return
+    out = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "score"
+    for sc, mode in score():
+        avg, peak = lint(sc, mode)
+        sc.write(out)
+        print(f"{sc.name:12s} {avg:4.1f} parts avg, {peak:2d} at most -> {os.path.relpath(out / (sc.name + '.score'))}")
 
 
 if __name__ == "__main__":
