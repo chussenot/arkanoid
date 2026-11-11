@@ -552,7 +552,7 @@ the restart). The score's only tutti, written to be heard: one melody at
 a time, one owner per register, size from doubling and register rather
 than from the number of parts. Written by audio/compose_studio.py: do
 not edit.""")
-    sc.trim(2.0)
+    sc.trim(ACT_TRIM[4])
     mode = t["mode"]
     for k, bpm in [(8, 146), (9, 147), (10, 148), (11, 150), (12, 144)]:
         sc.tempo(k, bpm)
@@ -729,6 +729,11 @@ audio/compose_studio.py: do not edit.""")
 # orchestrated by act with the rules the reference cues proved. The notes
 # and their rhythm are the score's; the studio decides who plays them.
 
+# Each act's level against the others (dB on the master). Act IV stays
+# 2.4 dB above anything in Act III and no more: in the band the effects
+# live in (300 Hz-3 kHz) its brass already sits 2 dB over the old score,
+# and gameplay sounds come first (docs/design/audio.md, "Balance").
+ACT_TRIM = {1: -0.5, 2: -1.5, 3: -1.5, 4: 0.5}
 LEVEL_NAMES = ["ppp", "pp", "p", "mp", "mf", "f", "ff", "fff"]
 # Each act's dynamic shift against compose.py's (intro mp, A mf, B mf,
 # break p, A' f, turn mp) and its ceiling.
@@ -809,7 +814,7 @@ E {mode}, {r['bpm']} BPM; Act {act}; A {r['a']}, B {r['b']}, counter {r['counter
 compose.py's parts, orchestrated for Act {act} by audio/compose_studio.py:
 do not edit.""")
     sc.swing = r["swing"]
-    sc.trim({1: -0.5, 2: -1.5, 3: -1.5, 4: 2.0}[act])
+    sc.trim(ACT_TRIM[act])
     bars = tr["bars"]
     section_at = lambda t: bars[min(t // 16, nbars - 1)][0]
     dyn = tr["dyn"]
@@ -1173,10 +1178,10 @@ EFFECTS = {
     "superlaser": ("A heavier beam falling three octaves with a buzz, over a falling hiss.", 0.06, [
         (0, 0.06, "sfx_beam", 59, 96), (0, 0.06, "sfx_hiss", 84, 70)]),
     "asteroid": ("A low rumble swelling in over a wavering drone and a soft timpani roll.", 0.2, [
-        (0, 0.25, "sfx_rumble", 48, 96), (0, 0.25, "sfx_drone", 40, 96), (0, 0.25, "sfx_timp_roll", 40, 60)]),
+        (0, 0.25, "sfx_rumble", 48, 127), (0, 0.25, "sfx_drone", 40, 44), (0, 0.25, "sfx_timp_roll", 40, 30)]),
     "explosion": ("A crack falling into a rumble, over a bass drum and a timpani dropping a fifth.", 0.3, [
-        (0, 0.06, "sfx_blast", 60, 104), (0, 0.12, "sfx_thump", 28, 100), (0, 0.3, "sfx_kit", 35, 108),
-        (0, 0.3, "sfx_timp", 40, 96)]),
+        (0, 0.2, "sfx_blast", 60, 127), (0, 0.12, "sfx_thump", 28, 64), (0, 0.3, "sfx_kit", 35, 56),
+        (0, 0.3, "sfx_timp", 40, 48)]),
     "ball_lost": ("A falling figure, pizzicato over a soft triangle, fading as it falls.", 0.1, [
         (k * 0.05, 0.05, inst, p, v + dv) for k, (p, v) in enumerate([(71, 84), (67, 70), (64, 56), (59, 44)])
         for inst, dv in (("sfx_pizz_hi", 4), ("sfx_fall", 0))]),
@@ -1192,7 +1197,7 @@ EFFECTS = {
         (0, 0.03, "sfx_pizz_hi", 76, 96), (0, 0.03, "sfx_fall", 76, 84),
         (S16 / 2, 0.03, "sfx_pizz_hi", 71, 80), (S16 / 2, 0.03, "sfx_fall", 71, 70)]),
     "steel": ("A short dull knock with a dry glint: the ball turned back, nothing broken.", 0.02, [
-        (0, 0.025, "sfx_knock", 59, 96), (0, 0.016, "sfx_glint", 76, 60)]),
+        (0, 0.025, "sfx_knock_hi", 59, 96), (0, 0.02, "sfx_clack", 76, 96), (0, 0.016, "sfx_glint", 76, 50)]),
     "gate": ("A grinding climb, then an open fifth on trumpet and violins that rings out: the wall gives way.", 0.3, [
         (k * 0.05, 0.05, "sfx_grind", p, 92) for k, p in enumerate([52, 59, 64, 71])] + [
         (0, 0.05, "sfx_trombone_stac", 52, 90), (0.1, 0.05, "sfx_trombone_stac", 64, 90),
@@ -1208,25 +1213,29 @@ EFFECTS = {
 # and its balance against the music still hold. The chip effects were
 # near-square waves, loud for their peak; plucks and hits are spikier,
 # so the trims lean on the effects' -1 dBFS limiter for a few dB.
+# An effect a visual is timed to states its meter (bar seconds, beats):
+# the warp's sweep runs one bar of it (src/cadence.rs, build.rs).
+EFFECT_METERS = {"warp": (1.0, 4)}
+
 EFFECT_TRIMS = {
     "armor": 3,
-    "asteroid": -4.8,
-    "ball_lost": -2.5,
+    "asteroid": -1.9,
+    "ball_lost": -2.6,
     "brick": 3,
     "capsule": 3,
     "expiring": -3.9,
-    "explosion": -2.6,
+    "explosion": 1.6,
     "gate": 2.8,
-    "laser": 2.3,
+    "laser": -0.2,
     "launch": 3,
     "oneup": 3,
-    "paddle": 1.4,
-    "pause": -5.9,
-    "select": -0.3,
-    "steel": -10.3,
+    "paddle": -1.3,
+    "pause": -6,
+    "select": -0.5,
+    "steel": -1.0,
     "superlaser": -2.9,
     "tiny": -0.7,
-    "warp": 1.7,
+    "warp": 3,
 }
 
 
@@ -1238,6 +1247,9 @@ def effect(name):
 Gameplay effect: {name}. {say}
 Written by audio/compose_studio.py: do not edit.""", libs=("sfx",))
     sc.head = [line if not line.startswith("length") else f"length {end:g}" for line in sc.head]
+    if name in EFFECT_METERS:
+        bar, beats = EFFECT_METERS[name]
+        sc.head.insert(sc.head.index("score 1") + 1, f"# meter {bar:g} {beats}")
     sc.trim(EFFECT_TRIMS.get(name, 0.0))
     for t, d, inst, p, v in notes:
         sc.note(t, d, inst, p, v, 0.0)
@@ -1258,6 +1270,10 @@ def main():
             print(f"{sc.name:14s} -> {os.path.relpath(out / (sc.name + '.score'))}")
         return
     out = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "score"
+    # The notes first: compose.py's lint (a lead that misses its chords, a
+    # counter that crosses it), then each track's own (key and density).
+    if not C.check_score([C.compose(r) for r in C.RECIPES] + [C.compose(C.MENU)]):
+        raise SystemExit("the score lint failed: nothing written")
     for sc, mode in score():
         avg, peak = lint(sc, mode)
         sc.write(out)

@@ -6,10 +6,9 @@
 //! - **music**: one looping track at a time, crossfaded (equal power) on
 //!   change. A new track waits for the sounds that hold the music
 //!   (`Cue::holds_music`): it starts when the fanfare, the serve or the warp
-//!   has finished, never under it. A track is the ABC render (mu-law mono,
-//!   read in place) or, where `audio/score/` has one, the studio render
-//!   (QOA stereo, decoded a slice at a time as it plays, `qoa.rs`, and
-//!   resampled to the device's rate with a cubic).
+//!   has finished, never under it. A track is QOA stereo, decoded a slice
+//!   at a time as it plays (`qoa.rs`) and resampled to the device's rate
+//!   with a cubic.
 //!
 //! It is pure arithmetic over the embedded cues, unit-tested without a device;
 //! `output.rs` only feeds it buffers.
@@ -69,7 +68,9 @@ struct Voice {
 
 struct Loop {
     cue: Cue,
-    track: Track,
+    /// The track's stream; `None` (silence) for a cue with no render, as
+    /// in a build without the `audio` feature.
+    stream: Option<StudioLoop>,
     /// 0..1 crossfade position, moving toward `target`; the gain is its
     /// equal-power curve (`crossfade_gain`).
     level: f32,
@@ -77,8 +78,9 @@ struct Loop {
 }
 
 /// What an effect voice plays.
-// A studio stream stays inline (see `Track`), so starting a voice in the
-// callback never allocates.
+// A studio stream is a few hundred bytes (its decoder's state) against a
+// slice and a position; boxing it would allocate in the audio callback,
+// where the mixer must not, so a voice carries it inline.
 #[allow(clippy::large_enum_variant)]
 enum Source {
     /// An ABC or studio effect: mu-law mono, read in place at `step`
@@ -97,50 +99,6 @@ impl Source {
         match self {
             Source::Mulaw { data, pos, .. } => *pos >= data.len() as f64,
             Source::Studio(stream) => stream.finished(),
-        }
-    }
-}
-
-// A studio loop is a few hundred bytes (its decoder's state) against a
-// slice and a position; boxing it would allocate in the audio callback,
-// where the mixer must not, so the loops a mixer holds carry it inline.
-#[allow(clippy::large_enum_variant)]
-enum Track {
-    /// The ABC render: mu-law mono at [`CUE_SAMPLE_RATE`], read in place.
-    Mulaw { data: &'static [u8], pos: f64 },
-    /// The studio render: QOA stereo, streamed.
-    Studio(StudioLoop),
-}
-
-impl Track {
-    fn for_cue(cue: Cue, output_rate: f32) -> Self {
-        studio(cue)
-            .and_then(|bytes| StudioLoop::new(bytes, output_rate, true))
-            .map_or(
-                Track::Mulaw {
-                    data: pcm(cue),
-                    pos: 0.0,
-                },
-                Track::Studio,
-            )
-    }
-
-    /// The next stereo frame, looping. `rate_ratio` is the mu-law loop's
-    /// step (a studio loop knows its own).
-    fn next(&mut self, rate_ratio: f64) -> (f32, f32) {
-        match self {
-            Track::Mulaw { data, pos } => {
-                if data.is_empty() {
-                    return (0.0, 0.0);
-                }
-                let s = sample_looped(data, *pos);
-                *pos += rate_ratio;
-                if *pos >= data.len() as f64 {
-                    *pos -= data.len() as f64;
-                }
-                (s, s)
-            }
-            Track::Studio(stream) => stream.next(),
         }
     }
 }
@@ -272,18 +230,6 @@ fn sample_at(data: &[u8], pos: f64) -> f32 {
     a + (b - a) * frac
 }
 
-/// [`sample_at`] for a loop: the last sample leads into the first, not
-/// into silence, so the seam has no notch.
-fn sample_looped(data: &[u8], pos: f64) -> f32 {
-    let i = pos as usize % data.len().max(1);
-    let frac = (pos - pos.floor()) as f32;
-    let a = data.get(i).map_or(0.0, |&b| sample(b));
-    let b = data
-        .get((i + 1) % data.len().max(1))
-        .map_or(0.0, |&b| sample(b));
-    a + (b - a) * frac
-}
-
 impl Mixer {
     pub fn new(output_rate: u32) -> Self {
         Self {
@@ -325,7 +271,8 @@ impl Mixer {
                 0,
                 Loop {
                     cue,
-                    track: Track::for_cue(cue, self.output_rate),
+                    stream: studio(cue)
+                        .and_then(|bytes| StudioLoop::new(bytes, self.output_rate, true)),
                     level: 0.0,
                     target: 1.0,
                 },
@@ -445,7 +392,7 @@ impl Mixer {
                     (track.level - fade_step).max(track.target)
                 };
                 let gain = crossfade_gain(track.level) * music_gain;
-                let (l, r) = track.track.next(self.rate_ratio);
+                let (l, r) = track.stream.as_mut().map_or((0.0, 0.0), StudioLoop::next);
                 left += l * gain;
                 right += r * gain;
             }
@@ -590,21 +537,6 @@ mod tests {
         assert!((crossfade_gain(1.0) - 1.0).abs() < 1e-6);
     }
 
-    #[test]
-    fn a_mulaw_loop_leads_from_its_end_into_its_start() {
-        let data = [0x80u8, 0xFF, 0x80]; // full scale, silence, full scale
-        let end = sample_looped(&data, 2.5);
-        assert!(
-            (end - sample(0x80)).abs() < 1e-6,
-            "full scale into full scale: {end}"
-        );
-        assert!(
-            sample_at(&data, 2.5) < end,
-            "where the one-shot read falls to silence"
-        );
-        assert_eq!(sample_looped(&data, 3.0), sample(0x80), "and wraps");
-    }
-
     /// How long a cue plays at pitch 1: its studio render if it has one.
     fn cue_secs(cue: Cue) -> f64 {
         studio(cue).map_or_else(
@@ -641,12 +573,113 @@ mod tests {
         assert!(out.iter().all(|s| *s == 0.0), "and silent after it");
     }
 
+    /// The mixer's contract: nothing on the audio callback's path touches
+    /// the heap. A busy stretch of play (music starting, crossfading and
+    /// waiting on a stinger, more bricks than there are voices, a cut, the
+    /// sound modes) makes not one allocator call.
+    #[cfg(feature = "audio")]
+    #[test]
+    fn the_callback_path_never_touches_the_heap() {
+        use crate::audio::heap;
+        let mut mixer = Mixer::new(44_100);
+        let mut out = vec![0.0f32; 2 * 512];
+        let before = heap::calls();
+        mixer.apply(Command::Music(Some(Cue::MusicMenu)));
+        for block in 0..600 {
+            match block {
+                40 => mixer.apply(Command::Music(Some(Cue::Level(1)))),
+                60 => mixer.apply(Command::Music(Some(Cue::Level(2)))),
+                100..=160 => mixer.apply(Command::Play {
+                    cue: Cue::Brick,
+                    gain: 0.6,
+                    pan: -0.3,
+                    pitch: 1.5,
+                    duck: 0.0,
+                }),
+                200 => mixer.apply(Command::Play {
+                    cue: Cue::LevelClear,
+                    gain: 0.7,
+                    pan: 0.0,
+                    pitch: 1.0,
+                    duck: 2.7,
+                }),
+                210 => mixer.apply(Command::Music(Some(Cue::Level(3)))),
+                260 => mixer.apply(Command::CutHeld),
+                300 => mixer.apply(Command::MusicLevel(0.3)),
+                340 => mixer.apply(Command::Enable {
+                    effects: false,
+                    music: true,
+                }),
+                380 => mixer.apply(Command::Enable {
+                    effects: true,
+                    music: true,
+                }),
+                420 => mixer.apply(Command::Music(None)),
+                _ => {}
+            }
+            mixer.render(&mut out, 2);
+        }
+        assert_eq!(
+            heap::calls(),
+            before,
+            "allocator calls on the callback's path"
+        );
+        assert_eq!(mixer.voice_count(), 0);
+    }
+
+    /// A measurement, not a check: what a second of the busiest mix costs.
+    /// `cargo test --release -- --ignored callback_cost --nocapture`
+    #[cfg(feature = "audio")]
+    #[test]
+    #[ignore = "a measurement; run it in release with --nocapture"]
+    fn callback_cost() {
+        let mut mixer = Mixer::new(48_000);
+        let mut out = vec![0.0f32; 2 * 480];
+        mixer.apply(Command::Music(Some(Cue::Level(29))));
+        mixer.render(&mut out, 2);
+        let mut times = Vec::with_capacity(1_000);
+        let start = std::time::Instant::now();
+        let blocks = 1_000; // ten seconds of 10 ms buffers
+        for block in 0..blocks {
+            if block % 120 == 0 {
+                // Two tracks crossfading, most of the time.
+                mixer.apply(Command::Music(Some(Cue::Level(
+                    25 + (block / 120 % 8) as u8,
+                ))));
+            }
+            // Every voice busy: explosions, the longest effect.
+            while mixer.voice_count() < MAX_VOICES {
+                mixer.apply(Command::Play {
+                    cue: Cue::Explosion,
+                    gain: 0.1,
+                    pan: 0.0,
+                    pitch: 0.5,
+                    duck: 0.0,
+                });
+            }
+            let t = std::time::Instant::now();
+            mixer.render(&mut out, 2);
+            times.push(t.elapsed().as_secs_f64() * 1e6);
+        }
+        let total = start.elapsed();
+        times.sort_by(f64::total_cmp);
+        // The work per buffer is fixed, so the median is the cost; the tail
+        // is whatever else the machine was doing.
+        println!(
+            "10 s of audio (2 QOA streams, {MAX_VOICES} voices): {:.2}% of real time; per 10 ms buffer: median {:.0} us, p99 {:.0} us, worst {:.0} us",
+            total.as_secs_f64() * 10.0,
+            times[times.len() / 2],
+            times[times.len() * 99 / 100],
+            times[times.len() - 1]
+        );
+    }
+
     #[test]
     fn a_studio_track_plays_in_stereo_through_the_mixer() {
         let mut mixer = Mixer::new(44_100);
         mixer.music.push(Loop {
             cue: Cue::MusicMenu,
-            track: Track::Studio(StudioLoop::new(REF_QOA, 44_100.0, true).unwrap()),
+            stream: Some(StudioLoop::new(REF_QOA, 44_100.0, true).unwrap()),
             level: 1.0,
             target: 1.0,
         });
@@ -762,13 +795,9 @@ mod tests {
             "started {played:.1}s in, under a {fanfare:.1}s fanfare"
         );
         assert_eq!(mixer.music_track(), Some(Cue::Level(2)));
-        // And from its start: under 0.2 s in, whichever render plays.
-        let secs = match &mixer.music[0].track {
-            Track::Mulaw { pos, .. } => pos / f64::from(CUE_SAMPLE_RATE),
-            Track::Studio(stream) => {
-                f64::from(stream.qoa.position()) / f64::from(stream.qoa.sample_rate())
-            }
-        };
+        // And from its start: under 0.2 s in.
+        let stream = mixer.music[0].stream.as_ref().unwrap();
+        let secs = f64::from(stream.qoa.position()) / f64::from(stream.qoa.sample_rate());
         assert!(secs < 0.2, "{secs:.2}s in");
     }
 

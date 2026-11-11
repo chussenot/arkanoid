@@ -8,5 +8,5 @@ length 0.0625
 tail 0.03
 seed 1
 include ../../instruments/sfx.inc
-ramp master.gain 0 0.001 2.3 2.3 lin
+ramp master.gain 0 0.001 -0.2 -0.2 lin
 note 0.0000 0.0625 sfx_zap 64 100

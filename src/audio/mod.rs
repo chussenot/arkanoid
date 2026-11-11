@@ -101,3 +101,57 @@ impl Audio {
         None
     }
 }
+
+/// Counts the calling thread's heap allocations and frees, so a test can
+/// assert that the audio callback's path makes none (the mixer's contract:
+/// `mixer.rs`). Test builds only: the game uses the system allocator
+/// untouched.
+#[cfg(test)]
+pub(crate) mod heap {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::cell::Cell;
+
+    thread_local! {
+        static CALLS: Cell<u64> = const { Cell::new(0) };
+    }
+
+    struct Counting;
+
+    fn count() {
+        // A thread being torn down has no counter left: nothing to count for.
+        let _ = CALLS.try_with(|c| c.set(c.get() + 1));
+    }
+
+    // SAFETY: every call is forwarded unchanged to the system allocator;
+    // the counter is a thread-local `Cell`, which never allocates.
+    unsafe impl GlobalAlloc for Counting {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            count();
+            unsafe { System.alloc(layout) }
+        }
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            count();
+            unsafe { System.dealloc(ptr, layout) }
+        }
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            count();
+            unsafe { System.realloc(ptr, layout, new_size) }
+        }
+    }
+
+    #[global_allocator]
+    static HEAP: Counting = Counting;
+
+    /// Allocator calls (allocations, frees, reallocations) this thread has
+    /// made so far.
+    pub fn calls() -> u64 {
+        CALLS.with(Cell::get)
+    }
+
+    #[test]
+    fn the_counter_sees_an_allocation_and_its_free() {
+        let before = calls();
+        drop(std::hint::black_box(vec![0u8; 4_096]));
+        assert!(calls() >= before + 2, "an allocation and a free");
+    }
+}

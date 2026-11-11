@@ -46,7 +46,7 @@ tempo 29 136.93
 tempo 30 137.47
 tempo 31 138
 tempo 32 138
-ramp master.gain 0 0.001 2 2 lin
+ramp master.gain 0 0.001 0.5 0.5 lin
 note 0.0099 0.1500 strings_high_spic 71 118
 note 0.0000 0.1500 synth_glass 83 92
 note 0.5120 0.1500 strings_high_spic 74 111

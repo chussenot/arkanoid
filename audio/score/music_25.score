@@ -12,7 +12,7 @@ seed 1
 include ../instruments/desk.inc
 include ../instruments/orchestra.inc
 include ../instruments/electronic.inc
-ramp master.gain 0 0.001 2 2 lin
+ramp master.gain 0 0.001 0.5 0.5 lin
 note 0.0000 0.4400 brass_trumpets 64 117
 note 0.0085 0.4500 brass_horns 52 123
 note 0.4886 0.4400 brass_trumpets 71 110

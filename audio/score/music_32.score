@@ -22,7 +22,7 @@ tempo 36 147
 tempo 40 148
 tempo 44 150
 tempo 48 144
-ramp master.gain 0 0.001 2 2 lin
+ramp master.gain 0 0.001 0.5 0.5 lin
 
 # A: bars 1-4
 note 0.0000 0.4500 synth_bass 28 106

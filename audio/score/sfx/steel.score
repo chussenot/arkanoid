@@ -8,6 +8,7 @@ length 0.025
 tail 0.02
 seed 1
 include ../../instruments/sfx.inc
-ramp master.gain 0 0.001 -10.3 -10.3 lin
-note 0.0000 0.0250 sfx_knock 59 96
-note 0.0000 0.0160 sfx_glint 76 60
+ramp master.gain 0 0.001 -1 -1 lin
+note 0.0000 0.0250 sfx_knock_hi 59 96
+note 0.0000 0.0200 sfx_clack 76 96
+note 0.0000 0.0160 sfx_glint 76 50

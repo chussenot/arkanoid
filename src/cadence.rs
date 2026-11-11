@@ -154,18 +154,18 @@ mod tests {
 
     /// An act's end plays `act_clear` where a level's plays `level_clear`,
     /// and the level-end sweep keeps `LEVEL_CLEAR`'s beat for both: the two
-    /// fanfares must share their meter and tempo.
+    /// fanfares must share their tempo (both are in four).
     #[test]
     fn the_act_fanfare_keeps_the_level_fanfares_beat() {
-        let header = |abc: &str, key: &str| {
-            abc.lines()
-                .find_map(|l| l.strip_prefix(key))
+        let tempo = |score: &str| {
+            score
+                .lines()
+                .find_map(|l| l.strip_prefix("tempo 0 "))
                 .map(|v| v.trim().to_owned())
         };
-        let level = include_str!("../audio/cues/level_clear.abc");
-        let act = include_str!("../audio/cues/act_clear.abc");
-        for key in ["M:", "L:", "Q:"] {
-            assert_eq!(header(level, key), header(act, key), "{key}");
-        }
+        let level = tempo(include_str!("../audio/score/level_clear.score"));
+        let act = tempo(include_str!("../audio/score/act_clear.score"));
+        assert!(level.is_some(), "level_clear.score has a tempo");
+        assert_eq!(level, act);
     }
 }

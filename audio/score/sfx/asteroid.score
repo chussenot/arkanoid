@@ -8,7 +8,7 @@ length 0.25
 tail 0.2
 seed 1
 include ../../instruments/sfx.inc
-ramp master.gain 0 0.001 -4.8 -4.8 lin
-note 0.0000 0.2500 sfx_rumble 48 96
-note 0.0000 0.2500 sfx_drone 40 96
-note 0.0000 0.2500 sfx_timp_roll 40 60
+ramp master.gain 0 0.001 -1.9 -1.9 lin
+note 0.0000 0.2500 sfx_rumble 48 127
+note 0.0000 0.2500 sfx_drone 40 44
+note 0.0000 0.2500 sfx_timp_roll 40 30

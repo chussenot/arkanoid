@@ -1,8 +1,12 @@
-//! The cue bank: every sound BRYX can make, as the PCM `build.rs` rendered
-//! from `audio/cues/*.abc` with BRYX's fork of the Electric Pulse engine.
-//! The bytes stay where the binary put them: 8-bit mu-law mono (`mulaw`),
-//! read and decoded one sample at a time by the mixer, so 33 music tracks
-//! cost no memory beyond the binary itself.
+//! The cue bank: every sound BRYX can make, as `build.rs` rendered it from
+//! `audio/score/` with BRYX's studio (`audio/engine/`). The bytes stay
+//! where the binary put them:
+//! - the music and the stingers are QOA, 48 kHz stereo ([`studio`]),
+//!   decoded a slice at a time as they play (`qoa`);
+//! - the effects are 8-bit mu-law mono at [`CUE_SAMPLE_RATE`] ([`pcm`]),
+//!   read one sample at a time at the playback rate their pitch asks for.
+//!
+//! So a sound costs no memory beyond the binary itself.
 
 use super::mulaw::MULAW_TO_F32;
 
@@ -12,8 +16,8 @@ pub const CUE_SAMPLE_RATE: f32 = 22_050.0;
 /// Level tracks in the score (`audio/compose.py`), one per campaign level.
 pub const LEVEL_TRACKS: u8 = 32;
 
-/// One sound. Every variant but `Level` names an `audio/cues/*.abc` file
-/// (`file`); `Level(n)` is `music_NN.abc`, the track for level `n`.
+/// One sound. Every variant but `Level` names a score under `audio/score/`
+/// (`file`); `Level(n)` is `music_NN.score`, the track for level `n`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Cue {
     // Effects
@@ -157,9 +161,9 @@ impl Cue {
     }
 }
 
-/// The studio render for `cue`, QOA stereo (`src/audio/qoa.rs`), when
-/// `audio/score/` has a score of that name; it replaces the ABC render.
-/// `None` otherwise, and always without the `audio` feature.
+/// The studio render for `cue`, QOA stereo (`src/audio/qoa.rs`): the music
+/// and the stingers. `None` for an effect ([`pcm`]), and always without
+/// the `audio` feature.
 pub fn studio(cue: Cue) -> Option<&'static [u8]> {
     #[cfg(feature = "audio")]
     {
@@ -176,23 +180,18 @@ pub fn studio(cue: Cue) -> Option<&'static [u8]> {
     }
 }
 
-/// The embedded PCM for `cue`: mu-law mono at [`CUE_SAMPLE_RATE`],
-/// effects already trimmed of trailing silence by `build.rs`. Empty
-/// without the `audio` feature, or for a level past the score.
+/// An effect's embedded PCM: mu-law mono at [`CUE_SAMPLE_RATE`], trimmed of
+/// trailing silence by `build.rs`. Empty for a cue that is not an effect
+/// (the music and the stingers are [`studio`] renders), and without the
+/// `audio` feature.
 pub fn pcm(cue: Cue) -> &'static [u8] {
     #[cfg(feature = "audio")]
     {
-        match cue {
-            Cue::Level(n) => rendered::LEVEL_MUSIC
-                .get(usize::from(n).wrapping_sub(1))
-                .copied()
-                .unwrap_or(&[]),
-            named => rendered::CUES
-                .iter()
-                .find(|(name, _)| Some(*name) == named.file())
-                .map(|(_, pcm)| *pcm)
-                .unwrap_or(&[]),
-        }
+        rendered::CUES
+            .iter()
+            .find(|(name, _)| Some(*name) == cue.file())
+            .map(|(_, pcm)| *pcm)
+            .unwrap_or(&[])
     }
     #[cfg(not(feature = "audio"))]
     {
@@ -275,8 +274,8 @@ mod tests {
                 "{cue:?} is silent"
             );
         }
-        assert_eq!(rendered::LEVEL_MUSIC.len(), usize::from(LEVEL_TRACKS));
-        assert!(pcm(Cue::Level(0)).is_empty() && pcm(Cue::Level(33)).is_empty());
+        assert!((1..=LEVEL_TRACKS).all(|n| studio(Cue::Level(n)).is_some()));
+        assert!(studio(Cue::Level(0)).is_none() && studio(Cue::Level(33)).is_none());
     }
 
     #[cfg(feature = "audio")]
