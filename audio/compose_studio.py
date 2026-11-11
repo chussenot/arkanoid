@@ -445,85 +445,95 @@ Written by audio/compose_studio.py: do not edit.""")
     return sc
 
 
+
+def chops(sc, bar0, bars, inst, vel, base=40, pattern="..x...x...x...x.", spread=0.004):
+    """Short notes on each chord's fifth, on the off-beats: gears that
+    turn against the bass instead of doubling it."""
+    t = bar0 * 4
+    for bar in bars:
+        for root, _, s in bar:
+            for k in range(s):
+                if pattern[k % 16] in "xX":
+                    sc.note(t + k * 0.25, 0.18, inst, m(root + 4, sc.mode, base), vel, spread)
+            t += s * 0.25
+
+
 def act3_armored():
     t = track(22)
     sc = Score("act3_armored", "Act III reference: Armored frame", t["mode"], t["bpm"], 16, comment="""
 Phase 3 reference cue, Act III (Machines): level 22, Armored frame. E
 phrygian, 132 BPM. Form: intro 2, A 4 (the Wall high, ratcheting up), B 4
 (the Wall inverted, sinking), break 2, A' 4 (the inverted Wall at half
-speed beneath the high one). Mechanical precision: celli and basses on
-the Wall in front, doubled an octave down by a filtered saw bass; low
-brass staccato; timpani and metal; a pad pumped by the pulse. No high
-brass and no tutti: the act is dark, and Act IV keeps the scale.
+speed beneath the high one). Mechanical precision, written by register so
+nothing muddies: the saw bass alone owns the Wall down low, celli chop
+off-beats against it, the high Wall is bright spiccato, the sequence
+carries the motion, low brass only punctuates. Act IV keeps the scale.
 Written by audio/compose_studio.py: do not edit.""")
     sc.trim(-1.5)
     mode = t["mode"]
-    # A pad that breathes with the pulse: a bus keyed by it.
+    # A pad that breathes with the pulse, kept above the bass's octave.
     sc.define("bus pump gain=-2 comp=-28:6:0.002:0.14 key=electronic_pulse send=hall:-14")
-    sc.define("inst pad_pumped synth bus=pump gain=-12 send=long:-16 wave=saw stack=5 detune=12 spread=0.8 "
-              "filter=lp cutoff=1100 res=0.15 keytrack=0.3 attack=0.3 decay=0.5 sustain=0.9 release=0.8")
+    sc.define("inst pad_pumped synth bus=pump gain=-14 send=long:-16 wave=saw stack=5 detune=12 spread=0.8 "
+              "filter=lp cutoff=1600 res=0.15 keytrack=0.3 attack=0.3 decay=0.5 sustain=0.9 release=0.8")
     form = [("intro", 2), ("A", 4), ("B", 4), ("break", 2), ("A2", 4)]
     bar = 0
     for name, n in form:
         bars = section_chords(t, name)
         b0 = bar * 4
         sc.comment(f"{name}: bars {bar + 1}-{bar + n}")
-        full = name in ("A", "B", "A2")
+        # Under everything: the Wall in the saw bass alone, on the grid.
+        wall(sc, bar, bars, "synth_bass", DYN["f"], base=28, legato=0.6, spread=0.0)
         if name == "intro":
-            # The machine starting: metal, the pulse, the Wall in the bass
-            # alone, its filter opening.
-            wall(sc, bar, bars, "synth_bass", DYN["f"], base=28, legato=0.6, spread=0.0)
-            sc.ramp("synth_bass.cutoff", b0, b0 + 8, -1.5, 0)
-            hits(sc, bar, n, "electronic_metal", 76, DYN["mp"], "x.x.x.x.x.x.x.x.", accent=0)
+            # The machine starting: the sequence with its filter shut,
+            # opening; metal; the pulse arrives in the second bar.
+            arp(sc, bar, bars, "synth_sequence", DYN["mf"], [0, 3, 1, 3, 2, 3, 1, 4], base=64)
+            sc.ramp("synth_sequence.cutoff", b0, b0 + 8, -1.6, 0)
+            sc.ramp("synth_bass.cutoff", b0, b0 + 8, -1.2, 0)
+            hits(sc, bar, n, "electronic_metal", 76, DYN["mp"], "x.x.x.x.x.x.x.x.")
             hits(sc, bar + 1, 1, "electronic_pulse", 28, DYN["f"], "x...x...x...x...")
-        if full:
-            # The Wall in front: celli and basses spiccato, the saw an
-            # octave under them, all on the grid.
-            wall(sc, bar, bars, "strings_low_spic", DYN["f"], base=40, legato=0.55, spread=0.004)
-            wall(sc, bar, bars, "strings_bass_spic", DYN["f"], base=40, legato=0.55, spread=0.004)
-            wall(sc, bar, bars, "synth_bass", DYN["f"], base=28, legato=0.6, spread=0.0)
+        if name in ("A", "B", "A2"):
+            arp(sc, bar, bars, "synth_sequence", DYN["mf"] if name != "B" else DYN["mp"],
+                [0, 3, 1, 3, 2, 3, 1, 4], base=64)
+            chops(sc, bar, bars, "strings_low_spic", DYN["mf"], base=40)
             hits(sc, bar, n, "electronic_pulse", 28, DYN["f"], "x...x...x...x...")
-            hits(sc, bar, n, "electronic_metal", 76, DYN["mp"], "..x...x...x...xx", accent=0)
-            pad(sc, bar, bars, "pad_pumped", DYN["mf"], start=(52, 55, 59))
-            # Timpani on every downbeat, low brass stabs on the off-beats
-            # of the bar's second half.
-            for k in range(n):
-                root = bars[k][0][0]
-                sc.note((bar + k) * 4, 0.8, "timpani", m(root, mode, 40), DYN["f"])
-                for off in (2.5, 3.5):
-                    sc.note((bar + k) * 4 + off, 0.25, "brass_trombones_stac", m(root, mode, 40), DYN["f"])
-                    sc.note((bar + k) * 4 + off, 0.25, "brass_low_stac", m(root, mode, 28), DYN["f"])
+            hits(sc, bar, n, "electronic_metal", 76, DYN["mp"], "..x...x...x...x.")
+            pad(sc, bar, bars, "pad_pumped", DYN["mp"], start=(55, 59, 64))
+            # Timpani mark each two-bar phrase; low brass stabs close the
+            # four-bar phrase, the only low brass in A and B.
+            for k in (0, 2):
+                sc.note((bar + k) * 4, 0.8, "timpani", m(bars[k][0][0], mode, 40), DYN["f"])
+            last = bars[n - 1][0][0]
+            for off in (2.5, 3.0, 3.5):
+                sc.note((bar + n - 1) * 4 + off, 0.25, "brass_trombones_stac", m(last, mode, 52), DYN["f"])
         if name == "A":
             lead, _ = theme_bars(t["a"], bars, mode)
-            # The Wall high: violas spiccato with horns staccato, low.
-            play_line(sc, bar, lead, "strings_mid_spic", DYN["f"], base=C.E4 - 12, legato=0.5, spread=0.004)
-            play_line(sc, bar, lead, "brass_horns_stac", DYN["mf"], base=C.E4 - 12, legato=0.5)
-            sc.ramp("synth_bass.cutoff", b0, b0 + 16, 0, 1.2)
+            # The high Wall, bright and short: violas and violins spiccato.
+            play_line(sc, bar, lead, "strings_mid_spic", DYN["f"], legato=0.5, spread=0.004)
+            play_line(sc, bar, lead, "strings_high_spic", DYN["mf"], octave=1, legato=0.5, spread=0.004)
+            sc.ramp("synth_sequence.cutoff", b0, b0 + 16, 0, 0.8)
         elif name == "B":
             lead, _ = theme_bars(t["b"], bars, mode)
-            # The Wall inverted, sinking: trombones and celli tremolo.
-            play_line(sc, bar, lead, "brass_trombones", DYN["f"], base=C.E4 - 12, legato=0.75)
-            play_line(sc, bar, lead, "strings_low_trem", DYN["mf"], base=C.E4 - 12, legato=0.95)
-            sc.ramp("synth_bass.cutoff", b0, b0 + 16, 1.2, -0.5)
+            # The Wall inverted and sinking, on the horns in their middle:
+            # a voice the machine cannot cover.
+            play_line(sc, bar, lead, "brass_horns", DYN["f"], legato=0.8, accent=6)
+            sc.ramp("synth_sequence.cutoff", b0, b0 + 16, 0.4, -0.6)
         elif name == "break":
-            # Down to the machine: pulse, metal, the Wall in the bass with
-            # its filter shut, then reopening.
-            wall(sc, bar, bars, "synth_bass", DYN["f"], base=28, legato=0.6, spread=0.0)
-            sc.ramp("synth_bass.cutoff", b0, b0 + 8, -2.0, 0.5)
-            hits(sc, bar, n, "electronic_pulse", 28, DYN["mf"], "x.......x.......")
+            # Down to the machine alone: bass, sequence, metal; the
+            # sequence's filter closes and reopens.
+            arp(sc, bar, bars, "synth_sequence", DYN["mf"], [0, 3, 1, 3, 2, 3, 1, 4], base=64)
+            sc.ramp("synth_sequence.cutoff", b0, b0 + 8, -1.8, 0.6)
+            sc.ramp("synth_bass.cutoff", b0, b0 + 8, -1.6, 0.4)
             hits(sc, bar, n, "electronic_metal", 76, DYN["mp"], "x.x.x.x.x.x.x.x.")
-            pad(sc, bar, bars, "strings_low_trem", DYN["p"], start=(40, 47))
-            sc.ramp("strings_low_trem.gain", b0, b0 + 8, -18, 0)
+            hits(sc, bar + 1, 1, "electronic_pulse", 28, DYN["mf"], "x...x...x...x...")
         elif name == "A2":
             lead, _ = theme_bars(t["a"], bars, mode, recap=True)
-            play_line(sc, bar, lead, "strings_mid_spic", DYN["ff"], base=C.E4 - 12, legato=0.5, spread=0.004)
-            play_line(sc, bar, lead, "strings_high_spic", DYN["f"], legato=0.5, spread=0.004)
-            play_line(sc, bar, lead, "brass_horns_stac", DYN["f"], base=C.E4 - 12, legato=0.5)
+            play_line(sc, bar, lead, "strings_mid_spic", DYN["f"], legato=0.5, spread=0.004)
+            play_line(sc, bar, lead, "strings_high_spic", DYN["f"], octave=1, legato=0.5, spread=0.004)
+            # Beneath it the inverted Wall at half speed: trombones, held
+            # in their middle, above the bass's octave.
             counter, _ = theme_bars(t["counter"], bars, mode)
-            # Beneath it the inverted Wall at half speed, in the low brass.
-            play_line(sc, bar, counter, "brass_trombones", DYN["f"], base=C.E4 - 24, legato=0.85)
-            play_line(sc, bar, counter, "brass_low", DYN["f"], base=C.E4 - 36, legato=0.85)
-            sc.ramp("synth_bass.cutoff", b0, b0 + 16, 0.3, 1.5)
+            play_line(sc, bar, counter, "brass_trombones", DYN["mf"], base=C.E4 - 12, legato=0.85)
+            sc.ramp("synth_sequence.cutoff", b0, b0 + 16, 0.4, 1.2)
         bar += n
     return sc
 
@@ -534,12 +544,14 @@ def act4_vault():
 Phase 3 reference cue, Act IV (Vault): level 32, Vault, the finale. E
 harmonic minor, 144 BPM pushing to 150. Form: A 4 (Ascent over the Wall,
 the full brass statement held back since Act I), B 4 (Spark), A' 4 (all
-three at once: the Wall below, Ascent above, Spark between), break 2 (a
-real pianissimo), turn 2 (the timpani rebuild into the restart).
-The score's only tutti. Written by audio/compose_studio.py: do not edit.""")
-    sc.trim(0.5)
+three: the Wall below, Ascent above, Spark answering between its
+phrases), break 2 (a real pianissimo), turn 2 (the timpani rebuild into
+the restart). The score's only tutti, written to be heard: one melody at
+a time, one owner per register, size from doubling and register rather
+than from the number of parts. Written by audio/compose_studio.py: do
+not edit.""")
+    sc.trim(2.0)
     mode = t["mode"]
-    # The tempo pushes through the recap and settles for the break.
     for k, bpm in [(8, 146), (9, 147), (10, 148), (11, 150), (12, 144)]:
         sc.tempo(k, bpm)
     form = [("A", 4), ("B", 4), ("A2", 4), ("break", 2), ("turn", 2)]
@@ -549,46 +561,46 @@ The score's only tutti. Written by audio/compose_studio.py: do not edit.""")
         b0 = bar * 4
         sc.comment(f"{name}: bars {bar + 1}-{bar + n}")
         if name in ("A", "B", "A2"):
-            # The ground: the Wall in celli, basses, tuba and the saw.
-            dyn = DYN["f"] if name == "A2" else DYN["mf"]
-            wall(sc, bar, bars, "strings_low_spic", dyn, base=40, legato=0.55, spread=0.004)
-            wall(sc, bar, bars, "strings_bass_spic", dyn, base=40, legato=0.55, spread=0.004)
+            # The ground: the Wall in the saw bass, the celli an octave up
+            # for its edge; the basses join only for the recap.
             wall(sc, bar, bars, "synth_bass", DYN["f"], base=28, legato=0.6, spread=0.0)
-            wall(sc, bar, bars, "brass_low_stac", DYN["f"], base=28, legato=0.5)
-            arp(sc, bar, bars, "synth_sequence", DYN["mf"], [0, 3, 2, 4, 1, 3, 2, 3], base=64)
+            wall(sc, bar, bars, "strings_low_spic", DYN["f"] if name == "A2" else DYN["mf"],
+                 base=40, legato=0.55, spread=0.004)
             hits(sc, bar, n, "electronic_pulse", 28, DYN["f"], "x...x...x...x...")
-            pad(sc, bar, bars, "synth_pad", DYN["mf"], start=(52, 59, 64))
-            for k in range(n):
-                sc.note((bar + k) * 4, 0.8, "timpani", m(bars[k][0][0], mode, 40), dyn)
+            for k in (0, 2):
+                sc.note((bar + k) * 4, 0.8, "timpani", m(bars[k][0][0], mode, 40),
+                        DYN["ff"] if name == "A2" else DYN["f"])
         if name == "A":
             lead, _ = theme_bars(t["a"], bars, mode)
-            # The full brass statement: horns and trumpets in octaves.
-            play_line(sc, bar, lead, "brass_horns", DYN["ff"], base=C.E4 - 12, legato=0.9, accent=6)
+            # The full brass statement: trumpets, horns an octave below,
+            # trombones holding the harmony. Nothing else above the bass.
             play_line(sc, bar, lead, "brass_trumpets", DYN["f"], legato=0.88, accent=6)
+            play_line(sc, bar, lead, "brass_horns", DYN["ff"], base=C.E4 - 12, legato=0.9, accent=6)
             pad(sc, bar, bars, "brass_trombones", DYN["mf"], start=(47, 52, 55))
-            pad(sc, bar, bars, "strings_mid", DYN["mf"], start=(55, 59, 64))
             sc.note(b0 + 12, 4, "percussion", 53, DYN["f"])  # cymbal swell into B
         elif name == "B":
             lead, _ = theme_bars(t["b"], bars, mode)
-            # Spark: violins spiccato and the bell; horns hold the harmony.
+            # Spark: violins spiccato with the bell; the sequence is the
+            # machine's motion; tremolo strings hold the harmony.
             play_line(sc, bar, lead, "strings_high_spic", DYN["f"], legato=0.6, spread=0.004)
             play_line(sc, bar, lead, "synth_glass", DYN["mp"], octave=1, legato=0.6)
-            pad(sc, bar, bars, "brass_horns", DYN["mf"], start=(52, 55, 59))
-            pad(sc, bar, bars, "strings_mid_trem", DYN["f"], start=(55, 59, 64))
+            arp(sc, bar, bars, "synth_sequence", DYN["mp"], [0, 3, 2, 4, 1, 3, 2, 3], base=64)
+            pad(sc, bar, bars, "strings_mid_trem", DYN["mf"], start=(55, 59, 64))
             sc.note(b0 + 12, 4, "timpani_roll", 40, DYN["f"])
             sc.ramp("timpani_roll.gain", b0 + 12, b0 + 16, -16, 0)
             sc.note(b0 + 12, 4, "percussion", 54, DYN["ff"])  # the big swell into A'
         elif name == "A2":
             lead, _ = theme_bars(t["a"], bars, mode, recap=True)
-            spark, _ = theme_bars(t["counter"], bars, mode)
-            # All three: Ascent above (trumpets, horns, violins), Spark
-            # between (violas spiccato, the bell), the Wall below.
+            # All three, readable: Ascent above on the brass, the Wall
+            # below (the basses join), and Spark as the bell answering in
+            # the second half of every bar, where Ascent holds.
             play_line(sc, bar, lead, "brass_trumpets", DYN["ff"], legato=0.88, accent=6)
             play_line(sc, bar, lead, "brass_horns", DYN["ff"], base=C.E4 - 12, legato=0.9, accent=6)
-            play_line(sc, bar, lead, "strings_high", DYN["f"], octave=1, legato=0.92)
-            play_line(sc, bar, spark, "strings_mid_spic", DYN["f"], legato=0.6, spread=0.004)
-            play_line(sc, bar, spark, "synth_glass", DYN["mf"], octave=1, legato=0.6)
-            pad(sc, bar, bars, "brass_trombones", DYN["ff"], start=(47, 52, 55))
+            pad(sc, bar, bars, "brass_trombones", DYN["f"], start=(47, 52, 55))
+            wall(sc, bar, bars, "strings_bass_spic", DYN["f"], base=40, legato=0.55, spread=0.004)
+            spark, _ = theme_bars(t["counter"], bars, mode)
+            answers = [C.fit([(None, 8)] + C.cut(b, 8, 16), 16) for b in spark]
+            play_line(sc, bar, answers, "synth_glass", DYN["mf"], octave=1, legato=0.6)
             sc.note(b0, 6, "percussion", 55, DYN["ff"])  # the gong on the arrival
             sc.note(b0, 1, "percussion", 49, DYN["ff"])
         elif name == "break":
@@ -602,11 +614,10 @@ The score's only tutti. Written by audio/compose_studio.py: do not edit.""")
             play_line(sc, bar, [head + [(None, 8)]], "brass_horns", DYN["pp"], base=C.E4 - 12, legato=0.9)
         elif name == "turn":
             # The rebuild: a timpani roll from nothing, the Wall returning
-            # in the bass, the lead walking on to E for the restart.
+            # in the bass, the brass walking on to E for the restart.
             sc.note(b0, 8, "timpani_roll", 40, DYN["ff"])
             sc.ramp("timpani_roll.gain", b0, b0 + 8, -30, 0)
             wall(sc, bar + 1, bars[1:], "synth_bass", DYN["f"], base=28, legato=0.6, spread=0.0)
-            wall(sc, bar + 1, bars[1:], "strings_low_spic", DYN["f"], base=40, legato=0.55, spread=0.004)
             pad(sc, bar, bars, "strings_mid_trem", DYN["mf"], start=(55, 59, 64))
             sc.ramp("strings_mid_trem.gain", b0, b0 + 8, -18, 0)
             play_line(sc, bar + 1, [[(None, 8)] + approach_line(mode, 7)], "brass_trumpets", DYN["f"], legato=0.85)
@@ -672,43 +683,37 @@ Written by audio/compose_studio.py: do not edit.""")
     return sc
 
 
+
 def act_clear():
     sc = Score("act_clear", "Act clear reference", "aeolian", 160, 3, loop=False, tail=3.5, comment="""
 Phase 3 reference cue: the act stinger (an act's last level cleared),
 the fanfare of audio/cues/act_clear.abc re-orchestrated: Spark bounding
 up, Ascent's head over a bass walking up to E, a held E minor. Its
-orchestra previews Act II's (full strings, horns, the sequence), as an
-act clear should preview the next act. Written by audio/compose_studio.py:
-do not edit.""")
+orchestra previews Act II's (strings and horns). Three bars, one idea
+each, few parts, so it reads at a glance over gameplay. Written by
+audio/compose_studio.py: do not edit.""")
     mode = "aeolian"
     spark = [(4, 1), (None, 1), (6, 1), (7, 1), (None, 1), (9, 2), (None, 1),
              (10, 1), (9, 1), (7, 1), (None, 1), (6, 2), (None, 2)]
     head = [(7, 2), (4, 2), (7, 2), (6, 2), (4, 2), (3, 2), (4, 2), (6, 2)]
-    sc.comment("Bar 1: Spark bounding up, violins spiccato and the bell, horns under.")
+    sc.comment("Bar 1: Spark bounding up, violins spiccato and the bell, a pizzicato bass.")
     play_line(sc, 0, [spark], "strings_high_spic", DYN["f"], legato=0.7, spread=0.004)
     play_line(sc, 0, [spark], "synth_glass", DYN["mf"], octave=1, legato=0.6)
-    arp(sc, 0, [[(0, 0, 16)]], "synth_sequence", DYN["mf"], [0, 3, 2, 3], base=64)
-    sc.note(0, 2, "strings_mid", 55, DYN["mf"])
-    sc.note(0, 2, "strings_mid", 59, DYN["mf"])
     for k, deg in enumerate([0, 0, 2, 2]):
         sc.note(k, 0.9, "strings_low_pizz", m(deg, mode, 40), DYN["f"])
-    sc.comment("Bar 2: Ascent's head on the horns, the bass walking A B C D up to E.")
+    sc.comment("Bar 2: Ascent's head on the horns, the celli walking A B C D up to E.")
     play_line(sc, 1, [head], "brass_horns", DYN["f"], base=C.E4 - 12, legato=0.88, accent=6)
-    play_line(sc, 1, [head], "strings_high", DYN["mf"], legato=0.9)
     for k, deg in enumerate([3, 4, 5, 6]):
         sc.note(4 + k, 0.95, "strings_low", m(deg, mode, 40), DYN["f"])
-        sc.note(4 + k, 0.8, "synth_bass", m(deg, mode, 28), DYN["f"])
     sc.note(4, 4, "timpani_roll", 40, DYN["f"])
     sc.ramp("timpani_roll.gain", 4, 8, -18, 0)
-    sc.comment("Bar 3: the held E minor, high E over G and B.")
-    for inst, p in [("strings_high", 76), ("strings_high", 71), ("strings_mid", 67), ("strings_mid", 64),
-                    ("strings_low", 52), ("strings_bass", 40), ("brass_horns", 64), ("brass_horns", 59),
-                    ("brass_horns", 55), ("brass_trombones", 52), ("brass_low", 40), ("synth_pad", 64),
-                    ("synth_pad", 67), ("synth_pad", 71), ("synth_bass", 28)]:
+    sc.comment("Bar 3: the held E minor: high E over G and B in the strings, the horns' triad, the bass.")
+    for inst, p in [("strings_high", 76), ("strings_high", 71), ("strings_mid", 67), ("strings_low", 52),
+                    ("strings_bass", 40), ("brass_horns", 64), ("brass_horns", 59), ("brass_horns", 55),
+                    ("synth_bass", 28)]:
         sc.note(8, 4, inst, p, DYN["f"])
     sc.note(8, 1, "timpani", 40, DYN["ff"])
-    sc.note(8, 4, "percussion", 49, DYN["f"])
-    sc.note(8, 0.5, "synth_glass", 88, DYN["mf"])
+    sc.note(8, 4, "percussion", 49, DYN["mf"])
     return sc
 
 
