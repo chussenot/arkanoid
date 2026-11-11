@@ -73,8 +73,8 @@ impl SoundMode {
     }
 }
 
-/// The mode a level track is written in (`audio/compose.py` names it in
-/// each track; `build.rs` reads it into [`LEVEL_MODES`]). Every one is
+/// The mode a level track is written in (its score names it; `build.rs`
+/// reads it into [`LEVEL_MODES`]). Every one is
 /// over E.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {

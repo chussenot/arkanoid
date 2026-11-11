@@ -1,17 +1,21 @@
 # BRYX audio
 
 The sound of BRYX: what it is, how it is made, and why. Owned by the Audio
-Director / Sound Designer role of the [director review](director-review.md);
-this closes the review's highest-value open item.
+Director / Sound Designer role of the [director review](director-review.md).
+
+This page describes the game as it plays. How the score got here is in
+[`orchestral-score.md`](orchestral-score.md) (the design and its phases),
+[`studio-report.md`](studio-report.md) (the engine, measured) and
+[`reference-cues.md`](reference-cues.md) (the listening gate). The score
+itself has its own guide: [`music.md`](music.md).
 
 ## Identity
 
-BRYX sounds like a sibling of
-[Electric Pulse](https://github.com/chussenot/electric-pulse): the same
-engine, the same dark-synth chip voice (pulse, triangle and noise
-oscillators, ADSR, drive, ladder filter, delay, sidechain). DESIGN.md's "Measured Field"
-carries over to sound: precise, synthetic, warm, never a nostalgic replica
-of any arcade machine. Every note and loop is original.
+A mechanical, futuristic arcade score with orchestral scale: human
+orchestral expression set against machine-precise electronic repetition.
+Dark, rhythmic without being dance music, melodic first. A sampled
+orchestra (strings, brass, timpani, percussion) plays with analog-style
+synths (a saw bass, a sequence, pads, a bell). Every note is original.
 
 Four ideas shape everything below:
 
@@ -21,10 +25,9 @@ Four ideas shape everything below:
    seventh is the playing track's own: D sharp over the harmonic-minor
    tracks, which never play a D. The tenth step is the tonic, two octaves
    up, so a long rally holds the home note. A good rally plays a phrase
-   over the beat. A bad one plays one note. A blast
-   is a ripple, not a chord: each brick it breaks or cracks sounds when
-   the blast's front reaches it (`src/cadence.rs`), the moment its light
-   starts.
+   over the beat. A bad one plays one note. A blast is a ripple, not a
+   chord: each brick it breaks or cracks sounds when the blast's front
+   reaches it (`src/cadence.rs`), the moment its light starts.
 2. **Sound sits where it happens.** Every effect is panned, with equal
    power, to its x on the field, three quarters of the way to each
    speaker. This holds in both renderers.
@@ -33,37 +36,61 @@ Four ideas shape everything below:
    heard.
 4. **Music follows the campaign.** Every campaign level has its own track,
    32 in all plus a menu theme, built from three recurring themes (Ascent,
-   the Wall, Spark) across four acts. The score has its own guide:
-   [`music.md`](music.md). Loaded levelsets play the score in a shuffled
-   order drawn each session. Stingers mark the moments (life lost, level
-   cleared, Game Over, Victory, 1UP) and duck the music beneath them.
+   the Wall, Spark) across four acts, each act with its own orchestra and
+   its own level. Loaded levelsets play the score in a shuffled order
+   drawn each session. Stingers mark the moments (life lost, level
+   cleared, act cleared, Game Over, Victory, 1UP) and duck the music
+   beneath them.
 
 ## How it is built
 
 ```mermaid
 flowchart LR
-  ABC["audio/cues/*.abc<br/>(text, original)"] -->|build.rs| Tool["Electric Pulse engine<br/>(BRYX's fork, C host tool)"]
-  Tool -->|16-bit| PCM["8-bit mu-law<br/>embedded in the binary"]
+  Notes["audio/compose.py<br/>themes, recipes, parts"] --> Arr["audio/compose_studio.py<br/>orchestration"]
+  Arr --> Score["audio/score/*.score<br/>(text, committed)"]
+  Samples["audio/samples/<br/>VSCO 2 CE, CC0"] --> Tool
+  Score -->|build.rs| Tool["the studio<br/>(audio/engine, C host tool)"]
+  Tool -->|music, stingers| QOA["QOA, 48 kHz stereo"]
+  Tool -->|effects| Mu["mu-law, 22 kHz mono"]
   Game[game.rs events + state] --> Dir["director.rs<br/>what, where, which pitch"]
   Dir -->|commands| Mix["mixer.rs<br/>voices, music, duck, limiter"]
-  PCM --> Mix
+  QOA --> Mix
+  Mu --> Mix
   Mix --> Out["output.rs<br/>cpal stream"]
 ```
 
-- **Render at build time, not at runtime.** `build.rs` compiles the
-  engine (`audio/engine/`, BRYX's fork: see its PROVENANCE.md) and
-  `audio/render.c` into a host tool, then renders each cue to 16-bit PCM
-  and encodes it to mu-law in `OUT_DIR`; the binary embeds the bytes. The game runs no C and no
-  `unsafe` FFI, needs no audio files beside it, and every build sounds the
-  same. A sound is an `.abc` text file: edit it, rebuild, hear it.
+- **Render at build time, not at runtime.** `build.rs` compiles the studio
+  (`audio/engine/`: see its PROVENANCE.md) and `audio/render.c` into a host
+  tool and renders every score in `OUT_DIR`; the binary embeds the bytes.
+  The game runs no C and no `unsafe` FFI, needs no audio files beside it,
+  and every build on a machine sounds the same. A sound is a `.score` text
+  file.
+- **The studio** renders a score in 32-bit float stereo at 48 kHz:
+  - a sampler playing a curated, CC0 subset of VSCO 2 Community Edition
+    (`audio/samples/`), with velocity layers and looped sustains;
+  - an analog-style synth voice (band-limited oscillators, stacks, a
+    ladder filter, envelopes, LFOs);
+  - group buses with EQ and keyed compressors, four reverbs and a
+    ping-pong echo on aux returns, a master compressor and limiter.
+
+  Named instruments and the mixing desk live in `audio/instruments/`.
+- **Two storage formats, one per job:**
+  - **Music and stingers: QOA**, 48 kHz stereo, 3.2 bits a sample
+    (`src/audio/qoa.rs`, a port of the reference decoder, checked bit for
+    bit). The mixer decodes one 20-sample slice at a time as a track plays
+    and resamples to the device's rate with a cubic. A loop is encoded
+    with the predictor state its own end leaves, so it wraps without a
+    click.
+  - **Effects: 8-bit mu-law**, mono at 22,050 Hz (`src/audio/mulaw.rs`).
+    They are short, mono by nature (the game pans them) and pitched by
+    playback rate, which needs random access QOA does not give.
 - **One renderer, many notes.** Pitch is playback rate, so one rendered
   brick note plays the whole pentatonic scale and one paddle knock every
   speed.
-- **Playback through `cpal`**, the backend Electric Pulse chose for direct
-  playback (its ADR-0001). It is a device layer only; the mixer is BRYX's
-  own, in `src/audio/mixer.rs`:
+- **Playback through `cpal`.** It is a device layer only; the mixer is
+  BRYX's own, in `src/audio/mixer.rs`:
   - up to 32 voices, the oldest stolen beyond that;
-  - music crossfades over 1.2 s;
+  - music crossfades over 1.2 s, at equal power;
   - stingers duck the music to 25%;
   - a `tanh` soft limiter, so a burst of breaks never hard-clips.
 - **One thing at a time.** Sounds that mark a moment never play over
@@ -79,150 +106,105 @@ flowchart LR
     stinger in 80 ms.
   - Game Over and Victory duck the run's music as it fades out under
     them.
-- **The game thread never blocks on audio.** Commands cross a channel;
-  the callback drains it and owns the mixer.
 - **Presentation only.** The director reads each tick's events before
   `main.rs` drains them, plus the game's state, exactly as the renderers
   do. Nothing in `src/audio/` can change what happens; the pinned replay
   hash is untouched.
 
-## The engine fork
+## Real time
 
-BRYX began with Electric Pulse's engine unmodified. Writing the score
-exposed three rendering problems that no composition could fix, so BRYX
-forked the engine (`audio/engine/PROVENANCE.md` lists every change):
-- **Voices rendered at 3–5 bits.** The engine synthesized each voice in
-  8-bit output steps and truncated every envelope and effect multiply.
-  Once mastered, the pad swung ±3 steps, and the arpeggio and counter ±4.
-  A quiet voice also lost level to the rounding: one at amplitude 10
-  rendered 4.9 dB below what was written. The fork mixes at 16-bit scale
-  and quantizes once. Measured on every cue, a file that uses no new
-  directive renders the same at high level and correctly at low level.
-- **No held notes.** Every sixteenth-note step struck a new note, so `E16`
-  was sixteen attacks. Pads never finished their attack, vibrato
-  restarted every step, and long notes were never long. With `%%hold on`
-  (every track and stinger), a written note sounds once.
-- **Buses that could not filter, and a pump on everything.** Every effect
-  bus added a processed copy beside the dry signal, so a lowpass could not
-  darken anything. The arpeggio's sidechain ducked the whole mix on every
-  beat, drums included. The fork adds insert buses and a sidechain keyed
-  by the kick that ducks only its own bus. The score uses both: the
-  machine tracks' ladder filter is an insert, and the arpeggio pumps to
-  the kick.
+The mixer runs inside the audio callback, and two properties are tested,
+not assumed (`src/audio/mixer.rs`):
 
-The fork also lets ABC reach instrument features the mixer always had:
-- stacked, detuned oscillators;
-- pulse-width sweeps;
-- vibrato rate and a vibrato that fades in;
-- accent gain.
+- **Nothing on the callback's path touches the heap.** A counting
+  allocator in test builds shows that a busy stretch of play (music
+  starting, crossfading and waiting on a stinger, more bricks than there
+  are voices, a cut, the sound modes) makes no allocator call. Voices and
+  streams are stored inline in vectors sized once.
+- **The cost is small and fixed per frame.** With all 32 voices busy and
+  two tracks crossfading, a 10 ms buffer takes a median of 0.11 ms in a
+  release build: about 1% of real time
+  (`cargo test --release -- --ignored callback_cost --nocapture`).
 
-Rebalancing kept every voice near its level in the first version of the
-score, measured soloed track by track; most land within about 1.5 dB, with
-a few track-specific outliers (Fortress's hat, the soft pad). The stingers
-hold their notes and keep their loudness within about 2 dB.
-
-**Phase 2: expression.** The score now uses the fork's second round:
-- **Dynamics.** Each section has a level: the recap is the loudest, the
-  break the softest, and the bar before the recap swells beat by beat.
-  The hats' off-beats sit above their sixteenths, the kick leans on each
-  downbeat, and ghost snares sit under the recap. Melodic voices accent
-  only where marked: the lead's phrase starts and peaks.
-- **Drums.**
-  - A pitch-swept triangle kick: two octaves down to E2 in 55 ms.
-  - A clocked-noise snare that drops an octave as it sounds.
-  - A metallic hat from the short LFSR.
-- **Triads.** Pads hold whole voice-led triads. The pad amplitudes came
-  down about 4.6 dB, so three notes sit where one did.
-- **Automation.**
-  - The machine tracks' ladder filter opens across B, closes in the
-    break and reopens into the recap.
-  - The melody's echo swells in the break and is thrown at the turn.
-  - The pulse leads narrow toward the climax.
-
-Rebalanced against the phase 1 score, voice by voice, every voice lands
-within about 1.5 dB. Each track's quietest bar now sits a median 13.1 dB
-under its loudest, against 9.8 before. Every track still masters to
--19.0 dBFS, and the in-game mix measures as before. Nine probe tests in
-`src/audio/probes.rs` check the fork's features on what it renders.
-
-**Phase 3: room, tempo and the seam.**
-- **Seamless loops.** Every track was rendered once, from silence, so at
-  each loop restart its echoes, reverb and release tails were cut and the
-  first bar played dry. Measured against the same music played
-  continuously, the seam was only 10–19 dB under the signal. `%%loop`
-  renders twice and keeps the second pass, and the seam now matches
-  continuous playback exactly (bit for bit on Warm-up and Bridges, 79 dB
-  under on Fortress).
-- **Band-limited oscillators.** PolyBLEP on every square and pulse in the
-  score cuts the inharmonic aliasing of high notes by 25–42 dB.
-- **Reverb.** A small room on the melody bus: light on the clean tracks,
-  larger on the space tracks, opening in the break; the machine tracks
-  stay dry.
-- **Tempo.** Funnel and Rocket push forward through B and settle back in
-  the break. Game Over slows into its last E; Victory broadens into its
-  major chord.
-- **Toms.** A ninth voice, past the old limit of eight: the rolls into
-  the recap end on toms, high to low.
-
-Rebalanced against phase 2, every voice lands within about 2 dB, except
-Vault's lead (+3 dB, mostly reverb on a busy line).
-
-**The sound pass.** Every effect and stinger was rewritten with the
-fork's features: pitch sweeps instead of glides, clocked and metal noise
-instead of white, dynamics, chords, reverb and band-limiting where they
-serve the sound. The laser keeps its hard edges on purpose: the grit is
-the zap. Each cue keeps its role, its base pitch (brick and paddle are
-still pitched by the director) and its loudness:
-- Over the old sound's length, every cue is within 0.6 dB of before
-  except Victory, at -0.8 dB (held by its 0.9 peak cap).
-- No cue peaks above 0.9.
-- The reverb tails lengthen Warp (to 1.0 s) and Explosion (to 0.56 s).
-
-**Storage: mu-law.** Linear 8-bit storage would throw the 16-bit render
-away again: in the score's quietest bars (median -28 dBFS) it leaves the
-signal 25 dB above its noise. G.711 mu-law spends the same byte
-logarithmically, so those bars keep 37 dB. The embedded audio stays about
-22 MB. `src/audio/mulaw.rs` is the one codec: `build.rs` includes it to
-encode, and the mixer decodes it through a 256-entry table.
+The game thread never blocks on audio: commands cross a channel, and the
+callback drains it and owns the mixer. Draining can free the channel's
+blocks on the audio thread; that is the one heap call left near the
+callback, and it predates this score.
 
 ## Cues
 
+Effects are built from the score's own parts (`audio/instruments/sfx.inc`):
+the orchestra's plucks, taps and short notes where they read, the synth
+for knocks, zaps and air.
+
 | Cue | When | Sound |
 |---|---|---|
-| `brick` | a brick breaks | a pulse pop that snaps down onto its note, with a glint of metal noise; pitched up the scale by the rally |
-| `armor` | an armored brick cracks | two metallic tinks, the second softer, over ringing metal noise |
-| `paddle` | ball meets paddle | a triangle knock that drops a fourth onto its note, and a clocked-noise click; pitched by speed |
-| `launch` | serve | one note whipping up two octaves, over a rising breath of noise |
-| `capsule` | any helpful capsule | a quick rising arpeggio that swells into its top, with an echo |
-| `tiny` | the Tiny capsule | a falling arpeggio that fades as it shrinks, its pulse width wobbling sour |
-| `oneup` | the Player capsule | a small fanfare landing on a two-note chord, in a little room; ducks the music |
+| `brick` | a brick breaks | a pop that snaps down onto E5 with a pizzicato violin in it and a glint of metal; pitched up the scale by the rally |
+| `armor` | an armored brick cracks | two tinks, the second softer, on an anvil and a ring of metal |
+| `paddle` | ball meets paddle | a knock dropping onto E3 with a pizzicato cello and a click; pitched by speed |
+| `launch` | serve | a whip up two octaves over a rising breath, on a low pizzicato and a timpani tap |
+| `capsule` | any helpful capsule | a quick rising arpeggio, spiccato with a bell an octave up |
+| `tiny` | the Tiny capsule | a sour falling arpeggio that fades as it shrinks |
+| `oneup` | the Player capsule | a small trumpet fanfare up the triad, in a little room; ducks the music |
 | `laser`, `superlaser` | a gun fires | a note falling two octaves in 60 ms; a square falling three, with a buzz and a falling hiss |
-| `asteroid` | an asteroid arrives | a low clocked-noise rumble swelling in over a wavering drone |
-| `explosion` | an asteroid blows up | a noise burst whose clock falls three octaves (crack, then rumble), over a thump dropping a fifth, in a little room |
-| `ball_lost` | one ball of a multiball drops | a descending figure that fades as it falls |
-| `warp` | leaving through the Break gate | one note rising three octaves over a rising rush of noise, into an echoing room |
-| `select`, `pause` | start, continue, resume; pause | two-note blips, up (the second leaning in) and down (the second stepping back) |
-| `steel` | a ball turned back by an indestructible brick (once a tick) | a 40 ms triangle knock dropping an octave onto B, with a dry glint of metal noise; quiet, as walls of them turn balls back all the time |
-| `gate` | the Break capsule opens the gate | a grinding pulse climbing E–B–E–B into an open fifth that rings out, over a low rumble; panned to the right wall |
+| `asteroid` | an asteroid arrives | a rumble swelling in over a wavering drone and a soft timpani roll |
+| `explosion` | an asteroid blows up | a crack falling into a rumble, over a bass drum and timpani |
+| `ball_lost` | one ball of a multiball drops | a falling pizzicato figure that fades as it falls |
+| `warp` | leaving through the Break gate | a note rising three octaves over rushing air and a swelling tremolo |
+| `select`, `pause` | start, continue, resume; pause | two plucks, up (the second leaning in) and down (the second stepping back) |
+| `steel` | a ball turned back by an indestructible brick (once a tick) | a short knock dropping an octave onto B with a dry clack; quiet, as walls of them turn balls back all the time |
+| `gate` | the Break capsule opens the gate | a grinding climb into an open fifth on trumpet and violins; panned to the right wall |
 | `expiring` | a timed power has 2 s left | two soft ticks falling a fifth, B to E; on the ball for a ball power, on the paddle for the rest. Seen as its hue pulsing at 2 Hz on that object (a steady fade with reduced motion) |
 | `life_lost`, `level_clear`, `game_over`, `victory` | stingers | the score's themes in miniature ([`music.md`](music.md#stingers)) |
-| `act_clear` | an act's last level cleared (8, 16, 24) | the level fanfare's climb, then Ascent's head over a bass walking up to E, landing on a held E minor; three bars in `level_clear`'s meter, so the level-end sweep keeps its beat |
+| `act_clear` | an act's last level cleared (8, 16, 24) | Spark bounding up, Ascent's head over a bass walking up to E, a held E minor; three bars at `level_clear`'s tempo, so the level-end sweep keeps its beat |
 | `music_menu`, `music_01`–`32` | loops | the score: see [`music.md`](music.md) |
+
+Contracts the game depends on, each checked by a test or a measurement:
+- **Pitch.** The brick sounds E5 and the paddle E3: the rally pitches them
+  by playback rate.
+- **Length.** `level_clear` (3.15 s), `life_lost` (1.85 s) and `act_clear`
+  (4.8 s) end within 0.3 s of the slots the game times.
+- **Meter.** The level-end sweep and the warp read their meter from the
+  scores (`build.rs`, `cue_meters`).
+- **Mode.** The rally's scale reads each track's mode from its score.
 
 ## Mix
 
 | | Level |
 |---|---|
 | Music | 0.52 under the effects; 0.3 of that while paused; 25% under a stinger |
-| Bricks, paddle | 0.6–0.65 |
+| Bricks | 1.1 (a pluck is spikier than the chip pop it replaced: at 0.6 it measured 5.6 dB quieter) |
+| Paddle | 0.65 |
 | Other effects | 0.3–0.7, by importance |
 | Master | 1.5 into the soft limiter |
 
-Measured on 40 s autopilot soundtracks, rendered offline through the same
-director and mixer: about -19.5 dBFS RMS with peaks near -3 dBFS, the same
-on levels 1 and 22, and no sample at full scale. The engine fork moved
-these by about half a decibel. The score itself is mastered to -19.0 dBFS,
-track for track ([`music.md`](music.md)).
+### Balance
+
+**The score has an arc; the old one was flat.** The chip score was mastered
+to −19.0 dBFS on every track. The acts now average −24.5, −20.7, −20.3 and
+−18.2 dBFS: Act I is restrained and Act IV is the only tutti.
+
+**Gameplay sounds come first.** What matters is the band they live in,
+300 Hz to 3 kHz, which the electronic bus leaves to the orchestra and the
+game. Each effect was measured there over the music's loud moments (the
+90th percentile of 30 ms windows of an act's loudest track), old game
+against new:
+
+| | Acts I–III | Act IV |
+|---|---|---|
+| Music in that band, against the old score | within 2 dB | 3.7 dB more present |
+| Brick over the music | +13 to +15 dB | +10.8 dB (was +13.6) |
+| Effects' margins, median change | under 1 dB | −2.6 dB |
+
+- The mixer's music gain is unchanged: in that band the new score averages
+  within 1 dB of the old.
+- Act IV pays for its brass. Its level was brought down 1.5 dB for the
+  effects' sake and still sits 2 dB above Act III.
+- Every effect keeps energy in that band, so none depends on a speaker's
+  low end. The asteroid's rumble is the weakest: 7 dB less margin than the
+  chip rumble had.
+- Effects hold the loudness of the ones they replaced: 16 of 18 within
+  1.5 dB over their loudest 30 ms.
 
 ## Player control and accessibility
 
@@ -238,20 +220,44 @@ track for track ([`music.md`](music.md)).
 - The default `audio` feature needs a C compiler (any `cc` finds), and on
   Linux the ALSA headers (`libasound2-dev`); CI installs them.
 - `--no-default-features` builds a silent game with neither.
+- A cold build renders the score in about 70 s on four cores, in parallel.
+  Renders are cached in `OUT_DIR` under a hash of each score and of
+  everything a render reads, so only what changed renders again.
+- The release binary is 58 MB (40 MB with the chip score).
+
+| Embedded audio | Size |
+|---|---|
+| 33 music loops (27–42 s each), QOA | 38 MB |
+| 5 stingers, QOA | 1.0 MB |
+| 18 effects, mu-law | 0.1 MB |
+
+## Changing a sound
+
+- **A track's notes** (themes, harmony, form, tempo): `audio/compose.py`.
+- **Who plays them** (orchestration, effects, stingers):
+  `audio/compose_studio.py`, and the instruments in `audio/instruments/`.
+- Then `python3 audio/compose_studio.py` rewrites `audio/score/`. It runs
+  the score lint first and refuses a note outside a track's mode or a
+  texture too dense to hear. Commit the scores; `cargo build` renders
+  them.
+- To hear one score: `bryx-cue-render x.score x.f32` (the tool is in the
+  build's `OUT_DIR`; `.qoa` and `.s16` work too).
+- **The samples**: `audio/samples/curate.py` rebuilds them from a VSCO 2
+  CE checkout (`audio/samples/README.md`).
 
 ## Open
 
-- **Spatial depth.** Sound is panned left to right only. In the 3D
+- **The asteroid's rumble** has less mid-range than the one it replaced.
+- **No true legato.** The sample set has no legato transitions, so themes
+  are carried by articulated voices (`reference-cues.md`).
+- **Spatial depth.** Effects are panned left to right only. In the 3D
   renderer, a little low-pass for the far side of the field would add
   depth.
-- **Longer forms.** Each level loops a 16-bar track of 27–36 s. A longer
-  form, or a B-side per level, would cost about 0.7 MB of binary per
-  track.
-- **Tuplets.** The engine's grid is the sixteenth note, so a triplet
-  would need a finer grid for the whole song (`audio/engine/PROVENANCE.md`).
-- **Longer forms.** The engine now reaches 256 bars a track. What a longer
-  form costs is binary size, about 0.7 MB per 16 bars per track.
-- **A listening pass.** Every level and loudness figure here was measured
-  in a headless environment with no speakers. Please play it on real
-  speakers and headphones; the mix constants live in `mixer.rs` and
-  `director.rs`.
+- **Longer forms.** Each level loops a 16-bar track. A longer form costs
+  about 38 kB of binary per second of music.
+- **Across machines.** A render is byte-identical on one machine; across
+  C libraries the last bits of `sinf` or `expf` may differ. Renders are
+  build outputs, and no hash depends on them.
+- **A listening pass on real speakers.** The balance figures above are
+  measurements; the mix constants live in `mixer.rs` and `director.rs`,
+  the acts' levels in `compose_studio.py` (`ACT_TRIM`).

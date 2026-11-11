@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn the_fanfares_meters_come_from_their_cues() {
-        // level_clear.abc: M:4/4, Q:1/4=160. warp.abc: M:4/4, Q:1/4=240.
+        // level_clear.score: tempo 160, in four. sfx/warp.score: `# meter 1 4`.
         assert!((LEVEL_CLEAR.bar_secs() - 1.5).abs() < 1e-6);
         assert!((LEVEL_CLEAR.beat_secs() - 0.375).abs() < 1e-6);
         assert!((WARP.bar_secs() - 1.0).abs() < 1e-6);

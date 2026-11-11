@@ -1,10 +1,17 @@
 # BRYX score
 
-32 level tracks and a menu theme, written as an 80s chiptune score for the
-Electric Pulse engine. This page is the listener's guide; the music itself
-lives as decisions in [`audio/compose.py`](../../audio/compose.py), which
-writes the `audio/cues/music_*.abc` files the build renders. The sound
-design around it is in [`audio.md`](audio.md).
+32 level tracks and a menu theme: a cinematic electronic-orchestral score,
+a sampled orchestra against analog-style synths. This page is the
+listener's guide. The music lives as decisions in two files:
+- [`audio/compose.py`](../../audio/compose.py): the notes. Themes, harmony,
+  forms, and one recipe per level.
+- [`audio/compose_studio.py`](../../audio/compose_studio.py): who plays
+  them. It orchestrates those notes act by act and writes the
+  `audio/score/*.score` files the build renders.
+
+The sound design around it is in [`audio.md`](audio.md). The score began as
+a chiptune score on the same notes; why and how it became this one is in
+[`orchestral-score.md`](orchestral-score.md).
 
 ## Three themes
 
@@ -109,12 +116,21 @@ Contrast comes from harmony too:
 ## The four acts
 
 The score follows the campaign's four acts:
-- **I · Foundations**: Spark leads, 112–124 BPM, light textures.
+- **I · Foundations**: Spark leads, 112–124 BPM. Restrained electronic
+  tension: a drone, a soft pulse, a bell arpeggio, pizzicato and tremolo
+  strings, one soft horn. The quietest act.
 - **II · Structures**: Ascent takes over, 108–128 BPM, and the Wall first
-  appears.
-- **III · Machines**: the Wall leads, with buzzing square waves and a
-  resonant ladder filter, 124–134 BPM.
-- **IV · Vault**: all three themes together, up to 144 BPM.
+  appears. Evolving orchestral movement: horns and violins on the themes,
+  a moving synth bass with spiccato celli, the sequence.
+- **III · Machines**: the Wall leads, 124–134 BPM. Mechanical precision:
+  the saw bass alone on the Wall, celli chopping off-beats against it,
+  bright spiccato on top, metal ticks, a pad pumped by the pulse, low
+  brass only to close a phrase.
+- **IV · Vault**: all three themes together, up to 144 BPM. Scale: trumpets
+  and horns on Ascent, timpani, a gong on the recap. The only act with a
+  tutti, and the loudest.
+
+The acts average −24.5, −20.7, −20.3 and −18.2 dBFS: the campaign rises.
 
 Every track is 16 bars, so each costs the same in the binary and loops
 cleanly, but each act shapes those bars its own way:
@@ -135,10 +151,10 @@ cleanly, but each act shapes those bars its own way:
 | break | the floor drops out: no drums, one bass thump a bar, the pad and the theme's head in long notes; then the bass rebuilds under a hat |
 | turn | a breath (no kick, bass or arpeggio) with the theme's head, then everything back, and the lead walks on to E as the loop restarts |
 
-Measured on the renders, a track's quietest bar now sits 11–16 dB under
-its loudest (13.1 dB at the median). The first version of the score sat
-at 1.6–4 dB, which made every track one flat level. Forms and
-subtraction brought it to 9.7 dB, and dynamics did the rest.
+Measured on the renders, a track's quietest two seconds sit 6–18 dB under
+its loudest: least in Act I, which stays small, and most in Act II's
+breaks. The forms, the dynamics per section and the orchestration all
+contribute.
 
 ### Counter-lines
 
@@ -204,14 +220,15 @@ Tracks run 27–36 seconds; the menu runs 42.
 
 ## Stingers
 
-The four moments quote the themes:
+The five moments quote the themes:
 
-| Stinger | What it quotes |
-|---|---|
-| Level clear | Spark bounding up, then the E minor triad climbing, swelling, to a held high E over a G and B |
-| Life lost | Ascent's opening leaps turned upside down and falling, fading as they fall; it stops on B, unresolved: keep going |
-| Game Over | Ascent backwards and slowed over a Phrygian F in the bass, a pad of thirds above, sinking to a low E as the tempo slows, in a large room |
-| Victory | Ascent in harmonic minor with Spark answering above it over a swept kick, swelling and broadening into a full E **major** triad: the score's one major chord, saved for winning |
+| Stinger | What it quotes | Who plays it |
+|---|---|---|
+| Level clear | Spark bounding up, then the E minor triad climbing to a held high E over a G and B | spiccato violins and the bell, then strings and horns; light, as it is heard 32 times a run |
+| Act clear | Spark bounding up, Ascent's head over a bass walking up to E, a held E minor | spiccato and the bell, then horns over celli, then strings, horns and bass |
+| Life lost | Ascent's opening leaps turned upside down and falling, fading as they fall; it stops on B, unresolved: keep going | horns over celli |
+| Game Over | Ascent backwards and slowed over a Phrygian F in the bass, thirds above, sinking to a low E as the tempo slows | a horn, the strings' thirds, low strings and tuba, in the long hall |
+| Victory | Ascent in harmonic minor with Spark answering above it over the pulse, broadening into a full E **major** chord: the score's one major chord, saved for winning | trumpets and horns, spiccato and the bell, the saw bass, then the full orchestra |
 
 ## Loaded levelsets
 
@@ -220,74 +237,74 @@ in a shuffled order drawn once per session (`director::shuffled_playlist`),
 so every track sounds before any repeats, and each session plays a
 different order.
 
-## Production
+## Orchestration
 
-- **Held notes.** Every track sets `%%hold on`, so a written note sounds
-  once for its length. Pads swell, augmented themes really hold, and
-  vibrato runs across a whole note.
+How `compose_studio.py` turns the notes into a track. The rules came out
+of the reference cues and their listening ([`reference-cues.md`](reference-cues.md)).
+
+- **Tracks 01, 09, 22, 32 and the menu** are the reference cues, written
+  by hand. The other 28 take `compose.py`'s parts (lead, counter, bass,
+  arpeggio, pad, drums, with a dynamic for every step) and orchestrate
+  them by act.
+- **Melody goes to articulated voices.** The samples have no legato
+  transitions, so a theme is carried by tongued brass, pizzicato, spiccato
+  or the bell, a level above its accompaniment. Sustained strings carry
+  harmony. A theme in long notes (the augmented variants) gets a soft
+  synth lead under it for the connection.
+- **One owner per register, about four jobs at once**: melody, bass,
+  harmony, motion. The composer refuses a track that averages more than
+  seven parts or sounds more than twelve at once.
+- **Who plays what** depends on the act and on the theme's family:
+
+  | | Spark | Ascent | The Wall |
+  |---|---|---|---|
+  | Act I | pizzicato violins, the bell above | horns, softly | spiccato violas |
+  | Act II | violins, detached, the bell above | horns, violins an octave up | spiccato violas and violins |
+  | Act III | spiccato violins, the bell | horns in their middle | spiccato violas and violins |
+  | Act IV | spiccato violins, the bell | trumpets, horns an octave below | spiccato violas and violins |
+
+- **The bass**: pizzicato celli in Act I; the saw bass from Act II, with
+  spiccato celli on its beats in Acts II and IV, and celli chopping
+  off-beats against it in Act III.
+- **The arpeggio** is the machine: the synth sequence, or the bell on the
+  glass tracks; thinned to eighths in Act I.
+- **The pad**: tremolo strings (I), sustained strings (II), a synth pad
+  pumped by the pulse (III), tremolo strings and, in the recap, trombones
+  (IV).
+- **Drums**: the kick is the electronic pulse. Snare and hat become metal
+  ticks, from Act III only. The rolls into the recap are timpani.
+  Timpani mark the phrases from Act III; a cymbal swells into the recap
+  from Act II; Act IV's recap lands on a gong.
 - **Dynamics** (`SECTION_LEVEL` in `compose.py`): intro mp, A and B mf,
-  break p, the recap f, and a swell into the recap beat by beat. Hats
-  accent their off-beats, the kick its downbeats, and the recap adds a
-  ghost snare. The lead accents each phrase's first note and its peak.
-- **Drums**: a pitch-swept triangle kick, a clocked-noise snare that
-  drops an octave as it sounds, and a metallic hat.
-- **Pads** hold whole triads, each chord voiced to move as little as it can.
-- **Automation** (`ramps()`): the machine tracks' filter opens across B,
-  closes in the break and reopens into the recap. The echo swells in the
-  break and is thrown at the turn. The pulse leads narrow toward the
-  climax. Every ramp returns its parameter before the loop ends.
-- **Palettes** (`compose.py`):
-  - *pulse*: classic duty-cycle leads, the lead's pulse width sweeping
-    (`pwm`);
-  - *glass*: thin 8% pulses, a gliding triangle lead, and a chorused pad
-    (two detuned oscillators);
-  - *buzz*: square waves through the drive, the bass and pad through the
-    ladder filter as an insert, so the filter really darkens them;
-  - *soft*: wide pulses with slow attacks, the lead's pulse width
-    sweeping slowly.
-- **Vibrato fades in** on every lead (`vibrato_delay`), so short notes
-  stay clean and long ones sing.
-- **Seamless loops** (`%%loop`): each track renders twice and keeps the
-  second pass, so its first bar hears the echoes and tails of its last.
-- **Band-limited** squares and pulses (`%%bandlimit`): high notes stay clean.
-- **Reverb** on the melody bus: a small room on the clean tracks, a larger
-  one on the space tracks that opens in the break. The machine tracks stay
-  dry.
-- **Toms**: the rolls into the recap end on toms, high to low.
-- **Tempo**: Funnel, Rocket and Vault (`push`) accelerate through B and
-  settle back across the break.
-- **Per-track touches** (recipe keys `ramps()` reads), where a track's
-  idea calls for them:
-  - Heart sighs, slowing in each loop's last bar.
-  - Hourglass's tempo flows forward through A and back through B, and
-    Chevron's tempo makes a V.
-  - Crown broadens into its last cadence.
-  - Two rooms moves B into a bigger room, and Pillars is the one machine
-    track with a room.
-  - Bridges, Rain, Ring and Wave get rooms of their own; Arrow and
-    Minefield stay nearly dry.
-  - Fortress, Armored frame and Split wall squeal (the ladder's resonance
-    rising across B).
+  break p, the recap f, and a swell into the recap beat by beat; each act
+  shifts and caps them (`ACT_SHIFT`, `ACT_CEILING`), and sets its overall
+  level (`ACT_TRIM`). A swell is orchestration (sections entering, tremolo,
+  a filter opening, a roll), with a gain ramp under it, never instead.
+- **The orchestra breathes; the machine does not.** Orchestral notes get
+  a few milliseconds of deterministic timing and velocity spread; synths
+  stay on the grid.
+- **Per-track touches** (recipe keys), where a track's idea calls for them:
+  - Heart sighs, slowing in each loop's last bar. Hourglass's tempo flows
+    forward through A and back through B, and Chevron's makes a V. Crown
+    broadens into its last cadence. Funnel, Rocket and Vault accelerate
+    through B and settle back.
+  - Two rooms moves B into the long hall. Bridges, Rain, Ring, Wave,
+    Heart and Pillars sit deeper in the hall; Arrow and Minefield
+    stay nearly dry.
+  - The machine tracks' bass filter opens across B.
   - Scatter and Baffles throw an echo off the end of every B bar.
-  - Vault plays its recap at ff.
-- **FX buses**:
-  - bus 0: drums and bass;
-  - bus 1: a dotted-eighth echo on the melody;
-  - bus 2: a sidechain pump on the arpeggio, keyed by the kick;
-  - bus 3: the Moog-style ladder filter for the machine tracks.
-- **Mastering.** `python3 audio/compose.py --render <tool>` sets each
-  track's output gain (`%%master`) so it peaks at or under 112/128 of full
-  scale with no clipped sample, at no more than -19 dBFS RMS. The gain is
-  applied after the mix, so one probe render gives it exactly. Every track
-  lands at -19.0 dBFS, so a level change never jumps in volume. A test
-  checks that no track reaches full scale.
-- **Size.** The 33 tracks are about 17 minutes of 22,050 Hz audio, one
-  byte a sample as mu-law, about 22 MB of the binary. They are read in
-  place by the mixer, never decoded into memory.
+- **In the recipe table below**, "palette" and "drums" are `compose.py`'s
+  names for a track's texture, written for the chip score. They now steer
+  the arranger: the palette picks the arpeggio's voice, the drum style
+  its pattern.
+- **Seamless loops.** Each track renders with its tails wrapped (`loop
+  on`) and is stored so it decodes cleanly across the wrap.
+- **Size.** The 33 tracks are about 17 minutes of 48 kHz stereo, 38 MB
+  as QOA. They are decoded as they play, never into memory.
 
 ## The score lint
 
-`python3 audio/compose.py --check` prints, for every track:
+`python3 audio/compose.py` prints, for every track:
 - how many of the lead's strong beats miss the chord, and how many notes
   the harmonic fit moved;
 - for the counter: its attacks, how many it shares with the lead, how
@@ -302,7 +319,9 @@ A track fails in five cases:
 - the counter sits above the lead on more than a quarter of its attacks;
 - there are more than two parallel fifths or octaves.
 
-`--render` runs the lint first and writes nothing if a track fails.
+`compose_studio.py` runs this lint first and writes nothing if a track
+fails. It then checks each orchestrated track: every pitched note in the
+track's mode (the rally plays over it), and a texture that can be heard.
 
 ## How the score was reviewed
 
@@ -324,13 +343,12 @@ reference; none of it is vendored.
 
 ## Changing the music
 
-1. Edit a recipe, a theme or a palette in `audio/compose.py`.
-2. Build the renderer:
-   `cc -std=c99 -O2 -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600 -Iaudio/engine
-   audio/render.c audio/engine/*.c -lm -o /tmp/bryx-render`.
-3. Run `python3 audio/compose.py --check` until the lint passes, then
-   `python3 audio/compose.py --render /tmp/bryx-render`.
-4. Rebuild the game.
+1. Edit a recipe or a theme in `audio/compose.py`, or the orchestration in
+   `audio/compose_studio.py`.
+2. Run `python3 audio/compose_studio.py`. It lints, then rewrites
+   `audio/score/`.
+3. Rebuild the game: `build.rs` renders what changed.
 
-The ABC files can also be edited by hand, but `compose.py` will overwrite
-them on its next run.
+The scores can be edited by hand, but `compose_studio.py` will overwrite
+them on its next run. `python3 audio/compose_studio.py --reference`
+rewrites the Phase 3 reference cues in `audio/reference/cues/`.

@@ -1,5 +1,8 @@
 # BRYX studio: Phase 2 technical report
 
+> A record of Phase 2, as measured then. The score has since moved to the
+> studio; [`audio.md`](audio.md) describes the game as it plays.
+
 Phase 2 of the orchestral score (`orchestral-score.md`) built the sound
 engine the score will be written for. This report says what the engine
 can do, what was measured, what is not yet known, and what the listening

@@ -1,9 +1,54 @@
-# The Electric Pulse audio engine: BRYX's fork
+# BRYX's audio engine: the studio, and the Electric Pulse fork
+
+Two renderers live here, built into one host tool by `build.rs`:
+
+- **The studio** (`studio*.c`, `studio*.h`): BRYX's own float stereo
+  renderer. Everything the game plays is rendered by it. It is described
+  first, below.
+- **The Electric Pulse fork** (every other file): the ABC engine BRYX's
+  first, chip score was written for. No game sound uses it any more; it
+  is kept, with its probes, because its changes were written to be
+  offered back upstream.
+
+## The studio
+
+Written for BRYX (docs/design/orchestral-score.md); nothing in it comes
+from Electric Pulse or from any other project's code.
+
+| File | Role |
+|---|---|
+| `studio.h` | The contract every module shares: helpers, envelopes, patches, effect parameters, `st_render_score` |
+| `studio.c` | The `.score` format, the scheduler, the mixer (instruments, buses, aux returns, master), the loop seam |
+| `studio_common.c` | Seeded RNG, dB and MIDI helpers, the exponential ADSR, patch defaults |
+| `studio_synth.[ch]` | The analog-style voice: band-limited oscillators, stacks, SVF and ladder filters, envelopes, LFOs, glide |
+| `studio_sampler.[ch]` | The SFZ-subset loader and the sampler voice: zones, velocity layers, loops, stacks |
+| `studio_fx.[ch]` | FDN reverb, ping-pong delay, biquads, compressor, lookahead limiter |
+| `tests/test_*.c` | Each module's own checks, run by hand: `cc -std=c99 -O2 -Wall -Wextra -Werror -o t tests/test_synth.c studio_synth.c studio_common.c -lm && ./t` (from this directory) |
+
+What it reads and what it needs:
+- **Scores**: `audio/score/` (written by `audio/compose_studio.py`), with
+  the instrument libraries in `audio/instruments/`.
+- **Samples**: `audio/samples/`, a curated subset of VSCO 2 Community
+  Edition, CC0 1.0 (`audio/samples/README.md`, `ATTRIBUTION`).
+- **Two vendored single-header libraries**, build-time only
+  (`audio/vendor/README.md`): `dr_flac.h` (public domain or MIT-0) reads
+  the samples; `qoa.h` (MIT) encodes the music.
+
+Its rules: deterministic (randomness only from the seeded `st_rand`),
+build-time only, no allocation per sample. `docs/design/studio-report.md`
+records what each module measured; `audio/probes/studio_*.score` and
+`src/audio/studio_probes.rs` check what it renders, in CI.
+
+Changing it: edit, run the module's test and `cargo test`, re-render the
+score and listen. A change moves every render's cache key (`build.rs`).
+
+## The Electric Pulse fork
 
 These files were copied from
 [chussenot/electric-pulse](https://github.com/chussenot/electric-pulse),
 `src/`, at commit `06c79fe5ef9e206e64d09e86fa94f2146ae898ee`. It is the same
-author's engine, brought in so BRYX sounds like a sibling of Electric Pulse.
+author's engine, brought in so BRYX's first score sounded like a sibling of
+Electric Pulse.
 
 Since then BRYX has **forked** it. The changes below fix how the engine
 renders, and add what the score needed. Every change is marked `BRYX` in
@@ -27,7 +72,7 @@ Electric Pulse has no license file at that commit. Its owner, who also owns
 BRYX, asked for the engine to be reused, and then for it to be changed
 directly in BRYX.
 
-## What the fork changes
+### What the fork changes
 
 **Precision.** The original synthesized every voice in 8-bit output steps:
 - each voice's amplitude was its full swing (a pad at ±3 steps);
@@ -67,7 +112,7 @@ them; now `%%instrument` and `V:` set them:
 | `vibrato_delay=<ms>` | Vibrato fades in over this long after the note starts |
 | `accent=<percent>` | Gain added on accented steps (default 20) |
 
-### Phase 2: expression
+#### Phase 2: expression
 
 **Dynamics.**
 
@@ -106,7 +151,7 @@ have read the `f` of `!f!` as the note F.
 Every file that uses none of these renders byte-for-byte as it did after
 phase 1: checked on all 52 cues.
 
-### Phase 3: room, tempo, and the seam
+#### Phase 3: room, tempo, and the seam
 
 | Directive | Effect |
 |---|---|
@@ -130,9 +175,9 @@ every song to 400 BPM, which changed the seven effects written at 480.
 true triplet needs a finer grid for the whole song (swing, delays and
 ramps all count steps). Faking one by rounding would be worse than none.
 
-## Probes
+### Probes
 
-`audio/probes/` holds one small ABC per feature. `build.rs` renders them,
+`audio/probes/` holds one small ABC per feature of the fork. `build.rs` renders them,
 and `src/audio/probes.rs` measures each in CI:
 - that a held note finishes its attack;
 - that `!f!` is 1.86 times `!p!`;
@@ -148,11 +193,12 @@ and `src/audio/probes.rs` measures each in CI:
 - that a loop's first samples carry its last note's tail;
 - that twelve voices hold one note each through 70 bars.
 
-`docs/design/audio.md` says why each change was made, and what it measured.
+Why each change was made, and what it measured, is in
+`docs/design/audio.md` as it stood before the studio score (see its git
+history).
 
-## Changing it
+### Changing it
 
 Edit here, and mark the change `BRYX`. Keep any change to how an existing
 file renders behind an opt-in directive, so the fork can still go
-upstream. Then re-render the score (`docs/design/music.md`, "Changing the
-music") and listen.
+upstream. The probes are its only renders now.

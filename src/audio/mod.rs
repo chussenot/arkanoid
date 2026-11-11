@@ -1,10 +1,9 @@
 //! Sound (docs/design/audio.md).
 //!
-//! - `cues`: the sounds, rendered at build time from `audio/cues/*.abc` by
-//!   BRYX's fork of the Electric Pulse engine (`build.rs`), stored as
-//!   mu-law (`mulaw`), and the studio renders of `audio/score/*.score`
-//!   (docs/design/orchestral-score.md), stored as QOA stereo (`qoa`) and
-//!   played in place of the cue they are named after;
+//! - `cues`: the sounds, rendered at build time from `audio/score/` by
+//!   BRYX's studio (`build.rs`, `audio/engine/`): the music and the
+//!   stingers stored as QOA stereo (`qoa`), the effects as mu-law
+//!   (`mulaw`);
 //! - `director`: which sound plays when, where and at what pitch: pure,
 //!   tested;
 //! - `mixer`: effects, stingers and music into one stereo stream: pure,

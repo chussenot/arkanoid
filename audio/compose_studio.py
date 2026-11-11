@@ -689,7 +689,7 @@ Written by audio/compose_studio.py: do not edit.""")
 def act_clear():
     sc = Score("act_clear", "Act clear", "aeolian", 160, 3, loop=False, tail=0.3, comment="""
 Phase 3 reference cue: the act stinger (an act's last level cleared),
-the fanfare of audio/cues/act_clear.abc re-orchestrated: Spark bounding
+the chip score's act fanfare re-orchestrated: Spark bounding
 up, Ascent's head over a bass walking up to E, a held E minor. Its
 orchestra previews Act II's (strings and horns). Three bars, one idea
 each, few parts, so it reads at a glance over gameplay. Written by
@@ -1026,7 +1026,7 @@ def score():
 
 
 # ----------------------------------------------------------- stingers ---
-# The stingers' own notes (audio/cues/*.abc, from compose.py), re-
+# The stingers' own notes (as the chip score had them), re-
 # orchestrated. Notes are (MIDI or a chord tuple or None, sixteenths).
 # Level clear and life lost are timed by the game (the music waits for
 # them, the level-end sweep keeps level clear's bar): their tails fade
@@ -1044,7 +1044,7 @@ def put(sc, inst, notes, vel, beat0=0.0, legato=0.9, transpose=0, spread=0.008):
 def level_clear():
     sc = Score("level_clear", "Level clear", "aeolian", 160, 2, loop=False, tail=0.15, comment="""
 The level stinger: Spark bounding up, then the E minor triad climbing to
-a held high E (audio/cues/level_clear.abc's notes). Light, as it is heard
+a held high E (the chip stinger's notes). Light, as it is heard
 32 times a run: spiccato and the bell, horns on the climb, the strings'
 held chord. Two bars at 160 (3.0 s), the level-end sweep's meter.
 Written by audio/compose_studio.py: do not edit.""")
@@ -1067,8 +1067,7 @@ Written by audio/compose_studio.py: do not edit.""")
 def life_lost():
     sc = Score("life_lost", "Life lost", "aeolian", 150, 1, loop=False, tail=0.25, comment="""
 A life lost: Ascent's opening leaps turned upside down and falling,
-fading as they fall, stopping on B, unresolved (audio/cues/life_lost.abc's
-notes). One bar at 150 (1.6 s): horns over the celli.
+fading as they fall, stopping on B, unresolved (the chip stinger's notes). One bar at 150 (1.6 s): horns over the celli.
 Written by audio/compose_studio.py: do not edit.""")
     put(sc, "brass_horns", [(76, 2), (69, 2), (64, 4), (66, 2), (69, 2), (59, 4)], DYN["f"], legato=0.9)
     put(sc, "strings_low", [(52, 4), (45, 4), (48, 4), (47, 4)], DYN["mf"], legato=1.0)
@@ -1082,7 +1081,7 @@ def game_over():
     sc = Score("game_over", "Game over", "phrygian", 112, 3, loop=False, tail=0.5, comment="""
 Game over: Ascent backwards and slowed, over a Phrygian F in the bass, a
 pad of thirds above, sinking to a low E as the tempo slows, in a large
-room (audio/cues/game_over.abc's notes). A horn, the strings' thirds, the
+room (the chip stinger's notes). A horn, the strings' thirds, the
 low strings and tuba; the long hall. Written by audio/compose_studio.py:
 do not edit.""")
     for k, bpm in enumerate([112, 105, 98, 91], start=4):
@@ -1106,7 +1105,7 @@ def victory():
     sc = Score("victory", "Victory", "harmonic", 132, 4, loop=False, tail=0.5, comment="""
 Victory: Ascent in harmonic minor, Spark answering above, over a swept
 kick, broadening into a full E major chord: the score's one major chord
-(audio/cues/victory.abc's notes). Trumpets and horns on Ascent, spiccato
+(the chip stinger's notes). Trumpets and horns on Ascent, spiccato
 and the bell on Spark, the Wall's bass and the pulse below.
 Written by audio/compose_studio.py: do not edit.""")
     for k, bpm in enumerate([126, 120, 114, 108]):
@@ -1145,7 +1144,7 @@ STINGERS = [level_clear, life_lost, game_over, victory]
 
 
 # ------------------------------------------------------------ effects ---
-# The gameplay effects (audio/cues/*.abc's notes and gestures), built from
+# The gameplay effects (the chip effects' notes and gestures), built from
 # the score's parts (audio/instruments/sfx.inc). Each keeps its root (the
 # game pitches the brick and the paddle by playback rate from E5 and E3),
 # its gesture and its length. Times in seconds (tempo 60). build.rs folds

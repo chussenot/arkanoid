@@ -317,10 +317,27 @@ recipes.
 - **The brick lost loudness.** Spikier than the chip's square, it plays at
   1.1 instead of 0.6 (`director.rs`, `BRICK_GAIN`).
 
-**Left for Phase 5:**
-- the balance of music against effects in play;
-- the rewrite of `audio.md`, `music.md` and the engine's `PROVENANCE.md`;
-- the retirement of the ABC music, which `compose.py` still writes.
+## 7. Phase 5: integration, balance, docs
+
+- **Balance**, measured where gameplay sounds live (300 Hz–3 kHz), old game
+  against new (`audio.md`, "Balance"):
+  - three effects had lost their mid-range and were rebuilt around it;
+  - Act IV came down 1.5 dB for the effects' sake;
+  - the mixer's music gain did not need to move.
+- **Real time**, now tested: no allocator call on the callback's path, and
+  a median of 0.11 ms per 10 ms buffer at full load (`audio.md`, "Real
+  time").
+- **The ABC cues are gone.** Every sound comes from `audio/score/`;
+  `compose.py` is the notes and their lint; the Electric Pulse fork stays
+  only for its probes.
+- **Docs** describe the game as it plays: `audio.md`, `music.md`, the
+  engine's `PROVENANCE.md`, the spec's sound paragraph, `CLAUDE.md`.
+
+**Open, for ears and for a decision:**
+- A listening pass on real speakers, above all the effects against Act IV.
+- The asteroid's rumble, 7 dB shy of the chip rumble's margin.
+- Whether to delete the Electric Pulse fork: 7 C files nothing in the game
+  uses, kept for now because its changes were written to go upstream.
 
 ## Sources
 
