@@ -1,0 +1,104 @@
+# Phase 3 reference cue: the act stinger (an act's last level cleared),
+# the fanfare of audio/cues/act_clear.abc re-orchestrated: Spark bounding
+# up, Ascent's head over a bass walking up to E, a held E minor. Its
+# orchestra previews Act II's (full strings, horns, the sequence), as an
+# act clear should preview the next act. Written by audio/compose_studio.py:
+# do not edit.
+score 1
+title Act clear reference
+# mode E aeolian
+tempo 0 160
+length 12
+tail 3.5
+seed 1
+include ../../instruments/desk.inc
+include ../../instruments/orchestra.inc
+include ../../instruments/electronic.inc
+
+# Bar 1: Spark bounding up, violins spiccato and the bell, horns under.
+note 0.0033 0.1750 strings_high_spic 71 90
+note 0.5017 0.1750 strings_high_spic 74 94
+note 0.7540 0.1750 strings_high_spic 76 95
+note 1.2501 0.3500 strings_high_spic 79 94
+note 2.0005 0.1750 strings_high_spic 81 93
+note 2.2528 0.1750 strings_high_spic 79 89
+note 2.4999 0.1750 strings_high_spic 76 88
+note 2.9984 0.3500 strings_high_spic 74 95
+note 0.0000 0.1500 synth_glass 83 76
+note 0.5000 0.1500 synth_glass 86 76
+note 0.7500 0.1500 synth_glass 88 76
+note 1.2500 0.3000 synth_glass 91 76
+note 2.0000 0.1500 synth_glass 93 76
+note 2.2500 0.1500 synth_glass 91 76
+note 2.5000 0.1500 synth_glass 88 76
+note 3.0000 0.3000 synth_glass 86 76
+note 0.0000 0.2000 synth_sequence 64 86
+note 0.2500 0.2000 synth_sequence 76 76
+note 0.5000 0.2000 synth_sequence 71 76
+note 0.7500 0.2000 synth_sequence 76 76
+note 1.0000 0.2000 synth_sequence 64 86
+note 1.2500 0.2000 synth_sequence 76 76
+note 1.5000 0.2000 synth_sequence 71 76
+note 1.7500 0.2000 synth_sequence 76 76
+note 2.0000 0.2000 synth_sequence 64 86
+note 2.2500 0.2000 synth_sequence 76 76
+note 2.5000 0.2000 synth_sequence 71 76
+note 2.7500 0.2000 synth_sequence 76 76
+note 3.0000 0.2000 synth_sequence 64 86
+note 3.2500 0.2000 synth_sequence 76 76
+note 3.5000 0.2000 synth_sequence 71 76
+note 3.7500 0.2000 synth_sequence 76 76
+note 0.0111 2.0000 strings_mid 55 74
+note 0.0000 2.0000 strings_mid 59 78
+note 0.0101 0.9000 strings_low_pizz 40 96
+note 1.0101 0.9000 strings_low_pizz 40 92
+note 2.0051 0.9000 strings_low_pizz 43 91
+note 3.0107 0.9000 strings_low_pizz 43 94
+
+# Bar 2: Ascent's head on the horns, the bass walking A B C D up to E.
+note 4.0001 0.4400 brass_horns 64 95
+note 4.4923 0.4400 brass_horns 59 92
+note 5.0097 0.4400 brass_horns 64 93
+note 5.5065 0.4400 brass_horns 62 94
+note 5.9901 0.4400 brass_horns 59 89
+note 6.4886 0.4400 brass_horns 57 94
+note 7.0083 0.4400 brass_horns 59 93
+note 7.5112 0.4400 brass_horns 62 93
+note 3.9968 0.4500 strings_high 76 77
+note 4.4993 0.4500 strings_high 71 80
+note 5.0060 0.4500 strings_high 76 80
+note 5.5094 0.4500 strings_high 74 74
+note 6.0101 0.4500 strings_high 71 76
+note 6.5102 0.4500 strings_high 69 75
+note 6.9959 0.4500 strings_high 71 77
+note 7.5012 0.4500 strings_high 74 79
+note 4.0103 0.9500 strings_low 45 92
+note 4.0000 0.8000 synth_bass 33 92
+note 5.0066 0.9500 strings_low 47 95
+note 5.0000 0.8000 synth_bass 35 92
+note 5.9912 0.9500 strings_low 48 93
+note 6.0000 0.8000 synth_bass 36 92
+note 6.9928 0.9500 strings_low 50 90
+note 7.0000 0.8000 synth_bass 38 92
+note 3.9975 4.0000 timpani_roll 40 94
+ramp timpani_roll.gain 4 8 -18 0 smooth
+
+# Bar 3: the held E minor, high E over G and B.
+note 8.0110 4.0000 strings_high 76 90
+note 7.9924 4.0000 strings_high 71 92
+note 7.9952 4.0000 strings_mid 67 91
+note 8.0007 4.0000 strings_mid 64 90
+note 8.0061 4.0000 strings_low 52 95
+note 7.9998 4.0000 strings_bass 40 93
+note 8.0004 4.0000 brass_horns 64 92
+note 7.9999 4.0000 brass_horns 59 88
+note 7.9920 4.0000 brass_horns 55 95
+note 8.0048 4.0000 brass_trombones 52 94
+note 8.0003 4.0000 brass_low 40 95
+note 8.0000 4.0000 synth_pad 64 92
+note 8.0000 4.0000 synth_pad 67 92
+note 8.0000 4.0000 synth_pad 71 92
+note 8.0000 4.0000 synth_bass 28 92
+note 8.0048 1.0000 timpani 40 107
+note 7.9963 4.0000 percussion 49 94
+note 8.0000 0.5000 synth_glass 88 76

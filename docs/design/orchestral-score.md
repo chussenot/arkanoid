@@ -8,7 +8,7 @@ until the phases below land.
 **Phases:**
 1. research and architecture (this document);
 2. the sound engine;
-3. six reference cues (**gate: approved by ear**);
+3. six reference cues (**gate: approved by ear**; see [`reference-cues.md`](reference-cues.md));
 4. the score;
 5. integration.
 
