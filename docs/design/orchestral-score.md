@@ -272,6 +272,56 @@ correlation and peaks. They are then **listened to by a person**. The
 author of this document cannot hear audio. The 32-track rewrite starts
 only after that listening approves the direction.
 
+## 6. Phase 4: the score in the studio
+
+Everything the game plays is now rendered by the studio.
+
+**What moved:**
+- the 32 level tracks and the menu (QOA stereo, streamed);
+- the five stingers (QOA stereo, one-shots);
+- the 18 effects (studio parts, folded to the mu-law effects path, still
+  pitched by playback rate).
+
+`build.rs` no longer embeds the ABC render of a cue that has a studio
+score. `audio/compose.py` stays the source of the themes and the track
+recipes.
+
+**How the score was written** (`audio/compose_studio.py`):
+- The approved Phase 3 cues are tracks 01, 09, 22, 32 and the menu.
+- The other 28 orchestrate `compose.py`'s own parts by act, with the rules
+  the references proved (`reference-cues.md`).
+- The composer refuses a pitched note outside the track's mode, and a
+  texture over 7 parts on average or 12 at once.
+
+**Measured:**
+
+| | Value |
+|---|---|
+| Act levels | I −24.5, II −20.7, III −20.3, IV −17.2 dBFS on average |
+| Music | 38 MB |
+| Release binary | 58.0 MB (40 MB before) |
+| Cold build render | about 70 s on 4 cores; cached after |
+| Brick | E5 |
+| Paddle | E3 (−3 cents) |
+| Timed stingers | within 0.3 s of their slots |
+| Effects | 16 of 18 within 1.5 dB of the loudness of the ones they replace |
+| Brick over the music, 300 Hz–3 kHz | +17.5 dB (Act IV) to +25 dB |
+
+**Found and fixed on the way:**
+- **QOA's cold start** coded each loop's first slice with up to 7 times its
+  usual error, a click at every wrap. The encoder is now warmed on the
+  loop's end (`audio/render.c`), and a test checks every loop's first
+  frame.
+- **Short samples were not tuned.** The violin pizzicato wandered ±15
+  cents note to note; maps now carry each short note's measured `tune`.
+- **The brick lost loudness.** Spikier than the chip's square, it plays at
+  1.1 instead of 0.6 (`director.rs`, `BRICK_GAIN`).
+
+**Left for Phase 5:**
+- the balance of music against effects in play;
+- the rewrite of `audio.md`, `music.md` and the engine's `PROVENANCE.md`;
+- the retirement of the ABC music, which `compose.py` still writes.
+
 ## Sources
 
 | Source | Reliability |
