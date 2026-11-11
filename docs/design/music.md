@@ -230,6 +230,11 @@ The five moments quote the themes:
 | Game Over | Ascent backwards and slowed over a Phrygian F in the bass, thirds above, sinking to a low E as the tempo slows | a horn, the strings' thirds, low strings and tuba, in the long hall |
 | Victory | Ascent in harmonic minor with Spark answering above it over the pulse, broadening into a full E **major** chord: the score's one major chord, saved for winning | trumpets and horns, spiccato and the bell, the saw bass, then the full orchestra |
 
+## Hearing a track
+
+The menu's last row, Music, is a jukebox: ←/→ walks the 33 tracks by name
+and each plays while the row is highlighted (`src/menu.rs`).
+
 ## Loaded levelsets
 
 A loaded levelset's levels have no track of their own. They play the score

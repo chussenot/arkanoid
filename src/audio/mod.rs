@@ -81,6 +81,13 @@ impl Audio {
         drop(commands);
     }
 
+    /// The menu's jukebox: the track its Music row picked plays on the
+    /// menu in place of the theme (0 the theme, `n` level `n`'s); `None`
+    /// gives the menu its theme back.
+    pub fn set_jukebox(&mut self, track: Option<u8>) {
+        self.director.jukebox = track;
+    }
+
     /// M: all sound, effects only, off, and round again.
     pub fn cycle_mode(&mut self) {
         self.mode = self.mode.next();

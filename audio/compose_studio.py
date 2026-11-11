@@ -1007,6 +1007,13 @@ def lint(sc, mode):
     return avg, peak
 
 
+def retitle(sc, level):
+    """A track is titled after its level, `BRYX NN Name`: the menu's Music
+    row names it the same way (src/menu.rs checks the two agree)."""
+    title = f"title BRYX {level:02d} {track(level)['name']}"
+    sc.head = [title if line.startswith("title ") else line for line in sc.head]
+
+
 def score():
     """The whole score: the approved reference cues where they exist, the
     arranger everywhere else."""
@@ -1015,9 +1022,11 @@ def score():
     for level in range(1, C.LEVEL_TRACKS + 1 if hasattr(C, "LEVEL_TRACKS") else 33):
         sc = fixed[level]() if level in fixed else arrange(level)
         sc.name = f"music_{level:02d}"
+        retitle(sc, level)
         out.append((sc, track(level)["mode"]))
     menu_sc = menu()
     menu_sc.name = "music_menu"
+    retitle(menu_sc, 0)
     out.append((menu_sc, "dorian"))
     out.append((act_clear(), None))
     for make in STINGERS:

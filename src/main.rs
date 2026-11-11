@@ -296,6 +296,9 @@ impl App {
             new_best_rally: false,
         };
         self.last_state = self.game.state;
+        if let Some(audio) = &mut self.audio {
+            audio.set_jukebox(self.menu.track());
+        }
         self.refresh_menu_view();
     }
 
@@ -479,13 +482,17 @@ impl ApplicationHandler for App {
 
         let mut ticks = 0;
         while self.accumulator >= FIXED_DT && ticks < MAX_TICKS_PER_FRAME {
-            let input = match &mut self.autopilot {
+            let mut input = match &mut self.autopilot {
                 Some(autopilot) => Input {
                     pause: self.input.pause,
                     ..autopilot.input(&self.game, FIXED_DT)
                 },
                 None => self.input,
             };
+            // The Music row is for listening: Space starts no run there.
+            if self.game.state == game::GameState::Menu && self.menu.mode() == menu::Mode::Music {
+                input.space = false;
+            }
             self.game.tick(&input, FIXED_DT);
             if let Some(autopilot) = &mut self.autopilot {
                 autopilot.observe(&self.game);

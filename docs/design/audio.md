@@ -208,6 +208,10 @@ against new:
 
 ## Player control and accessibility
 
+- **The menu's Music row is a jukebox.** ←/→ picks any of the 33 tracks
+  (the menu theme, then each level's, by name), and it plays in place of
+  the menu theme while the row is highlighted, crossfading like any music
+  change. Space starts no run there.
 - **M** cycles the sound: on, effects only, off. The menu and pause
   screens show the current setting beside the key.
 - `BRYX_SOUND=effects` or `BRYX_SOUND=off` sets the starting mode.
