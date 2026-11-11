@@ -1,0 +1,15 @@
+# Gameplay effect: expiring. Two soft ticks falling a fifth, B to E: the power is about to go.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: expiring
+# mode E None
+tempo 0 60
+length 0.113333
+tail 0.05
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 -3.9 -3.9 lin
+note 0.0000 0.0300 sfx_tick 83 80
+note 0.0000 0.0300 sfx_bell 83 60
+note 0.0833 0.0300 sfx_tick 76 64
+note 0.0833 0.0300 sfx_bell 76 50

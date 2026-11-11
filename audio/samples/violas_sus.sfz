@@ -1,0 +1,15 @@
+// violas_sus: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
+// Do not edit: rerun the script.
+<region> sample=strings/violas_sus/violas_sus_48.flac lokey=45 hikey=49 pitch_keycenter=48 tune=2 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=123563 // Strings/Viola Section/susvib/ViolaEns_susvib_C2_v2_1.wav
+<region> sample=strings/violas_sus/violas_sus_50.flac lokey=50 hikey=51 pitch_keycenter=50 tune=-2 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=118439 // Strings/Viola Section/susvib/ViolaEns_susvib_D2_v2_1.wav
+<region> sample=strings/violas_sus/violas_sus_52.flac lokey=52 hikey=53 pitch_keycenter=52 tune=-5 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=140555 // Strings/Viola Section/susvib/ViolaEns_susvib_E2_v2_1.wav
+<region> sample=strings/violas_sus/violas_sus_55.flac lokey=54 hikey=57 pitch_keycenter=55 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=107071 // Strings/Viola Section/susvib/ViolaEns_susvib_G2_v2_1.wav
+<region> sample=strings/violas_sus/violas_sus_59.flac lokey=58 hikey=60 pitch_keycenter=59 tune=2 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=121855 // Strings/Viola Section/susvib/ViolaEns_susvib_B2_v2_1.wav
+<region> sample=strings/violas_sus/violas_sus_62.flac lokey=61 hikey=63 pitch_keycenter=62 tune=1 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=120528 // Strings/Viola Section/susvib/ViolaEns_susvib_D3_v2_1.wav
+<region> sample=strings/violas_sus/violas_sus_65.flac lokey=64 hikey=67 pitch_keycenter=65 tune=-4 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=106614 // Strings/Viola Section/susvib/ViolaEns_susvib_F3_v2_1.wav
+<region> sample=strings/violas_sus/violas_sus_69.flac lokey=68 hikey=70 pitch_keycenter=69 tune=-8 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=134999 // Strings/Viola Section/susvib/ViolaEns_susvib_A3_v2_1.wav
+<region> sample=strings/violas_sus/violas_sus_72.flac lokey=71 hikey=74 pitch_keycenter=72 tune=6 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=109178 // Strings/Viola Section/susvib/ViolaEns_susvib_C4_v2_1.wav
+<region> sample=strings/violas_sus/violas_sus_76.flac lokey=75 hikey=77 pitch_keycenter=76 tune=-3 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=114015 // Strings/Viola Section/susvib/ViolaEns_susvib_E4_v2_1.wav
+<region> sample=strings/violas_sus/violas_sus_79.flac lokey=78 hikey=81 pitch_keycenter=79 tune=1 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=108219 // Strings/Viola Section/susvib/ViolaEns_susvib_G4_v2_1.wav
+<region> sample=strings/violas_sus/violas_sus_83.flac lokey=82 hikey=84 pitch_keycenter=83 tune=5 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=121371 // Strings/Viola Section/susvib/ViolaEns_susvib_B4_v2_1.wav
+<region> sample=strings/violas_sus/violas_sus_86.flac lokey=85 hikey=89 pitch_keycenter=86 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=130355 // Strings/Viola Section/susvib/ViolaEns_susvib_D5_v2_1.wav

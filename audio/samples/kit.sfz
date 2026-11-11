@@ -1,0 +1,11 @@
+// kit: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
+// Do not edit: rerun the script.
+<region> sample=percussion/kit/kit_35_v1.flac lokey=35 hikey=35 pitch_keycenter=35 lovel=1 hivel=80 // Percussion/BDrumNewhit_v2_rr1_Sum.wav
+<region> sample=percussion/kit/kit_35_v81.flac lokey=35 hikey=35 pitch_keycenter=35 lovel=81 hivel=127 // Percussion/BDrumNewhit_v5_rr1_Sum.wav
+<region> sample=percussion/kit/kit_49_v1.flac lokey=49 hikey=49 pitch_keycenter=49 lovel=1 hivel=80 // Percussion/susCymb1-hit_mp_rr1.wav
+<region> sample=percussion/kit/kit_49_v81.flac lokey=49 hikey=49 pitch_keycenter=49 lovel=81 hivel=127 // Percussion/susCymb1-hit_fff_rr1.wav
+<region> sample=percussion/kit/kit_52.flac lokey=52 hikey=52 pitch_keycenter=52 lovel=1 hivel=127 // Percussion/susCymb1-cresc-Short_v1.wav
+<region> sample=percussion/kit/kit_53.flac lokey=53 hikey=53 pitch_keycenter=53 lovel=1 hivel=127 // Percussion/susCymb1-cresc-Median_v1.wav
+<region> sample=percussion/kit/kit_54.flac lokey=54 hikey=54 pitch_keycenter=54 lovel=1 hivel=127 // Percussion/susCymb1-cresc-Long_v1.wav
+<region> sample=percussion/kit/kit_55.flac lokey=55 hikey=55 pitch_keycenter=55 lovel=1 hivel=127 // Percussion/gongHit_f.wav
+<region> sample=percussion/kit/kit_56.flac lokey=56 hikey=56 pitch_keycenter=56 lovel=1 hivel=127 // Percussion/Anvil_Hit1_v2_Sum.wav

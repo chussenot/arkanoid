@@ -1,0 +1,15 @@
+// celli_trem: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
+// Do not edit: rerun the script.
+<region> sample=strings/celli_trem/celli_trem_36.flac lokey=33 hikey=38 pitch_keycenter=36 tune=13 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=112261 // Strings/Cello Section/trem/trem_C1_v2_1.wav
+<region> sample=strings/celli_trem/celli_trem_40.flac lokey=39 hikey=41 pitch_keycenter=40 tune=5 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=106911 // Strings/Cello Section/trem/trem_E1_v2_1.wav
+<region> sample=strings/celli_trem/celli_trem_43.flac lokey=42 hikey=45 pitch_keycenter=43 tune=6 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=111775 // Strings/Cello Section/trem/trem_G1_v2_1.wav
+<region> sample=strings/celli_trem/celli_trem_47.flac lokey=46 hikey=48 pitch_keycenter=47 tune=-27 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=119759 // Strings/Cello Section/trem/trem_B2_v2_1.wav
+<region> sample=strings/celli_trem/celli_trem_50.flac lokey=49 hikey=51 pitch_keycenter=50 tune=2 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=106064 // Strings/Cello Section/trem/trem_D2_v2_1.wav
+<region> sample=strings/celli_trem/celli_trem_53.flac lokey=52 hikey=55 pitch_keycenter=53 tune=7 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=121841 // Strings/Cello Section/trem/trem_F2_v2_1.wav
+<region> sample=strings/celli_trem/celli_trem_57.flac lokey=56 hikey=58 pitch_keycenter=57 tune=1 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=119489 // Strings/Cello Section/trem/trem_A2_v2_1.wav
+<region> sample=strings/celli_trem/celli_trem_60.flac lokey=59 hikey=62 pitch_keycenter=60 tune=1 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=113231 // Strings/Cello Section/trem/trem_C3_v2_1.wav
+<region> sample=strings/celli_trem/celli_trem_64.flac lokey=63 hikey=65 pitch_keycenter=64 tune=-3 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=119534 // Strings/Cello Section/trem/trem_E3_v2_1.wav
+<region> sample=strings/celli_trem/celli_trem_67.flac lokey=66 hikey=69 pitch_keycenter=67 tune=3 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=105895 // Strings/Cello Section/trem/trem_G3_v2_1.wav
+<region> sample=strings/celli_trem/celli_trem_71.flac lokey=70 hikey=72 pitch_keycenter=71 tune=8 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=111251 // Strings/Cello Section/trem/trem_B3_v2_1.wav
+<region> sample=strings/celli_trem/celli_trem_74.flac lokey=73 hikey=75 pitch_keycenter=74 tune=1 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=110897 // Strings/Cello Section/trem/trem_D4_v2_1.wav
+<region> sample=strings/celli_trem/celli_trem_77.flac lokey=76 hikey=80 pitch_keycenter=77 tune=9 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=121664 // Strings/Cello Section/trem/trem_F4_v2_1.wav

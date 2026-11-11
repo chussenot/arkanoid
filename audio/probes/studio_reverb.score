@@ -1,0 +1,9 @@
+# Studio probe: the hall decays as long as its preset says. A 5 ms noise
+# burst sent only to the hall (the dry is muted), then 6 s of tail.
+score 1
+tempo 0 120
+length 2
+tail 6
+aux hall reverb preset=hall
+inst burst synth gain=-120 send=hall:120 wave=noise attack=0 decay=0.005 sustain=0 release=0.001
+note 0 0.01 burst A4 127

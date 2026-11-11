@@ -150,6 +150,11 @@ Space plays the highlighted one:
 - Shuffle: ten levels drawn at random from every fetched set, a new draw
   each time the row is picked.
 
+A last row, Music, is the jukebox and plays no run: ←/→ (A/D) picks one of
+the 33 tracks (the menu theme, then each campaign level's), which plays in
+place of the menu theme while the row is highlighted. Space does nothing
+there.
+
 ↑/↓ (W/S) move the highlight, wrapping. With no set fetched, the Levelset
 row is shown disabled with how to fetch one, skipped by ↑/↓, and Shuffle
 is not offered. Each built-in mode's row shows its best score. Q on the
@@ -206,14 +211,16 @@ never set them.
   meter read from the cue.
 
 **Sound (added after v1)**, designed in `docs/design/audio.md`:
-- Cues are ABC text files in `audio/cues/`. `build.rs` renders them at build
-  time with BRYX's fork of the Electric Pulse engine (`audio/engine/`, C99;
-  its PROVENANCE.md lists the changes), and the binary embeds the PCM as
-  8-bit mu-law: the game runs no C.
+- Sounds are `.score` text files in `audio/score/`. `build.rs` renders them
+  at build time with BRYX's studio (`audio/engine/`, C99; see its
+  PROVENANCE.md) from a CC0 orchestral sample set (`audio/samples/`), and
+  the binary embeds the audio: music and stingers as 48 kHz stereo QOA,
+  effects as 8-bit mu-law. The game runs no C.
 - Playback goes through `cpal` (the default `audio` feature; justified in
   `Cargo.toml`) into BRYX's own mixer (`src/audio/`): panned effects,
   pitched by playback rate; stingers that duck the music; one music track
-  per campaign level (`audio/compose.py`, `docs/design/music.md`),
+  per campaign level (`audio/compose.py`, `audio/compose_studio.py`,
+  `docs/design/music.md`),
   crossfaded, and a shuffled order for loaded levelsets.
 - Sound is presentation only. `src/audio/director.rs` reads each tick's
   events and the game's state, like the renderers, and never writes to

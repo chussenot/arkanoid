@@ -1,0 +1,14 @@
+# Gameplay effect: brick. A pop snapping down onto E5, a pizzicato violin in it, a glint of metal on top.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: brick
+# mode E None
+tempo 0 60
+length 0.1
+tail 0.1
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 3 3 lin
+note 0.0000 0.1000 sfx_pop 76 120
+note 0.0000 0.0800 sfx_pizz_hi 76 64
+note 0.0000 0.0200 sfx_glint 100 44

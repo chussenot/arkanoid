@@ -1,0 +1,20 @@
+# Gameplay effect: gate. A grinding climb, then an open fifth on trumpet and violins that rings out: the wall gives way.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: gate
+# mode E None
+tempo 0 60
+length 0.45
+tail 0.3
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 2.8 2.8 lin
+note 0.0000 0.0500 sfx_grind 52 92
+note 0.0500 0.0500 sfx_grind 59 92
+note 0.1000 0.0500 sfx_grind 64 92
+note 0.1500 0.0500 sfx_grind 71 92
+note 0.0000 0.0500 sfx_trombone_stac 52 90
+note 0.1000 0.0500 sfx_trombone_stac 64 90
+note 0.2000 0.2000 sfx_trumpet 76 100
+note 0.2000 0.2500 sfx_trem 83 84
+note 0.0000 0.2000 sfx_timp_roll 40 56

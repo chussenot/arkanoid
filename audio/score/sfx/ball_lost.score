@@ -1,0 +1,19 @@
+# Gameplay effect: ball_lost. A falling figure, pizzicato over a soft triangle, fading as it falls.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: ball_lost
+# mode E None
+tempo 0 60
+length 0.2
+tail 0.1
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 -2.6 -2.6 lin
+note 0.0000 0.0500 sfx_pizz_hi 71 88
+note 0.0000 0.0500 sfx_fall 71 84
+note 0.0500 0.0500 sfx_pizz_hi 67 74
+note 0.0500 0.0500 sfx_fall 67 70
+note 0.1000 0.0500 sfx_pizz_hi 64 60
+note 0.1000 0.0500 sfx_fall 64 56
+note 0.1500 0.0500 sfx_pizz_hi 59 48
+note 0.1500 0.0500 sfx_fall 59 44

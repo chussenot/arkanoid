@@ -1,0 +1,10 @@
+# Studio probe: velocity picks a dynamic layer, not just a level. The same
+# violin E4 played soft (velocity 40, the p layer) then loud (120, the f
+# layer): the loud one is louder and brighter.
+score 1
+tempo 0 120
+length 8
+tail 0.5
+inst violin sfz=../samples/violins_sus.sfz attack=0.05 release=0.2
+note 0 3.5 violin E4 40
+note 4 3.5 violin E4 120

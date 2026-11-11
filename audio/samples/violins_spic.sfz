@@ -1,0 +1,13 @@
+// violins_spic: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
+// Do not edit: rerun the script.
+<region> sample=strings/violins_spic/violins_spic_55.flac lokey=52 hikey=56 pitch_keycenter=55 tune=4 lovel=1 hivel=127 // Strings/Violin Section/Spic/VlnEns_Spic_G2_v2_rr1.wav
+<region> sample=strings/violins_spic/violins_spic_57.flac lokey=57 hikey=58 pitch_keycenter=57 tune=9 lovel=1 hivel=127 // Strings/Violin Section/Spic/VlnEns_Spic_A2_v2_rr2.wav
+<region> sample=strings/violins_spic/violins_spic_59.flac lokey=59 hikey=60 pitch_keycenter=59 tune=13 lovel=1 hivel=127 // Strings/Violin Section/Spic/VlnEns_Spic_B2_v2_rr1.wav
+<region> sample=strings/violins_spic/violins_spic_62.flac lokey=61 hikey=64 pitch_keycenter=62 tune=18 lovel=1 hivel=127 // Strings/Violin Section/Spic/VlnEns_Spic_D3_v2_rr1.wav
+<region> sample=strings/violins_spic/violins_spic_66.flac lokey=65 hikey=67 pitch_keycenter=66 tune=12 lovel=1 hivel=127 // Strings/Violin Section/Spic/VlnEns_Spic_F#3_v2_rr1.wav
+<region> sample=strings/violins_spic/violins_spic_69.flac lokey=68 hikey=70 pitch_keycenter=69 tune=9 lovel=1 hivel=127 // Strings/Violin Section/Spic/VlnEns_Spic_A3_v2_rr1.wav
+<region> sample=strings/violins_spic/violins_spic_72.flac lokey=71 hikey=74 pitch_keycenter=72 tune=4 lovel=1 hivel=127 // Strings/Violin Section/Spic/VlnEns_Spic_C4_v2_rr1.wav
+<region> sample=strings/violins_spic/violins_spic_76.flac lokey=75 hikey=77 pitch_keycenter=76 tune=3 lovel=1 hivel=127 // Strings/Violin Section/Spic/VlnEns_Spic_E4_v2_rr1.wav
+<region> sample=strings/violins_spic/violins_spic_79.flac lokey=78 hikey=81 pitch_keycenter=79 tune=11 lovel=1 hivel=127 // Strings/Violin Section/Spic/VlnEns_Spic_G4_v2_rr1.wav
+<region> sample=strings/violins_spic/violins_spic_83.flac lokey=82 hikey=84 pitch_keycenter=83 tune=6 lovel=1 hivel=127 // Strings/Violin Section/Spic/VlnEns_Spic_B4_v2_rr1.wav
+<region> sample=strings/violins_spic/violins_spic_86.flac lokey=85 hikey=89 pitch_keycenter=86 tune=6 lovel=1 hivel=127 // Strings/Violin Section/Spic/VlnEns_Spic_D5_v2_rr1.wav

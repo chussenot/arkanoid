@@ -1,0 +1,21 @@
+// horn_sus: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
+// Do not edit: rerun the script.
+<region> sample=brass/horn_sus/horn_sus_33.flac lokey=30 hikey=34 pitch_keycenter=33 tune=2 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=111839 // Brass/F Horn/sus/MOHorn_sus_A0_v1_1.wav
+<region> sample=brass/horn_sus/horn_sus_36_v1.flac lokey=35 hikey=37 pitch_keycenter=36 tune=-2 lovel=1 hivel=79 loop_mode=loop_continuous loop_start=39690 loop_end=140951 // Brass/F Horn/sus/MOHorn_sus_C1_v1_1.wav
+<region> sample=brass/horn_sus/horn_sus_36_v80.flac lokey=35 hikey=37 pitch_keycenter=36 tune=14 lovel=80 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=119866 // Brass/F Horn/sus/MOHorn_sus_C1_v3_1.wav
+<region> sample=brass/horn_sus/horn_sus_39_v1.flac lokey=38 hikey=41 pitch_keycenter=39 tune=-1 lovel=1 hivel=79 loop_mode=loop_continuous loop_start=39690 loop_end=133757 // Brass/F Horn/sus/MOHorn_sus_D#1_v1_1.wav
+<region> sample=brass/horn_sus/horn_sus_39_v80.flac lokey=38 hikey=41 pitch_keycenter=39 tune=1 lovel=80 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=130373 // Brass/F Horn/sus/MOHorn_sus_D#1_v3_1.wav
+<region> sample=brass/horn_sus/horn_sus_43_v1.flac lokey=42 hikey=44 pitch_keycenter=43 tune=6 lovel=1 hivel=79 loop_mode=loop_continuous loop_start=39690 loop_end=136975 // Brass/F Horn/sus/MOHorn_sus_G1_v1_1.wav
+<region> sample=brass/horn_sus/horn_sus_43_v80.flac lokey=42 hikey=44 pitch_keycenter=43 tune=3 lovel=80 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=139551 // Brass/F Horn/sus/MOHorn_sus_G1_v3_1.wav
+<region> sample=brass/horn_sus/horn_sus_46_v1.flac lokey=45 hikey=48 pitch_keycenter=46 tune=-6 lovel=1 hivel=79 loop_mode=loop_continuous loop_start=39690 loop_end=128775 // Brass/F Horn/sus/MOHorn_sus_A#1_v1_1.wav
+<region> sample=brass/horn_sus/horn_sus_46_v80.flac lokey=45 hikey=48 pitch_keycenter=46 tune=3 lovel=80 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=114957 // Brass/F Horn/sus/MOHorn_sus_A#1_v3_1.wav
+<region> sample=brass/horn_sus/horn_sus_50_v1.flac lokey=49 hikey=51 pitch_keycenter=50 lovel=1 hivel=79 loop_mode=loop_continuous loop_start=39690 loop_end=116639 // Brass/F Horn/sus/MOHorn_sus_D2_v1_1.wav
+<region> sample=brass/horn_sus/horn_sus_50_v80.flac lokey=49 hikey=51 pitch_keycenter=50 tune=-7 lovel=80 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=126707 // Brass/F Horn/sus/MOHorn_sus_D2_v4_1.wav
+<region> sample=brass/horn_sus/horn_sus_53_v1.flac lokey=52 hikey=55 pitch_keycenter=53 tune=4 lovel=1 hivel=79 loop_mode=loop_continuous loop_start=39690 loop_end=119762 // Brass/F Horn/sus/MOHorn_sus_F2_v1_1.wav
+<region> sample=brass/horn_sus/horn_sus_53_v80.flac lokey=52 hikey=55 pitch_keycenter=53 tune=7 lovel=80 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=139670 // Brass/F Horn/sus/MOHorn_sus_F2_v3_1.wav
+<region> sample=brass/horn_sus/horn_sus_57_v1.flac lokey=56 hikey=58 pitch_keycenter=57 tune=7 lovel=1 hivel=79 loop_mode=loop_continuous loop_start=39690 loop_end=110589 // Brass/F Horn/sus/MOHorn_sus_A2_v1_1.wav
+<region> sample=brass/horn_sus/horn_sus_57_v80.flac lokey=56 hikey=58 pitch_keycenter=57 tune=4 lovel=80 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=133089 // Brass/F Horn/sus/MOHorn_sus_A2_v3_1.wav
+<region> sample=brass/horn_sus/horn_sus_60_v1.flac lokey=59 hikey=67 pitch_keycenter=60 tune=-2 lovel=1 hivel=79 loop_mode=loop_continuous loop_start=39690 loop_end=111929 // Brass/F Horn/sus/MOHorn_sus_C3_v1_1.wav
+<region> sample=brass/horn_sus/horn_sus_60_v80.flac lokey=59 hikey=67 pitch_keycenter=60 tune=6 lovel=80 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=114953 // Brass/F Horn/sus/MOHorn_sus_C3_v4_1.wav
+<region> sample=brass/horn_sus/horn_sus_74.flac lokey=68 hikey=75 pitch_keycenter=74 tune=-5 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=110987 // Brass/F Horn/sus/MOHorn_sus_D4_v1_1.wav
+<region> sample=brass/horn_sus/horn_sus_77.flac lokey=76 hikey=80 pitch_keycenter=77 tune=-2 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=124199 // Brass/F Horn/sus/MOHorn_sus_F4_v1_1.wav

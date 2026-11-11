@@ -1,8 +1,9 @@
 //! Sound (docs/design/audio.md).
 //!
-//! - `cues`: the sounds, rendered at build time from `audio/cues/*.abc` by
-//!   BRYX's fork of the Electric Pulse engine (`build.rs`), stored as
-//!   mu-law (`mulaw`);
+//! - `cues`: the sounds, rendered at build time from `audio/score/` by
+//!   BRYX's studio (`build.rs`, `audio/engine/`): the music and the
+//!   stingers stored as QOA stereo (`qoa`), the effects as mu-law
+//!   (`mulaw`);
 //! - `director`: which sound plays when, where and at what pitch: pure,
 //!   tested;
 //! - `mixer`: effects, stingers and music into one stereo stream: pure,
@@ -26,6 +27,10 @@ mod mulaw;
 mod output;
 #[cfg(all(test, feature = "audio"))]
 mod probes;
+#[cfg_attr(not(feature = "audio"), allow(dead_code))]
+mod qoa;
+#[cfg(all(test, feature = "audio"))]
+mod studio_probes;
 
 pub use director::SoundMode;
 
@@ -76,6 +81,13 @@ impl Audio {
         drop(commands);
     }
 
+    /// The menu's jukebox: the track its Music row picked plays on the
+    /// menu in place of the theme (0 the theme, `n` level `n`'s); `None`
+    /// gives the menu its theme back.
+    pub fn set_jukebox(&mut self, track: Option<u8>) {
+        self.director.jukebox = track;
+    }
+
     /// M: all sound, effects only, off, and round again.
     pub fn cycle_mode(&mut self) {
         self.mode = self.mode.next();
@@ -93,5 +105,59 @@ impl Audio {
             return Some(self.mode.label());
         }
         None
+    }
+}
+
+/// Counts the calling thread's heap allocations and frees, so a test can
+/// assert that the audio callback's path makes none (the mixer's contract:
+/// `mixer.rs`). Test builds only: the game uses the system allocator
+/// untouched.
+#[cfg(test)]
+pub(crate) mod heap {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::cell::Cell;
+
+    thread_local! {
+        static CALLS: Cell<u64> = const { Cell::new(0) };
+    }
+
+    struct Counting;
+
+    fn count() {
+        // A thread being torn down has no counter left: nothing to count for.
+        let _ = CALLS.try_with(|c| c.set(c.get() + 1));
+    }
+
+    // SAFETY: every call is forwarded unchanged to the system allocator;
+    // the counter is a thread-local `Cell`, which never allocates.
+    unsafe impl GlobalAlloc for Counting {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            count();
+            unsafe { System.alloc(layout) }
+        }
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            count();
+            unsafe { System.dealloc(ptr, layout) }
+        }
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            count();
+            unsafe { System.realloc(ptr, layout, new_size) }
+        }
+    }
+
+    #[global_allocator]
+    static HEAP: Counting = Counting;
+
+    /// Allocator calls (allocations, frees, reallocations) this thread has
+    /// made so far.
+    pub fn calls() -> u64 {
+        CALLS.with(Cell::get)
+    }
+
+    #[test]
+    fn the_counter_sees_an_allocation_and_its_free() {
+        let before = calls();
+        drop(std::hint::black_box(vec![0u8; 4_096]));
+        assert!(calls() >= before + 2, "an allocation and a free");
     }
 }

@@ -1,0 +1,74 @@
+# Reference render: percussion (Phase 2 ear check, not music). Timpani
+# strokes and rolls, the kit (bass drum, cymbal, swell, gong, anvil), and
+# the electronic pulse against the timpani. 96 BPM.
+score 1
+title Reference: percussion
+tempo 0 96
+length 40
+tail 5
+seed 1
+include ../instruments/desk.inc
+include ../instruments/orchestra.inc
+include ../instruments/electronic.inc
+
+# Timpani: single strokes soft then loud, then rolls.
+note 0 1 timpani E2 60
+note 2 1 timpani B1 60
+note 4 1 timpani E2 120
+note 6 1 timpani B1 120
+note 8 4 timpani_roll E2 110
+ramp timpani_roll.gain 8 12 -20 0 smooth
+note 12 1 timpani E2 127
+
+# The kit: bass drum, cymbal, a swell into a gong, the anvil.
+note 16 0.5 percussion B1 120
+note 17 0.5 percussion B1 90
+note 18 0.5 percussion B1 120
+note 19 0.5 percussion B1 90
+note 20 0.5 percussion B1 120
+note 21 0.5 percussion B1 90
+note 22 0.5 percussion B1 120
+note 23 0.5 percussion B1 90
+note 16 1 percussion C#3 110
+note 20 4 percussion E3 110
+note 24 4 percussion G3 120
+note 28 0.5 percussion G#3 110
+note 29 0.5 percussion G#3 80
+note 30 0.5 percussion G#3 110
+note 31 0.5 percussion G#3 80
+
+# The electronic pulse and metal ticks against the timpani.
+note 32.0 0.25 electronic_pulse E1 120
+note 32.25 0.1 electronic_metal E5 70
+note 32.5 0.25 electronic_pulse E1 90
+note 32.75 0.1 electronic_metal E5 90
+note 33.0 0.25 electronic_pulse E1 90
+note 33.25 0.1 electronic_metal E5 70
+note 33.5 0.25 electronic_pulse E1 90
+note 33.75 0.1 electronic_metal E5 90
+note 34.0 0.25 electronic_pulse E1 120
+note 34.25 0.1 electronic_metal E5 70
+note 34.5 0.25 electronic_pulse E1 90
+note 34.75 0.1 electronic_metal E5 90
+note 35.0 0.25 electronic_pulse E1 90
+note 35.25 0.1 electronic_metal E5 70
+note 35.5 0.25 electronic_pulse E1 90
+note 35.75 0.1 electronic_metal E5 90
+note 36.0 0.25 electronic_pulse E1 120
+note 36.25 0.1 electronic_metal E5 70
+note 36.5 0.25 electronic_pulse E1 90
+note 36.75 0.1 electronic_metal E5 90
+note 37.0 0.25 electronic_pulse E1 90
+note 37.25 0.1 electronic_metal E5 70
+note 37.5 0.25 electronic_pulse E1 90
+note 37.75 0.1 electronic_metal E5 90
+note 38.0 0.25 electronic_pulse E1 120
+note 38.25 0.1 electronic_metal E5 70
+note 38.5 0.25 electronic_pulse E1 90
+note 38.75 0.1 electronic_metal E5 90
+note 39.0 0.25 electronic_pulse E1 90
+note 39.25 0.1 electronic_metal E5 70
+note 39.5 0.25 electronic_pulse E1 90
+note 39.75 0.1 electronic_metal E5 90
+note 32 1 timpani E2 120
+note 36 1 timpani B1 120

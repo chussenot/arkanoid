@@ -1,0 +1,11 @@
+# Studio probe: the orchestra library seats its players. Violins (left of
+# centre), then celli (right), as orchestra.inc places them, through the
+# real desk.
+score 1
+tempo 0 120
+length 8
+tail 1
+include ../instruments/desk.inc
+include ../instruments/orchestra.inc
+note 0 3 strings_high E4 100
+note 4 3 strings_low E3 100

@@ -1,0 +1,13 @@
+# Studio probe: a loop's end flows into its start. Nothing plays in the
+# first two beats; a long-reverb chord at the end of the loop rings across
+# the seam, so the rendered loop starts inside that tail. Sines: no
+# waveform edges, so any step at the seam is the seam.
+score 1
+tempo 0 120
+length 8
+loop on
+aux long reverb preset=long
+inst pad synth send=long:0 wave=sine stack=3 detune=10 attack=0.05 decay=0.2 sustain=0.8 release=0.3
+note 6 1.5 pad E3 110
+note 6 1.5 pad B3 110
+note 6 1.5 pad G4 110

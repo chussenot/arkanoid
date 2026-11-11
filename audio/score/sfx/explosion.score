@@ -1,0 +1,15 @@
+# Gameplay effect: explosion. A crack falling into a rumble, over a bass drum and a timpani dropping a fifth.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: explosion
+# mode E None
+tempo 0 60
+length 0.3
+tail 0.3
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 1.6 1.6 lin
+note 0.0000 0.2000 sfx_blast 60 127
+note 0.0000 0.1200 sfx_thump 28 64
+note 0.0000 0.3000 sfx_kit 35 56
+note 0.0000 0.3000 sfx_timp 40 48

@@ -1,0 +1,13 @@
+// violins_trem: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
+// Do not edit: rerun the script.
+<region> sample=strings/violins_trem/violins_trem_55.flac lokey=52 hikey=56 pitch_keycenter=55 tune=17 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=111607 // Strings/Violin Section/Trem/VlnEns_Trem_G2_v2.wav
+<region> sample=strings/violins_trem/violins_trem_57.flac lokey=57 hikey=58 pitch_keycenter=57 tune=4 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=107839 // Strings/Violin Section/Trem/VlnEns_Trem_A2_v2.wav
+<region> sample=strings/violins_trem/violins_trem_59.flac lokey=59 hikey=60 pitch_keycenter=59 tune=8 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=109623 // Strings/Violin Section/Trem/VlnEns_Trem_B2_v2.wav
+<region> sample=strings/violins_trem/violins_trem_62.flac lokey=61 hikey=64 pitch_keycenter=62 tune=5 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=112425 // Strings/Violin Section/Trem/VlnEns_Trem_D3_v2.wav
+<region> sample=strings/violins_trem/violins_trem_66.flac lokey=65 hikey=67 pitch_keycenter=66 tune=1 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=123181 // Strings/Violin Section/Trem/VlnEns_Trem_F#3_v1.wav
+<region> sample=strings/violins_trem/violins_trem_69.flac lokey=68 hikey=70 pitch_keycenter=69 tune=1 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=117039 // Strings/Violin Section/Trem/VlnEns_Trem_A3_v2.wav
+<region> sample=strings/violins_trem/violins_trem_72.flac lokey=71 hikey=74 pitch_keycenter=72 tune=2 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=106742 // Strings/Violin Section/Trem/VlnEns_Trem_C4_v2.wav
+<region> sample=strings/violins_trem/violins_trem_76.flac lokey=75 hikey=77 pitch_keycenter=76 tune=-1 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=113775 // Strings/Violin Section/Trem/VlnEns_Trem_E4_v2.wav
+<region> sample=strings/violins_trem/violins_trem_79.flac lokey=78 hikey=81 pitch_keycenter=79 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=117025 // Strings/Violin Section/Trem/VlnEns_Trem_G4_v2.wav
+<region> sample=strings/violins_trem/violins_trem_83.flac lokey=82 hikey=84 pitch_keycenter=83 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=111614 // Strings/Violin Section/Trem/VlnEns_Trem_B4_v2.wav
+<region> sample=strings/violins_trem/violins_trem_86.flac lokey=85 hikey=89 pitch_keycenter=86 tune=1 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=39690 loop_end=118988 // Strings/Violin Section/Trem/VlnEns_Trem_D5_v2.wav

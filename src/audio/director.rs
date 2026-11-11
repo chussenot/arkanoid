@@ -73,8 +73,8 @@ impl SoundMode {
     }
 }
 
-/// The mode a level track is written in (`audio/compose.py` names it in
-/// each track; `build.rs` reads it into [`LEVEL_MODES`]). Every one is
+/// The mode a level track is written in (its score names it; `build.rs`
+/// reads it into [`LEVEL_MODES`]). Every one is
 /// over E.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -107,6 +107,12 @@ impl Mode {
         [0.0, 3.0, 5.0, 7.0, seventh, 12.0, 15.0, 17.0, 19.0, 24.0]
     }
 }
+/// The brick's level. The studio brick (a driven pop on a pizzicato) is
+/// spikier than the chip's square wave was: at the same peak it measures
+/// 5.6 dB quieter over its first 30 ms (audio/compose_studio.py,
+/// EFFECT_TRIMS), so it plays louder here, where the mixer's soft limiter
+/// takes its attack as it took the chip's sustain. Was 0.6.
+const BRICK_GAIN: f32 = 1.1;
 /// Brick sounds per tick at most: an explosion breaking eight bricks at
 /// once is one chord, not eight pops stacked into noise.
 const MAX_BRICK_SOUNDS_PER_TICK: usize = 3;
@@ -208,6 +214,9 @@ pub struct Director {
     /// The level whose first serve has been heard: its music plays from
     /// there. Cleared when a run ends, so a Continue waits for its serve.
     served_level: Option<usize>,
+    /// The menu's jukebox (`menu::Menu::track`): the track that plays on
+    /// the menu in place of its theme. 0 is the theme, `n` level `n`'s.
+    pub jukebox: Option<u8>,
 }
 
 impl Director {
@@ -223,6 +232,7 @@ impl Director {
             pending: Vec::with_capacity(MAX_PENDING),
             ball_attached: false,
             served_level: None,
+            jukebox: None,
         }
     }
 
@@ -249,6 +259,12 @@ impl Director {
         if in_play && self.served_level != Some(game.level) {
             // Before the level's first serve, the field waits in silence.
             music = None;
+        }
+        if let (GameState::Menu, Some(track)) = (game.state, self.jukebox) {
+            music = Some(match track.min(LEVEL_TRACKS) {
+                0 => Cue::MusicMenu,
+                n => Cue::Level(n),
+            });
         }
         if self.last_music != Some(music) {
             out.push(Command::Music(music));
@@ -335,7 +351,7 @@ impl Director {
                 GameEvent::BrickDestroyedAt { x, .. } => {
                     let step = steps.iter().find(|&&(j, _)| j == i).map_or(0, |&(_, s)| s);
                     let degree = scale[step];
-                    let note = pitched(Cue::Brick, 0.6, x, semitones(degree));
+                    let note = pitched(Cue::Brick, BRICK_GAIN, x, semitones(degree));
                     match delays[i].unwrap_or(0.0) {
                         // A struck brick: at once, a few per tick at most.
                         d if d <= 0.0 => {
@@ -683,6 +699,25 @@ mod tests {
             .collect();
         assert_eq!(gains.len(), 2, "one ball blast, one asteroid: {out:?}");
         assert!(gains[0] < gains[1], "the ball's is the quieter");
+    }
+
+    #[test]
+    fn the_jukebox_picks_the_menus_music_and_only_the_menus() {
+        let (mut director, mut game) = playing();
+        game.state = GameState::Menu;
+        director.jukebox = Some(7);
+        assert_eq!(
+            music(&director.observe(&game, &[])),
+            Some(Some(Cue::Level(7)))
+        );
+        director.jukebox = Some(0);
+        assert_eq!(
+            music(&director.observe(&game, &[])),
+            Some(Some(Cue::MusicMenu))
+        );
+        director.jukebox = Some(7);
+        game.state = GameState::GameOver;
+        assert_eq!(music(&director.observe(&game, &[])), Some(None));
     }
 
     #[test]

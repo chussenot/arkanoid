@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn the_fanfares_meters_come_from_their_cues() {
-        // level_clear.abc: M:4/4, Q:1/4=160. warp.abc: M:4/4, Q:1/4=240.
+        // level_clear.score: tempo 160, in four. sfx/warp.score: `# meter 1 4`.
         assert!((LEVEL_CLEAR.bar_secs() - 1.5).abs() < 1e-6);
         assert!((LEVEL_CLEAR.beat_secs() - 0.375).abs() < 1e-6);
         assert!((WARP.bar_secs() - 1.0).abs() < 1e-6);
@@ -154,18 +154,18 @@ mod tests {
 
     /// An act's end plays `act_clear` where a level's plays `level_clear`,
     /// and the level-end sweep keeps `LEVEL_CLEAR`'s beat for both: the two
-    /// fanfares must share their meter and tempo.
+    /// fanfares must share their tempo (both are in four).
     #[test]
     fn the_act_fanfare_keeps_the_level_fanfares_beat() {
-        let header = |abc: &str, key: &str| {
-            abc.lines()
-                .find_map(|l| l.strip_prefix(key))
+        let tempo = |score: &str| {
+            score
+                .lines()
+                .find_map(|l| l.strip_prefix("tempo 0 "))
                 .map(|v| v.trim().to_owned())
         };
-        let level = include_str!("../audio/cues/level_clear.abc");
-        let act = include_str!("../audio/cues/act_clear.abc");
-        for key in ["M:", "L:", "Q:"] {
-            assert_eq!(header(level, key), header(act, key), "{key}");
-        }
+        let level = tempo(include_str!("../audio/score/level_clear.score"));
+        let act = tempo(include_str!("../audio/score/act_clear.score"));
+        assert!(level.is_some(), "level_clear.score has a tempo");
+        assert_eq!(level, act);
     }
 }

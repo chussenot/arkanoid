@@ -1,0 +1,14 @@
+# Gameplay effect: asteroid. A low rumble swelling in over a wavering drone and a soft timpani roll.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: asteroid
+# mode E None
+tempo 0 60
+length 0.25
+tail 0.2
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 -1.9 -1.9 lin
+note 0.0000 0.2500 sfx_rumble 48 127
+note 0.0000 0.2500 sfx_drone 40 44
+note 0.0000 0.2500 sfx_timp_roll 40 30

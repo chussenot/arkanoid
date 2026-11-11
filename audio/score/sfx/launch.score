@@ -1,0 +1,15 @@
+# Gameplay effect: launch. A whip up two octaves into E5 over a rising breath, on a low pizzicato and timpani tap.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: launch
+# mode E None
+tempo 0 60
+length 0.08
+tail 0.05
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 3 3 lin
+note 0.0000 0.0625 sfx_whip 76 96
+note 0.0000 0.0625 sfx_breath 84 64
+note 0.0000 0.0600 sfx_pizz_lo 52 92
+note 0.0000 0.0800 sfx_timp 40 64

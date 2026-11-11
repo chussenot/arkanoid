@@ -3,8 +3,9 @@
 # the Impeccable skill (Apache-2.0) has files over the 500 KB limit and its
 # own whitespace conventions; the JetBrains Mono license text (OFL.txt) has
 # trailing spaces upstream; the Electric Pulse engine (audio/engine/) has
-# trailing spaces in abc.c.
-exclude: ^(\.claude/skills/impeccable/|assets/fonts/|audio/engine/)
+# trailing spaces in abc.c; the vendored build-time C headers (audio/vendor/)
+# are kept as upstream ships them.
+exclude: ^(\.claude/skills/impeccable/|assets/fonts/|audio/engine/|audio/vendor/)
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

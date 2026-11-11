@@ -1,0 +1,10 @@
+// tuba_stac: curated from VSCO 2 CE (4403009), CC0 1.0, by audio/samples/curate.py.
+// Do not edit: rerun the script.
+<region> sample=brass/tuba_stac/tuba_stac_34.flac lokey=31 hikey=36 pitch_keycenter=34 tune=42 lovel=1 hivel=127 // Brass/Tuba/stac/Tuba3_stac_A#0_v2_rr1_Sum.wav
+<region> sample=brass/tuba_stac/tuba_stac_39.flac lokey=37 hikey=40 pitch_keycenter=39 tune=15 lovel=1 hivel=127 // Brass/Tuba/stac/Tuba3_stac_D#1_v2_rr2_Sum.wav
+<region> sample=brass/tuba_stac/tuba_stac_41.flac lokey=41 hikey=43 pitch_keycenter=41 tune=-8 lovel=1 hivel=127 // Brass/Tuba/stac/Tuba3_stac_F1_v2_rr1_Sum.wav
+<region> sample=brass/tuba_stac/tuba_stac_46.flac lokey=44 hikey=48 pitch_keycenter=46 tune=27 lovel=1 hivel=127 // Brass/Tuba/stac/Tuba3_stac_A#1_v2_rr1_Sum.wav
+<region> sample=brass/tuba_stac/tuba_stac_50.flac lokey=49 hikey=51 pitch_keycenter=50 tune=21 lovel=1 hivel=127 // Brass/Tuba/stac/Tuba3_stac_D2_v2_rr1_Sum.wav
+<region> sample=brass/tuba_stac/tuba_stac_53.flac lokey=52 hikey=55 pitch_keycenter=53 tune=3 lovel=1 hivel=127 // Brass/Tuba/stac/Tuba3_stac_F2_v2_rr1_Sum.wav
+<region> sample=brass/tuba_stac/tuba_stac_58.flac lokey=56 hikey=60 pitch_keycenter=58 tune=30 lovel=1 hivel=127 // Brass/Tuba/stac/Tuba3_stac_A#2_v2_rr1_Sum.wav
+<region> sample=brass/tuba_stac/tuba_stac_62.flac lokey=61 hikey=65 pitch_keycenter=62 tune=-11 lovel=1 hivel=127 // Brass/Tuba/stac/Tuba3_stac_D3_v2_rr1_Sum.wav

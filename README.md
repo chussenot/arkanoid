@@ -66,10 +66,11 @@ budget, and the measurements.
 
 ## Sound
 
-BRYX's music and effects come from the
-[Electric Pulse](https://github.com/chussenot/electric-pulse) engine. They
-are composed as ABC text in `audio/cues/` and rendered at build time, so
-the game runs no C at play time. Bricks broken in a rally climb the E minor
+BRYX has a cinematic electronic-orchestral score: a sampled orchestra
+(a CC0 subset of VSCO 2 Community Edition) against analog-style synths.
+Music and effects are composed as text in `audio/score/` and rendered at
+build time by BRYX's own studio renderer, so the game runs no C at play
+time. Bricks broken in a rally climb the E minor
 pentatonic scale in time with the music, and every effect is panned to
 where it happened. Every campaign level has its own track: 32 in all,
 built on three recurring themes across four acts, with loaded levelsets

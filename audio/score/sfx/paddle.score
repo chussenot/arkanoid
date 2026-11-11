@@ -1,0 +1,14 @@
+# Gameplay effect: paddle. A knock dropping onto E3: a pizzicato cello on a triangle knock, a click.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: paddle
+# mode E None
+tempo 0 60
+length 0.07
+tail 0.08
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 -1.3 -1.3 lin
+note 0.0000 0.0700 sfx_knock 52 112
+note 0.0000 0.0600 sfx_pizz_lo 52 88
+note 0.0000 0.0100 sfx_click 84 70

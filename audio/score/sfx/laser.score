@@ -1,0 +1,12 @@
+# Gameplay effect: laser. One note falling two octaves in 60 ms: a zap.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Effect: laser
+# mode E None
+tempo 0 60
+length 0.0625
+tail 0.03
+seed 1
+include ../../instruments/sfx.inc
+ramp master.gain 0 0.001 -0.2 -0.2 lin
+note 0.0000 0.0625 sfx_zap 64 100

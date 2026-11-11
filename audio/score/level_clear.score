@@ -1,0 +1,56 @@
+# The level stinger: Spark bounding up, then the E minor triad climbing to
+# a held high E (the chip stinger's notes). Light, as it is heard
+# 32 times a run: spiccato and the bell, horns on the climb, the strings'
+# held chord. Two bars at 160 (3.0 s), the level-end sweep's meter.
+# Written by audio/compose_studio.py: do not edit.
+score 1
+title Level clear
+# mode E aeolian
+tempo 0 160
+length 8
+tail 0.15
+seed 1
+include ../instruments/desk.inc
+include ../instruments/orchestra.inc
+include ../instruments/electronic.inc
+note 0.0066 0.1750 strings_high_spic 71 74
+note 0.5034 0.1750 strings_high_spic 74 78
+note 0.7580 0.1750 strings_high_spic 76 79
+note 1.2503 0.3500 strings_high_spic 79 78
+note 2.0010 0.1750 strings_high_spic 81 77
+note 2.2557 0.1750 strings_high_spic 79 73
+note 2.4997 0.1750 strings_high_spic 76 72
+note 2.9967 0.3500 strings_high_spic 74 79
+note 0.0000 0.1500 synth_glass 83 64
+note 0.5000 0.1500 synth_glass 86 64
+note 0.7500 0.1500 synth_glass 88 64
+note 1.2500 0.3000 synth_glass 91 64
+note 2.0000 0.1500 synth_glass 93 64
+note 2.2500 0.1500 synth_glass 91 64
+note 2.5000 0.1500 synth_glass 88 64
+note 3.0000 0.3000 synth_glass 86 64
+note 0.0008 1.0000 strings_low_pizz 40 79
+note 0.9996 1.0000 strings_low_pizz 40 72
+note 1.9923 1.0000 strings_low_pizz 43 76
+note 3.0078 1.0000 strings_low_pizz 43 77
+note 3.9974 0.5000 strings_high 76 90
+note 4.5037 0.5000 strings_high 79 94
+note 4.9922 0.5000 strings_high 83 90
+note 5.4976 2.5000 strings_high 88 93
+note 3.9950 0.4750 brass_horns 64 77
+note 4.4995 0.4750 brass_horns 67 77
+note 4.9986 0.4750 brass_horns 71 74
+note 5.5050 2.3750 brass_horns 64 79
+note 5.5009 2.3750 brass_horns 67 77
+note 5.5055 2.3750 brass_horns 71 74
+note 3.9953 0.5000 strings_mid 71 76
+note 4.4969 0.5000 strings_mid 76 73
+note 5.0074 0.5000 strings_mid 79 74
+note 5.4947 2.5000 strings_mid 79 78
+note 5.4971 2.5000 strings_mid 83 75
+note 3.9963 1.0000 strings_low 48 77
+note 5.0076 1.0000 strings_low 50 76
+note 6.0028 2.0000 strings_low 52 73
+note 5.9944 2.0000 timpani 40 76
+note 6.0000 0.4000 synth_glass 88 76
+ramp master.gain 7 8.4 0 -40 smooth
